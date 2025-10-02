@@ -1,11 +1,17 @@
-import requests
+from http_utils import get_request, parse_headers, print_headers, get_allowed_methods
 from colorama import Fore
-from tabulate import tabulate
 
 url = "https://owasp.org/www-project-juice-shop/"
-response = requests.get(url)
 
-headers = response.headers.items()
+# Send GET request
+response = get_request(url)
 
-print(Fore.CYAN + "\n📋 Response Headers:\n")
-print(tabulate(headers, headers=["Header", "Value"], tablefmt="fancy_grid"))
+# Parse headers
+headers = parse_headers(response)
+
+# Print headers (clean version)
+print_headers(headers)
+
+# Check allowed methods
+methods = get_allowed_methods(url)
+print(Fore.YELLOW + f"\n🔎 Allowed Methods: {methods}\n")
