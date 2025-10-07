@@ -1,5 +1,5 @@
 # analyze http headers
-from colorama import Fore
+from colorama import Fore, Style
 
 def analyze_security_headers(headers):
     """
@@ -21,7 +21,7 @@ def analyze_security_headers(headers):
         if "'unsafe-inline'" in csp or "'unsafe-eval'" in csp:
             findings.append({
                 "Header": "Content-Security-Policy",
-                "Status": "Weak",
+                "Status": "Misconfigured",
                 "Severity": "Medium",
                 "Recommendation": "Avoid using 'unsafe-inline' or 'unsafe-eval' in CSP for stronger XSS protection."
             })
@@ -41,33 +41,79 @@ def analyze_security_headers(headers):
             "Severity": "High",
             "Recommendation": "Enable HSTS to enforce HTTPS and protect against downgrade attacks."
         })
+        #Strict-Transport-Security: max-age=86400; includeSubDomains
 
     # --- X-Frame-Options ---
-    if "X-Frame-Options" not in headers:
+    xfo = headers.get("X-Frame-Options")
+    if not xfo:
         findings.append({
             "Header": "X-Frame-Options",
             "Status": "Missing",
             "Severity": "Medium",
-            "Recommendation": "Add X-Frame-Options: DENY or SAMEORIGIN to protect against clickjacking."
+            "Recommendation": "Add X-Frame-Options: DENY to protect against clickjacking."
         })
+    else:
+        if xfo.strip().upper() != "DENY":
+            findings.append({
+                "Header": "X-Frame-Options",
+                "Status": "Misconfigured",
+                "Severity": "Medium",
+                "Recommendation": "Set X-Frame-Options to DENY for maximum protection against clickjacking."
+            })
+
+    # --- X-XSS-Protection ---
+    xxp = headers.get("X-XXS-Protection")
+    if not xxp:
+        findings.append({
+            "Header": "X-XXS-Protection",
+            "Status": "Missing",
+            "Severity": "Medium",#
+            "Recommendation": "Set X-XXS-Protection : 0 to prevent against cross-site scripting (XSS) attack."
+        })
+    else:
+        if xxp.strip().upper() != 0:
+            findings.append({
+                "Header": "X-XXS-Protection",
+                "Status": "Misconfigured",
+                "Severity": "Medium",#
+                "Recommendation": "Set X-XXS-Protection : 0 to prevent against cross-site scripting (XSS) attack."
+            })
 
     # --- X-Content-Type-Options ---
-    if "X-Content-Type-Options" not in headers:
+    xcto = headers.get("X-Content-Type-Options")
+    if not xcto:
         findings.append({
             "Header": "X-Content-Type-Options",
             "Status": "Missing",
-            "Severity": "Low",
-            "Recommendation": "Add X-Content-Type-Options: nosniff to prevent MIME-type confusion."
+            "Severity": "Low",#
+            "Recommendation": "Set X-Content-Type-Options : 0 to prevent MIME-type confusion."
         })
+    else:
+        if xcto.strip().upper() != 0:
+            findings.append({
+                "Header": "X-Content-Type-Options",
+                "Status": "Misconfigured",
+                "Severity": "Low",#
+                "Recommendation": "Set X-XXS-Protection : 0 to prevent MIME-type confusion."
+            })
 
     # --- Referrer Policy ---
-    if "Referrer-Policy" not in headers:
+    rp = headers.get("Referrer Policy")
+    if not rp:
         findings.append({
             "Header": "Referrer-Policy",
             "Status": "Missing",
             "Severity": "Low",
-            "Recommendation": "Add Referrer-Policy: no-referrer-when-downgrade or strict-origin to control referrer data leakage."
+            "Recommendation": "Add Referrer-Policy: strict-origin-when-cross-origin to control referrer data leakage."
         })
+    else:
+        if rp.strip().upper() != "strict-origin-when-cross-origin":
+            findings.append({
+                "Header": "Referrer-Policy",
+                "Status": "Misconfigured",
+                "Severity": "Low",#
+                "Recommendation": "Add Referrer-Policy: strict-origin-when-cross-origin to control referrer data leakage."
+            })
 
     # --- Permissions Policy ---
     if "Permissions-Policy" not in headers:
@@ -78,20 +124,48 @@ def analyze_security_headers(headers):
             "Recommendation": "Use Permissions-Policy to control access to browser features (e.g., camera, microphone)."
         })
 
-    return findings
+    # --- Server ---
+    if "Server" in headers:
+        findings.append({
+            "Header": "Server",
+            "Status": "Misconfigured",
+            "Severity": "Medium",
+            "Recommendation": "Dont show."
+        })
 
+    return findings
 
 def print_findings(findings):
     """
-    Print findings in a readable format with color.
+    Print findings grouped by Missing and Misconfigured headers with color formatting.
     """
-    print(Fore.CYAN + "\n🛡️ Security Header Analysis Results:\n")
-    for f in findings:
-        severity_color = {
-            "High": Fore.RED,
-            "Medium": Fore.YELLOW,
-            "Low": Fore.GREEN
-        }.get(f["Severity"], Fore.WHITE)
+    # Group findings
+    missing = [f for f in findings if f["Status"].lower() == "missing"]
+    misconfigured = [f for f in findings if f["Status"].lower() in ("Misconfigured")]
 
-        print(f"{severity_color}{f['Header']}: {f['Status']} ({f['Severity']})")
-        print(Fore.WHITE + f"   ↳ Recommendation: {f['Recommendation']}\n")
+    def print_group(title, items, color):
+        if not items:
+            return
+        print(color + f"\n{title}:")
+        print(color + "────────────────────────" + Style.RESET_ALL)
+        for i, f in enumerate(items, 1):
+            severity_color = {
+                "High": Fore.RED,
+                "Medium": Fore.YELLOW,
+                "Low": Fore.GREEN
+            }.get(f["Severity"], Fore.WHITE)
+
+            print(f"{Fore.WHITE}{i}. {f['Header']}")
+            print(f"   {severity_color}Severity: {f['Severity']}")
+            print(f"{Fore.CYAN}   Recommendation: {f['Recommendation']}\n")
+
+    print(Fore.CYAN + "\n🛡️ Security Header Analysis Results" + Style.RESET_ALL)
+    print("====================================")
+
+    # Print missing and misconfigured headers
+    print_group("🚫 Missing Headers", missing, Fore.RED)
+    print_group("⚠️ Misconfigured Headers", misconfigured, Fore.YELLOW)
+
+    # If nothing found
+    if not missing and not misconfigured:
+        print(Fore.GREEN + "\n✅ All security headers are properly configured!\n" + Style.RESET_ALL)
