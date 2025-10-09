@@ -1,4 +1,63 @@
+# get_header.py
+
 import requests
+
+def get_request(url, method="GET"):
+    """
+    Send an HTTP request to the given URL.
+    Default method is GET, but can also use HEAD, OPTIONS, etc.
+    Returns: response object or None if error
+    """
+    try:
+        if method.upper() == "GET":
+            response = requests.get(url, timeout=10)
+        elif method.upper() == "HEAD":
+            response = requests.head(url, timeout=10)
+        elif method.upper() == "OPTIONS":
+            response = requests.options(url, timeout=10)
+        else:
+            raise ValueError(f"Unsupported HTTP method: {method}")
+
+        return response
+
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Request failed for {url}: {e}")
+        return None
+
+
+def parse_headers(response):
+    """
+    Parse headers from a requests response object.
+    Returns them as a dictionary.
+    """
+    if response is None:
+        return {}
+
+    return dict(response.headers)
+
+
+def print_headers(headers_dict):
+    """
+    Print headers line by line (clean, no extra spaces).
+    """
+    print("\n📋 Response Headers:\n")
+    for k, v in headers_dict.items():
+        print(f"{k}: {v}")
+
+
+def get_allowed_methods(url):
+    """
+    Check which HTTP methods are allowed by the server.
+    Uses OPTIONS request.
+    """
+    response = get_request(url, method="OPTIONS")
+    if response and "Allow" in response.headers:
+        return [m.strip() for m in response.headers["Allow"].split(",")]
+    return []
+
+
+# analyze_header.py
+
 from colorama import Fore, Style
 
 def analyze_security_headers(headers):
@@ -128,17 +187,32 @@ def analyze_security_headers(headers):
             "Recommendation": "Avoid exposing the Server header to reduce information disclosure."
         })
 
-    return findings
+        # --- Allow header exposure ---
+    if "Allow" in headers:
+        findings.append({
+            "Header": "Allow",
+            "Status": "Misconfigured",
+            "Severity": "Medium",
+            "Recommendation": "Avoid exposing the 'Allow' header as it reveals supported HTTP methods."
+        })
 
+    return findings
 
 def print_findings(findings):
     missing = [f for f in findings if f["Status"].lower() == "missing"]
     misconfigured = [f for f in findings if f["Status"].lower() == "misconfigured"]
 
+    total_issues = len(missing) + len(misconfigured)
+
+    print(Fore.CYAN + "\n🛡️ Security Header Analysis Results" + Style.RESET_ALL)
+    print("====================================")
+    print(Fore.WHITE + f"Total Issues Detected: {Fore.YELLOW}{total_issues}{Style.RESET_ALL}")
+    print(Fore.WHITE + f"Missing Headers: {Fore.RED}{len(missing)}{Style.RESET_ALL} | Misconfigured: {Fore.YELLOW}{len(misconfigured)}\n")
+
     def print_group(title, items, color):
         if not items:
             return
-        print(color + f"\n{title}:")
+        print(color + f"{title}:")
         print(color + "────────────────────────" + Style.RESET_ALL)
         for i, f in enumerate(items, 1):
             severity_color = {
@@ -151,124 +225,96 @@ def print_findings(findings):
             print(f"   {severity_color}Severity: {f['Severity']}")
             print(f"{Fore.CYAN}   Recommendation: {f['Recommendation']}\n")
 
-    print(Fore.CYAN + "\n🛡️ Security Header Analysis Results" + Style.RESET_ALL)
-    print("====================================")
-
     print_group("🚫 Missing Headers", missing, Fore.RED)
     print_group("⚠️ Misconfigured Headers", misconfigured, Fore.YELLOW)
 
     if not missing and not misconfigured:
         print(Fore.GREEN + "\n✅ All security headers are properly configured!\n" + Style.RESET_ALL)
 
-
-
-# set of methods we consider "unsafe" in typical security checks
-UNSAFE_METHODS = {"PUT", "DELETE", "TRACE", "CONNECT", "PATCH"}
-
-def analyze_http_methods(url, probe=False, timeout=10):
+def analyze_http_methods(methods):
     """
-    Check server for allowed/unsafe HTTP methods.
-    - By default: send OPTIONS and parse Allow header (non-destructive).
-    - probe=True: optionally attempt a TRACE probe (may be blocked or echo).
-    Returns a list of findings in same dict format as analyze_security_headers().
+    Analyze allowed HTTP methods and report their associated security risks.
     """
+    if not methods:
+        return [{
+            "Header": "HTTP Methods",
+            "Status": "Unknown",
+            "Severity": "Medium",
+            "Recommendation": "Server did not respond with an Allow header. Test manually using OPTIONS request."
+        }]
+
+    # Known risky HTTP methods and their security risks
+    method_risks = {
+        "PUT": "Can allow attackers to upload or overwrite files on the server.",
+        "DELETE": "Can allow attackers to delete resources or content on the server.",
+        "TRACE": "Can be used in cross-site tracing (XST) attacks to steal authentication data.",
+        "CONNECT": "Can enable tunneling to internal network resources.",
+        "PATCH": "Can modify data on the server if not properly controlled.",
+    }
+
     findings = []
+    risky_methods = [m for m in methods if m.upper() in method_risks]
 
-    try:
-        # Primary, non-destructive check: OPTIONS and Allow header
-        resp = requests.options(url, timeout=timeout, allow_redirects=True)
-        allow_hdr = resp.headers.get("Allow") or resp.headers.get("allow")
-
-        if not allow_hdr:
+    if risky_methods:
+        for method in risky_methods:
             findings.append({
-                "Header": "Allow",
-                "Status": "Missing",
-                "Severity": "Medium",
-                "Recommendation": ("No Allow header returned by OPTIONS. "
-                                   "If safe, enable server to advertise allowed methods or "
-                                   "manually verify with permission. Consider restricting methods "
-                                   "to GET, HEAD, OPTIONS, POST where appropriate.")
+                "Header": f"HTTP Method: {method}",
+                "Status": "Unsafe",
+                "Severity": "High",
+                "Recommendation": f"Disable or restrict '{method}' — {method_risks[method.upper()]}"
             })
-        else:
-            # parse methods from header, normalize
-            methods = {m.strip().upper() for m in allow_hdr.split(",") if m.strip()}
-            unsafe_present = methods.intersection(UNSAFE_METHODS)
-            if unsafe_present:
-                findings.append({
-                    "Header": "Allow",
-                    "Status": f"Unsafe methods allowed: {', '.join(sorted(unsafe_present))}",
-                    "Severity": "High" if ("DELETE" in unsafe_present or "PUT" in unsafe_present) else "Medium",
-                    "Recommendation": ("Remove or tightly control unsafe methods (PUT, DELETE, PATCH, TRACE, CONNECT). "
-                                       "If they are required, restrict access via authentication and IP/network controls.")
-                })
-            else:
-                findings.append({
-                    "Header": "Allow",
-                    "Status": "Safe",
-                    "Severity": "Low",
-                    "Recommendation": "Allow header present and does not advertise dangerous methods."
-                })
-
-        # Optional probe (use with caution): check TRACE
-        if probe:
-            # TRACE is commonly considered unsafe because it can reflect payloads
-            try:
-                trace_resp = requests.request("TRACE", url, timeout=timeout, allow_redirects=True)
-                # typical safe response is 405 Method Not Allowed, 501 Not Implemented, or blocked (4xx/5xx)
-                if trace_resp.status_code in (200, 201, 203):
-                    findings.append({
-                        "Header": "TRACE",
-                        "Status": f"Allowed (HTTP {trace_resp.status_code})",
-                        "Severity": "High",
-                        "Recommendation": "Disable TRACE support on the server to prevent cross-site tracing attacks."
-                    })
-                elif trace_resp.status_code in (405, 501):
-                    findings.append({
-                        "Header": "TRACE",
-                        "Status": "Not allowed",
-                        "Severity": "Low",
-                        "Recommendation": "TRACE is not allowed (good)."
-                    })
-                else:
-                    # unknown behaviour — flag as medium
-                    findings.append({
-                        "Header": "TRACE",
-                        "Status": f"Unexpected response: {trace_resp.status_code}",
-                        "Severity": "Medium",
-                        "Recommendation": "Investigate TRACE handling. If TRACE is not required, disable it."
-                    })
-            except Exception as e:
-                findings.append({
-                    "Header": "TRACE",
-                    "Status": "Probe failed",
-                    "Severity": "Low",
-                    "Recommendation": f"TRACE probe failed: {e}. Skipping active probe or try with probe=False."
-                })
-
-    except requests.RequestException as e:
+    else:
         findings.append({
             "Header": "HTTP Methods",
-            "Status": "Scan failed",
-            "Severity": "Medium",
-            "Recommendation": f"Could not query OPTIONS for {url}: {e}"
+            "Status": "Safe",
+            "Severity": "Low",
+            "Recommendation": "No unsafe HTTP methods detected. Common safe methods are GET, POST, HEAD, OPTIONS."
         })
 
     return findings
 
+def print_http_method_findings(findings, methods):
+    """
+    Display HTTP method security analysis results with allowed methods and unsafe summary.
+    """
+    print("\n" + Fore.CYAN + "🔒 HTTP Method Security Check" + Style.RESET_ALL)
+    print("====================================")
 
-# Example of integration: combine header analysis + method checks
-def analyze_url(url, headers, probe_methods=False):
-    findings = analyze_security_headers(headers)
-    findings += analyze_http_methods(url, probe=probe_methods)
-    return findings
+    # Show allowed methods first
+    if methods:
+        print(Fore.YELLOW + f"Allowed Methods: {', '.join(methods)}" + Style.RESET_ALL)
+    else:
+        print(Fore.YELLOW + "Allowed Methods: (None or not advertised)" + Style.RESET_ALL)
+
+    unsafe_findings = [f for f in findings if f["Status"].lower() == "unsafe"]
+    print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.RED}{len(unsafe_findings)}{Style.RESET_ALL}\n")
+
+    if not unsafe_findings:
+        print(Fore.GREEN + "✅ No unsafe HTTP methods detected.\n" + Style.RESET_ALL)
+    else:
+        print(Fore.YELLOW + "──────────────────────────────" + Style.RESET_ALL)
+        for i, f in enumerate(unsafe_findings, 1):
+            severity_color = {
+                "High": Fore.RED,
+                "Medium": Fore.YELLOW,
+                "Low": Fore.GREEN
+            }.get(f["Severity"], Fore.WHITE)
+
+            print(f"{Fore.WHITE}{i}. {f['Header']} — {f['Status']}")
+            print(f"   {severity_color}Severity: {f['Severity']}")
+            print(f"{Fore.CYAN}   Recommendation: {f['Recommendation']}\n")
+
+        # Print safe methods note
+        print(Fore.GREEN + "✅ Safe methods (GET, POST, HEAD, OPTIONS) are acceptable for normal web applications.\n" + Style.RESET_ALL)
 
 
-# main
+# main.py
 
-from get_header import get_request, parse_headers, print_headers
+#from get_header import get_request, parse_headers, print_headers, get_allowed_methods
+#from analyze_header import analyze_security_headers, print_findings
 from colorama import Fore
 
-url = input("Enter a URL to test your headers: ").strip()
+url = input("Enter an URL to test your header: ").strip()
 
 # Send GET request
 response = get_request(url)
@@ -280,15 +326,19 @@ if not headers:
 else:
     # Analyze security headers
     findings = analyze_security_headers(headers)
-
-    # Analyze HTTP methods together
-    findings += analyze_http_methods(url, probe=False)
-
-    # Print findings
     print_findings(findings)
 
-    # Ask if user wants to see raw headers
-    raw_header = input("\nSee raw headers? (y/n): ").strip().lower()
-    if raw_header == 'y':
-        print_headers(headers)
+# Check allowed methods
+methods = get_allowed_methods(url)
 
+# Analyze unsafe HTTP methods
+method_findings = analyze_http_methods(methods)
+
+# Print all under one clear section
+print_http_method_findings(method_findings, methods)
+
+
+# Ask if user wants to see raw headers
+raw_header = input("\nSee raw headers? (y/n): ").strip().lower()
+if raw_header == 'y':
+    print_headers(headers)
