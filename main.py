@@ -1,5 +1,5 @@
-from get_header import get_request, parse_headers, print_headers, get_allowed_methods
-from analyze_header import analyze_security_headers, print_findings
+from get_header import get_request, parse_headers, print_headers, print_options_response, get_allowed_methods
+from analyze_header import analyze_security_headers, print_findings, analyze_http_methods, print_http_method_findings, print_summary
 from colorama import Fore
 
 url = input("Enter an URL to test your header: ").strip()
@@ -16,11 +16,23 @@ else:
     findings = analyze_security_headers(headers)
     print_findings(findings)
 
-    # Ask if user wants to see raw headers
-    raw_header = input("\nSee raw headers? (y/n): ").strip().lower()
-    if raw_header == 'y':
-        print_headers(headers)
-
 # Check allowed methods
 methods = get_allowed_methods(url)
-print(Fore.YELLOW + f"\n🔎 Allowed Methods: {methods}\n")
+
+# Analyze unsafe HTTP methods
+method_findings = analyze_http_methods(methods)
+
+# Print all under one clear section
+print_http_method_findings(method_findings, methods)
+
+# print summary table (add after both findings have been printed)
+print_summary(findings, method_findings)
+
+# Ask if user wants to see raw headers 
+raw_header = input("\nSee raw GET headers? (y/n): ").strip().lower()
+if raw_header == 'y':
+    print_headers(headers)
+
+options_header = input("\nSee OPTIONS raw response? (y/n): ").strip().lower()
+if options_header == 'y':
+    print_options_response(url)

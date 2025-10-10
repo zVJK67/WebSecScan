@@ -42,6 +42,22 @@ def print_headers(headers_dict):
     for k, v in headers_dict.items():
         print(f"{k}: {v}")
 
+def print_options_response(url):
+    """
+    Sends an OPTIONS request and displays the full response like 'curl -i -X OPTIONS'.
+    """
+    print(f"\n{url} — OPTIONS Response:\n" + "=" * 50)
+    try:
+        response = requests.options(url, timeout=10)
+        print(f"HTTP/{response.raw.version // 10}.{response.raw.version % 10} {response.status_code} {response.reason}")
+        for k, v in response.headers.items():
+            print(f"{k}: {v}")
+        print()  # newline spacing
+        return response
+    except requests.exceptions.RequestException as e:
+        print(f"[ERROR] Failed to fetch OPTIONS response: {e}")
+        return None
+
 
 def get_allowed_methods(url):
     """
