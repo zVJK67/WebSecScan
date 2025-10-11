@@ -641,47 +641,48 @@ def print_cookie_findings(findings):
 
 # main.py
 
-#from get_header import get_request, parse_headers, print_headers, get_allowed_methods
-#from analyze_header import analyze_security_headers, print_findings, analyze_http_methods, print_http_method_findings, print_summary
-from colorama import Fore
+from get_header import get_request, parse_headers, print_headers, print_options_response, get_allowed_methods
+from analyze_header import analyze_security_headers, print_findings, analyze_http_methods, print_http_method_findings
+from cookie_checker import analyze_cookies
+from findings_summary import print_summary
+from colorama import Fore, Style
 
-url = input("Enter an URL to test your header: ").strip()
+# === Step 0: Ask for URL ===
+url = input(Fore.WHITE + "Enter an URL to test your header: " + Style.RESET_ALL).strip()
 
-# Send GET request
+# === Step 1: Header Check ===
+print(Fore.CYAN + "\n[1/4] Checking HTTP headers..." + Style.RESET_ALL)
+
 response = get_request(url)
-
-# Parse headers
 headers = parse_headers(response)
 if not headers:
-    print(Fore.RED + "\n[!] Failed to retrieve headers or empty response.\n")
+    print(Fore.RED + "\n[!] Failed to retrieve headers or empty response.\n" + Style.RESET_ALL)
+    findings = []
 else:
-    # Analyze security headers
     findings = analyze_security_headers(headers)
     print_findings(findings)
 
-# Check allowed methods
-methods = get_allowed_methods(url)
-
-# Analyze unsafe HTTP methods
-method_findings = analyze_http_methods(methods)
-
-# Print all under one clear section
-print_http_method_findings(method_findings, methods)
-
-# print summary table (add after both findings have been printed)
-print_summary(findings, method_findings)
-
-# Ask if user wants to see raw headers 
 raw_header = input("\nSee raw GET headers? (y/n): ").strip().lower()
 if raw_header == 'y':
     print_headers(headers)
 
+# === Step 2: HTTP Method Check ===
+print(Fore.CYAN + "\n[2/4] Checking HTTP methods..." + Style.RESET_ALL)
+methods = get_allowed_methods(url)
+method_findings = analyze_http_methods(methods)
+print_http_method_findings(method_findings, methods)
+
 options_header = input("\nSee OPTIONS raw response? (y/n): ").strip().lower()
 if options_header == 'y':
     print_options_response(url)
-    
+
+# === Step 3: Cookie Security Analysis ===
+print(Fore.CYAN + "\n[3/4] Performing Cookie Security Analysis..." + Style.RESET_ALL)
+cookie_findings = analyze_cookies(url, include_js_cookies=True)
+
+# === Step 4: Combined Summary ===
+print(Fore.GREEN + "\n[4/4] All security misconfiguration checks completed!" + Style.RESET_ALL)
+print_summary(findings, method_findings, cookie_findings)
 
 
-
-
-#https://httpbin.org/anything
+#https://httpbin.org/cookies/set?testcookie=value123
