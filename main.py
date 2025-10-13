@@ -1,6 +1,7 @@
 from get_header import get_request, parse_headers, print_headers, print_options_response, get_allowed_methods
 from analyze_header import analyze_security_headers, print_findings, analyze_http_methods, print_http_method_findings
 from cookie_checker import analyze_cookies
+from cors_checker import analyze_cors
 from findings_summary import print_summary
 from colorama import Fore, Style
 
@@ -39,6 +40,10 @@ if options_header == 'y':
 print(Fore.CYAN + "\n[3/4] Performing Cookie Security Analysis..." + Style.RESET_ALL)
 cookie_findings = analyze_cookies(url, include_js_cookies=True)
 
-# === Step 4: Combined Summary ===
-print(Fore.GREEN + "\n[4/4] All security misconfiguration checks completed!" + Style.RESET_ALL)
-print_summary(findings, method_findings, cookie_findings)
+# === Step 4: CORS Security Analysis ===
+print(Fore.CYAN + "\n[4/5] Checking Cross-Origin Resource Sharing (CORS) configuration..." + Style.RESET_ALL)
+cors_findings = analyze_cors(url)
+
+# === Step 5: Combined Summary ===
+print(Fore.GREEN + "\n[5/5] All security misconfiguration checks completed!" + Style.RESET_ALL)
+print_summary(findings, method_findings, cookie_findings + cors_findings)
