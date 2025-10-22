@@ -105,13 +105,22 @@ def analyze_security_headers(headers):
             })
 
     # --- Strict Transport Security (HSTS) ---
-    if "Strict-Transport-Security" not in headers:
+    hsts = headers.get("Strict-Transport-Security")
+    if not hsts:
         findings.append({
             "Header": "Strict-Transport-Security",
             "Status": "Missing",
             "Severity": "High",
-            "Recommendation": "Enable HSTS to enforce HTTPS and protect against downgrade attacks."
+            "Recommendation": "Enable HSTS (Strict-Transport-Security) to enforce HTTPS and prevent downgrade attacks."
         })
+    else:
+        if "max-age" not in hsts.lower():
+            findings.append({
+                "Header": "Strict-Transport-Security",
+                "Status": "Misconfigured",
+                "Severity": "Medium",
+                "Recommendation": "Add 'max-age' directive (e.g., max-age=31536000) to HSTS for proper enforcement."
+            })
 
     # --- X-Frame-Options ---
     xfo = headers.get("X-Frame-Options")
@@ -120,15 +129,15 @@ def analyze_security_headers(headers):
             "Header": "X-Frame-Options",
             "Status": "Missing",
             "Severity": "Medium",
-            "Recommendation": "Add X-Frame-Options: DENY to protect against clickjacking."
+            "Recommendation": "Add X-Frame-Options: DENY or SAMEORIGIN to protect against clickjacking."
         })
     else:
-        if xfo.strip().upper() != "DENY":
+        if xfo.strip().upper() not in ["DENY", "SAMEORIGIN"]:
             findings.append({
                 "Header": "X-Frame-Options",
                 "Status": "Misconfigured",
                 "Severity": "Medium",
-                "Recommendation": "Set X-Frame-Options to DENY for maximum protection against clickjacking."
+                "Recommendation": "Set X-Frame-Options to DENY or SAMEORIGIN for better clickjacking protection."
             })
 
     # --- X-XSS-Protection ---
@@ -137,7 +146,7 @@ def analyze_security_headers(headers):
         findings.append({
             "Header": "X-XSS-Protection",
             "Status": "Missing",
-            "Severity": "Medium",
+            "Severity": "Low",
             "Recommendation": "Add X-XSS-Protection: 1; mode=block for legacy browser XSS mitigation."
         })
     else:
@@ -145,8 +154,8 @@ def analyze_security_headers(headers):
             findings.append({
                 "Header": "X-XSS-Protection",
                 "Status": "Misconfigured",
-                "Severity": "Medium",
-                "Recommendation": "Set X-XSS-Protection: 1; mode=block to enable basic XSS protection in older browsers."
+                "Severity": "Low",
+                "Recommendation": "Set X-XSS-Protection: 1; mode=block for older browsers."
             })
 
     # --- X-Content-Type-Options ---
@@ -164,7 +173,7 @@ def analyze_security_headers(headers):
                 "Header": "X-Content-Type-Options",
                 "Status": "Misconfigured",
                 "Severity": "Low",
-                "Recommendation": "Set X-Content-Type-Options: nosniff to prevent MIME-type confusion."
+                "Recommendation": "Ensure X-Content-Type-Options is set to 'nosniff'."
             })
 
     # --- Referrer Policy ---
@@ -177,33 +186,48 @@ def analyze_security_headers(headers):
             "Recommendation": "Add Referrer-Policy: strict-origin-when-cross-origin to control referrer data leakage."
         })
     else:
-        if rp.strip().lower() != "strict-origin-when-cross-origin":
+        allowed_policies = [
+            "no-referrer", "strict-origin", "strict-origin-when-cross-origin", 
+            "same-origin", "no-referrer-when-downgrade"
+        ]
+        if rp.strip().lower() not in allowed_policies:
             findings.append({
                 "Header": "Referrer-Policy",
                 "Status": "Misconfigured",
                 "Severity": "Low",
-                "Recommendation": "Set Referrer-Policy: strict-origin-when-cross-origin to control referrer data leakage."
+                "Recommendation": "Use a secure Referrer-Policy such as 'strict-origin-when-cross-origin'."
             })
 
     # --- Permissions Policy ---
-    if "Permissions-Policy" not in headers:
+    pp = headers.get("Permissions-Policy")
+    if not pp:
         findings.append({
             "Header": "Permissions-Policy",
             "Status": "Missing",
             "Severity": "Low",
-            "Recommendation": "Use Permissions-Policy to control access to browser features (e.g., camera, microphone)."
+            "Recommendation": "Add Permissions-Policy to control access to features like camera, microphone, or geolocation."
         })
 
-    # --- Server header exposure ---
+    # --- Cross-Origin Embedder/Opener/Resource Policies (COEP/COOP/CORP) ---
+    for policy in ["Cross-Origin-Embedder-Policy", "Cross-Origin-Opener-Policy", "Cross-Origin-Resource-Policy"]:
+        if policy not in headers:
+            findings.append({
+                "Header": policy,
+                "Status": "Missing",
+                "Severity": "Low",
+                "Recommendation": f"Add {policy} header to improve cross-origin isolation and resource protection."
+            })
+
+    # --- Server Information Disclosure ---
     if "Server" in headers:
         findings.append({
             "Header": "Server",
             "Status": "Misconfigured",
             "Severity": "Medium",
-            "Recommendation": "Avoid exposing the Server header to reduce information disclosure."
+            "Recommendation": "Avoid exposing the Server header to reduce fingerprinting and information disclosure."
         })
 
-        # --- Allow header exposure ---
+    # --- Allow Header Disclosure ---
     if "Allow" in headers:
         findings.append({
             "Header": "Allow",
@@ -368,287 +392,318 @@ def print_summary(header_findings, method_findings):
 
 
 # cookie_checker.py
-# cookie_checker.py
-import re
+import requests
 from http.cookies import SimpleCookie
-from urllib.parse import urlparse
+from colorama import Fore, Style
+from tabulate import tabulate
+import json
+from datetime import datetime
+
+# Optional: Selenium imports (only needed if user chooses to scan JS cookies)
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+
+def analyze_cookies(url, include_js_cookies=False):
+    """
+    Analyze cookies set by the server and optionally capture JS-created cookies using Selenium.
+    Generates a table report and saves results to a JSON file.
+    """
+    print(Fore.CYAN + "\n🍪 Cookie Security Analysis")
+    print("=" * 36)
+
+    all_cookies = []
+
+    # === 1. Fetch cookies from HTTP response ===
+    try:
+        response = requests.get(url, timeout=10)
+        set_cookie_header = response.headers.get("Set-Cookie", "")
+    except requests.exceptions.RequestException as e:
+        print(Fore.RED + f"[ERROR] Failed to fetch cookies: {e}" + Style.RESET_ALL)
+        return
+
+    # Parse cookies safely using SimpleCookie
+    if set_cookie_header:
+        cookie_parser = SimpleCookie()
+        cookie_parser.load(set_cookie_header)
+
+        print(Fore.GREEN + "\n[+] Server-side cookies detected:")
+        for name, morsel in cookie_parser.items():
+            cookie_data = {
+                "Name": name,
+                "Value": morsel.value,
+                "Domain": morsel["domain"] or "N/A",
+                "Path": morsel["path"] or "N/A",
+                "Secure": "Secure" in morsel.output(),
+                "HttpOnly": "HttpOnly" in morsel.output(),
+                "SameSite": morsel["samesite"] or "N/A"
+            }
+            all_cookies.append(cookie_data)
+
+    else:
+        print(Fore.YELLOW + "\n[!] No cookies found in server response." + Style.RESET_ALL)
+
+    # === 2. Optionally fetch client-side JS cookies using Selenium ===
+    if include_js_cookies:
+        print(Fore.CYAN + "\n🌐 Capturing client-side (JavaScript) cookies via Selenium...")
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        driver = webdriver.Chrome(options=chrome_options)
+        driver.get(url)
+        js_cookies = driver.get_cookies()
+        driver.quit()
+
+        for c in js_cookies:
+            cookie_data = {
+                "Name": c.get("name"),
+                "Value": c.get("value"),
+                "Domain": c.get("domain"),
+                "Path": c.get("path"),
+                "Secure": c.get("secure"),
+                "HttpOnly": c.get("httpOnly"),
+                "SameSite": c.get("sameSite") or "N/A"
+            }
+            all_cookies.append(cookie_data)
+
+        print(Fore.GREEN + f"[+] {len(js_cookies)} JavaScript cookies captured." + Style.RESET_ALL)
+
+    # === 3. Analyze cookie flags ===
+    issues = []
+    for cookie in all_cookies:
+        missing = []
+        if not cookie["Secure"]:
+            missing.append("Secure")
+        if not cookie["HttpOnly"]:
+            missing.append("HttpOnly")
+        if cookie["SameSite"] == "N/A":
+            missing.append("SameSite")
+
+        if missing:
+            cookie["MissingFlags"] = ", ".join(missing)
+            issues.append(cookie)
+        else:
+            cookie["MissingFlags"] = "None"
+
+    # === 4. Print formatted table report ===
+    if all_cookies:
+        print(Fore.WHITE + "\n📋 Cookie Report:")
+        headers = ["Name", "Domain", "Secure", "HttpOnly", "SameSite", "MissingFlags"]
+        table = [[
+            c["Name"],
+            c["Domain"],
+            "✅" if c["Secure"] else "❌",
+            "✅" if c["HttpOnly"] else "❌",
+            c["SameSite"],
+            c["MissingFlags"]
+        ] for c in all_cookies]
+        print(tabulate(table, headers=headers, tablefmt="grid"))
+
+    else:
+        print(Fore.YELLOW + "\nNo cookies detected for analysis." + Style.RESET_ALL)
+
+    # === 5. Save report to JSON ===
+    '''
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_file = f"cookie_report_{timestamp}.json"
+    with open(report_file, "w", encoding="utf-8") as f:
+        json.dump(all_cookies, f, indent=4)
+
+    print(Fore.GREEN + f"\n✅ Analysis complete. Report saved as: {report_file}" + Style.RESET_ALL)
+    print(Fore.WHITE + "\n(Note: JS cookie capture requires Chrome WebDriver installed.)" + Style.RESET_ALL)
+    
+
+# === Main execution ===
+if __name__ == "__main__":
+    test_url = input("Enter a URL to analyze cookies: ").strip()
+    js_option = input("Include JS cookies with Selenium? (y/n): ").strip().lower()
+    include_js = js_option == "y"
+    analyze_cookies(test_url, include_js)
+    '''
+    # === 6. Return issue summary for main program ===
+    cookie_findings = []
+    for c in issues:
+        sev = "High" if "Secure" in c["MissingFlags"] else ("Medium" if "HttpOnly" in c["MissingFlags"] else "Low")
+        cookie_findings.append({
+            "Category": "Cookie",
+            "Name": c["Name"],
+            "Severity": sev,
+            "Description": f"Missing flags: {c['MissingFlags']}"
+        })
+
+    return cookie_findings
+
+
+#CORS
+import requests
 from colorama import Fore, Style
 
-# Helper: split Set-Cookie header safely if requests collapsed them into one string.
-# We try to obtain multiple Set-Cookie entries from the response first (preferred).
-def _extract_set_cookie_headers(response):
+def analyze_cors(url):
     """
-    Return a list of Set-Cookie header strings from a requests.Response object.
-    Tries several techniques to preserve multiple Set-Cookie lines.
+    Enhanced CORS analysis with early short-circuit for wildcard+credentials,
+    plus optional preflight and reflection checks for deeper analysis.
     """
-    # Preferred: response.raw (if available) may expose get_all
-    try:
-        raw = getattr(response, "raw", None)
-        if raw and hasattr(raw, "headers") and hasattr(raw.headers, "get_all"):
-            cookies = raw.headers.get_all("Set-Cookie") or []
-            if cookies:
-                return cookies
-    except Exception:
-        pass
+    print(Fore.CYAN + "\n🌍 CORS Security Analysis")
+    print("=" * 36)
 
-    # Fallback: requests keeps headers in response.headers (case-insensitive dict).
-    # If multiple Set-Cookie headers were merged into a single string, we attempt to split
-    # using a conservative regex that splits where a new cookie typically starts (<name>=)
-    hdr = response.headers.get("Set-Cookie") or response.headers.get("set-cookie")
-    if not hdr:
-        return []
-
-    # If there is a single cookie, return it directly
-    # Otherwise attempt splitting on pattern: <cookie-name>=...; [attributes],<cookie-name2>=
-    # But cookies themselves may contain commas (rare), so this is a best-effort fallback.
-    parts = []
-    # A robust approach: find all occurrences of "<name>=" at start or after comma+space and split there.
-    # We'll use regex to locate cookie-name= occurrences and slice.
-    matches = list(re.finditer(r'(?:(?<=^)|(?<=, ))([A-Za-z0-9_\-\.]+)=', hdr))
-    if len(matches) <= 1:
-        return [hdr.strip()]
-
-    # Build cookie strings from match positions
-    for i, m in enumerate(matches):
-        start = m.start(1)
-        end = matches[i+1].start(1) if i+1 < len(matches) else len(hdr)
-        cookie_str = hdr[start:end].strip().strip(",")
-        parts.append(cookie_str)
-    return parts
-
-
-def _parse_cookie_string(cookie_str):
-    """
-    Parse one Set-Cookie string into (name, value, attrs_dict)
-    Uses SimpleCookie for name/value extraction, then manual parse for attributes.
-    """
-    cookie = SimpleCookie()
-    try:
-        cookie.load(cookie_str)
-    except Exception:
-        # fallback: try to split manually
-        pass
-
-    if cookie:
-        # take the first key
-        name = next(iter(cookie.keys()))
-        value = cookie[name].value
-    else:
-        # fallback parsing
-        if "=" in cookie_str:
-            name, rest = cookie_str.split("=", 1)
-            # value ends at first semicolon if attributes follow
-            value = rest.split(";", 1)[0].strip()
-            name = name.strip()
-        else:
-            name = cookie_str.strip()
-            value = ""
-
-    # parse attributes
-    attrs = {}
-    parts = cookie_str.split(";")
-    # first part is name=value; skip it
-    for p in parts[1:]:
-        if "=" in p:
-            k, v = p.split("=", 1)
-            attrs[k.strip().lower()] = v.strip()
-        else:
-            attrs[p.strip().lower()] = True
-    return name, value, attrs
-
-
-def analyze_cookies_from_response(response, url=None):
-    """
-    Analyze Set-Cookie headers from a requests.Response object.
-    Returns a list of findings in the same dict format used elsewhere.
-    Notes:
-      - If cookies are set client-side (JS), they won't appear here.
-      - Pass `url` (optional) so we can check if the site uses HTTPS for Secure requirement.
-    """
+    fake_origin = "https://evil-attacker.com"
     findings = []
-    cookies = _extract_set_cookie_headers(response)
 
-    if url:
-        parsed = urlparse(url)
-        is_https = parsed.scheme.lower() == "https"
-    else:
-        # if response.url exists, check that
-        try:
-            is_https = getattr(response, "url", "").lower().startswith("https")
-        except Exception:
-            is_https = False
-
-    if not cookies:
-        findings.append({
-            "Header": "Set-Cookie",
-            "Status": "Missing",
-            "Severity": "Medium",
-            "Recommendation": "No Set-Cookie headers found in the server response. Client-side cookies may still exist (JS)."
-        })
+    try:
+        # 1) simple GET with Origin
+        resp = requests.get(url, headers={"Origin": fake_origin}, timeout=10)
+        # 2) preflight OPTIONS (may reveal Access-Control-Allow-Methods)
+        preflight_resp = requests.options(url, headers={
+            "Origin": fake_origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "X-Test-Header"
+        }, timeout=10)
+    except requests.exceptions.RequestException as e:
+        print(Fore.RED + f"[ERROR] Failed to check CORS: {e}" + Style.RESET_ALL)
         return findings
 
-    # Evaluate each cookie string
-    for cookie_str in cookies:
-        name, value, attrs = _parse_cookie_string(cookie_str)
-        # normalize keys lower-case for checks
-        attrs_lc = {k.lower(): v for k, v in attrs.items()}
+    # prefer preflight headers for methods info, but keep GET headers too
+    combined = {**resp.headers, **preflight_resp.headers}
+    allow_origin = combined.get("Access-Control-Allow-Origin", "")
+    allow_credentials = combined.get("Access-Control-Allow-Credentials", "")
+    allow_methods = combined.get("Access-Control-Allow-Methods", "")
+    vary = combined.get("Vary", "")
 
-        # Basic info item
+    print(Fore.WHITE + "\n📋 CORS Response Headers:")
+    print("-" * 36)
+    print(f"Access-Control-Allow-Origin: {allow_origin or 'N/A'}")
+    print(f"Access-Control-Allow-Credentials: {allow_credentials or 'N/A'}")
+    print(f"Access-Control-Allow-Methods: {allow_methods or 'N/A'}")
+    print(f"Vary: {vary or 'N/A'}")
+    print("-" * 36)
+
+    # --- Immediate critical check: wildcard + credentials (forbidden)
+    if allow_origin == "*" and allow_credentials and allow_credentials.lower() == "true":
         findings.append({
-            "Header": f"Cookie: {name}",
-            "Status": "Present",
-            "Severity": "Low",
-            "Recommendation": f"Cookie '{name}' is present. Review flags below."
+            "Category": "CORS",
+            "Description": "Access-Control-Allow-Origin is '*' while Access-Control-Allow-Credentials is true — invalid and critical.",
+            "Severity": "High",
+            "Recommendation": "Do not use '*' with credentials. Restrict Access-Control-Allow-Origin to a specific trusted origin(s) and return that origin explicitly."
         })
-
-        # Check HttpOnly
-        if "httponly" not in attrs_lc:
+        print(Fore.RED + "[CRITICAL] Wildcard origin with credentials allowed!" + Style.RESET_ALL)
+        # still continue to collect context (Vary, methods), but we already flagged critical
+    else:
+        # --- Wildcard without credentials: medium
+        if allow_origin == "*" and not (allow_credentials and allow_credentials.lower() == "true"):
             findings.append({
-                "Header": f"Cookie: {name} - HttpOnly",
-                "Status": "Missing",
-                "Severity": "High",
-                "Recommendation": "Mark cookie with HttpOnly to mitigate access from JavaScript (reduce XSS impact)."
-            })
-
-        # Check Secure
-        if "secure" not in attrs_lc:
-            # if site is HTTPS, this is High
-            findings.append({
-                "Header": f"Cookie: {name} - Secure",
-                "Status": "Missing",
-                "Severity": "High" if is_https else "Medium",
-                "Recommendation": "Set Secure flag so the cookie is only sent over HTTPS. Required when using SameSite=None."
-            })
-
-        # Check SameSite attribute
-        samesite = attrs_lc.get("samesite")
-        if samesite is None:
-            findings.append({
-                "Header": f"Cookie: {name} - SameSite",
-                "Status": "Missing",
+                "Category": "CORS",
+                "Description": "Access-Control-Allow-Origin is '*' — allows any origin.",
                 "Severity": "Medium",
-                "Recommendation": "Add SameSite=Lax or Strict to mitigate CSRF; if using SameSite=None, ensure Secure is set."
+                "Recommendation": "Avoid wildcard origins. Use a strict whitelist of trusted origins."
             })
-        else:
-            ssv = str(samesite).lower()
-            if ssv not in ("lax", "strict", "none"):
+            print(Fore.YELLOW + "[!] Wildcard origin detected ('*')." + Style.RESET_ALL)
+
+        # --- If allow_origin present and not '*' — check reflection / whitelisting
+        elif allow_origin:
+            # If the server returned the fake_origin value, it's reflection (bad)
+            if fake_origin in allow_origin:
                 findings.append({
-                    "Header": f"Cookie: {name} - SameSite",
-                    "Status": f"Invalid ({samesite})",
-                    "Severity": "Medium",
-                    "Recommendation": "Use SameSite=Lax or SameSite=Strict (or SameSite=None with Secure)."
-                })
-            elif ssv == "none" and "secure" not in attrs_lc:
-                findings.append({
-                    "Header": f"Cookie: {name} - SameSite=None without Secure",
-                    "Status": "Misconfigured",
+                    "Category": "CORS",
+                    "Description": f"Server reflected attacker-controlled Origin ({fake_origin}) — possible CORS bypass.",
                     "Severity": "High",
-                    "Recommendation": "SameSite=None requires Secure; add Secure and ensure HTTPS is used."
+                    "Recommendation": "Do not reflect Origin header. Implement strict server-side origin whitelist checks using absolute comparisons."
                 })
-
-        # Check expiration (Max-Age or Expires)
-        if "max-age" in attrs_lc:
-            try:
-                ma = int(attrs_lc["max-age"])
-                # if very long (> 1 year), flag as informational
-                if ma > 365 * 24 * 3600:
-                    findings.append({
-                        "Header": f"Cookie: {name} - Max-Age",
-                        "Status": f"Long ({ma}s)",
-                        "Severity": "Low",
-                        "Recommendation": "Consider reducing cookie lifetime where possible to limit exposure."
-                    })
-            except Exception:
-                findings.append({
-                    "Header": f"Cookie: {name} - Max-Age",
-                    "Status": f"Invalid ({attrs_lc['max-age']})",
-                    "Severity": "Low",
-                    "Recommendation": "Max-Age value is not numeric; verify cookie configuration."
-                })
-        elif "expires" in attrs_lc:
-            findings.append({
-                "Header": f"Cookie: {name} - Expires",
-                "Status": f"Persistent ({attrs_lc['expires']})",
-                "Severity": "Low",
-                "Recommendation": "Cookie has Expires attribute (persistent). Consider session cookies when appropriate."
-            })
-        else:
-            findings.append({
-                "Header": f"Cookie: {name} - Lifetime",
-                "Status": "Session",
-                "Severity": "Low",
-                "Recommendation": "Cookie is a session cookie (no Expires or Max-Age). Ensure session handling is acceptable."
-            })
-
-        # Domain attribute check (informational)
-        if "domain" in attrs_lc:
-            dom = attrs_lc["domain"]
-            if dom.startswith("."):
-                findings.append({
-                    "Header": f"Cookie: {name} - Domain",
-                    "Status": f"Broad ({dom})",
-                    "Severity": "Low",
-                    "Recommendation": "Cookie domain is broad (leading dot). Ensure domain scoping is intentional."
-                })
+                print(Fore.RED + "[!] Server reflected attacker-controlled Origin. Potential CORS bypass." + Style.RESET_ALL)
             else:
-                findings.append({
-                    "Header": f"Cookie: {name} - Domain",
-                    "Status": f"Set ({dom})",
-                    "Severity": "Low",
-                    "Recommendation": "Domain set; verify this matches the intended scope."
-                })
-
-        # Path attribute (informational)
-        if "path" in attrs_lc:
+                print(Fore.GREEN + "[+] Access-Control-Allow-Origin is not wildcard and does not reflect attacker origin." + Style.RESET_ALL)
+        else:
+            print(Fore.YELLOW + "[!] No Access-Control-Allow-Origin header found." + Style.RESET_ALL)
             findings.append({
-                "Header": f"Cookie: {name} - Path",
-                "Status": f"Set ({attrs_lc['path']})",
+                "Category": "CORS",
+                "Description": "No Access-Control-Allow-Origin header present.",
                 "Severity": "Low",
-                "Recommendation": "Cookie Path set; ensure it is scoped as narrowly as practical."
+                "Recommendation": "If cross-origin access is needed, configure Access-Control-Allow-Origin to only trusted origins."
             })
 
+    # --- Missing Vary: Origin check (when dynamic specific origins are returned)
+    if allow_origin and "*" not in allow_origin:
+        if "origin" not in vary.lower():
+            findings.append({
+                "Category": "CORS",
+                "Description": "Missing 'Vary: Origin' header while returning specific Access-Control-Allow-Origin values.",
+                "Severity": "Medium",
+                "Recommendation": "Add 'Vary: Origin' to avoid caching responses across different origins."
+            })
+            print(Fore.YELLOW + "[!] Missing 'Vary: Origin' — caching issues possible." + Style.RESET_ALL)
+
+    # --- Methods exposure check (from preflight)
+    if allow_methods:
+        unsafe = {"PUT", "DELETE", "PATCH"}
+        methods_set = {m.strip().upper() for m in allow_methods.split(",")}
+        exposed = methods_set.intersection(unsafe)
+        if exposed:
+            findings.append({
+                "Category": "CORS",
+                "Description": f"Unsafe HTTP methods exposed via CORS: {', '.join(sorted(exposed))}",
+                "Severity": "Medium",
+                "Recommendation": "Avoid exposing unsafe methods to cross-origin requests or ensure they require proper authentication."
+            })
+            print(Fore.YELLOW + f"[!] Unsafe methods exposed via CORS: {', '.join(sorted(exposed))}" + Style.RESET_ALL)
+
+    print(Fore.GREEN + "\n✅ CORS analysis completed.\n" + Style.RESET_ALL)
     return findings
 
 
-def print_cookie_findings(findings):
+#findings_summary.py
+from colorama import Fore, Style
+
+def print_summary(header_findings, method_findings, cookie_findings):
     """
-    Pretty-print cookie findings grouped by cookie.
+    Print a compact summary table with counts by severity and an overall risk level.
+    Includes header, method, and cookie analysis findings.
     """
-    if not findings:
-        print(Fore.GREEN + "\n✅ No cookie-related issues found (no Set-Cookie headers)." + Style.RESET_ALL)
-        return
+    all_findings = list(header_findings) + list(method_findings) + list(cookie_findings)
 
-    print("\n" + Fore.CYAN + "🔑 Cookie Security Analysis" + Style.RESET_ALL)
-    print(Fore.CYAN + "────────────────────────────────────────────────────────" + Style.RESET_ALL)
+    # Counts by severity
+    counts = {"High": 0, "Medium": 0, "Low": 0}
+    for f in all_findings:
+        sev = f.get("Severity")
+        if sev in counts:
+            counts[sev] += 1
 
-    # Group findings by cookie prefix (everything before the first " - " if present)
-    grouped = {}
-    for f in findings:
-        header = f["Header"]
-        group = header.split(" - ", 1)[0]  # e.g., "Cookie: sessionid"
-        grouped.setdefault(group, []).append(f)
+    total = sum(counts.values())
 
-    for group_name, items in grouped.items():
-        print(Fore.WHITE + f"\n{group_name}" + Style.RESET_ALL)
-        print(Fore.WHITE + "────────────────────────" + Style.RESET_ALL)
-        for f in items:
-            sev_color = {"High": Fore.RED, "Medium": Fore.YELLOW, "Low": Fore.GREEN}.get(f["Severity"], Fore.WHITE)
-            print(f"{sev_color}{f['Status']}{Style.RESET_ALL} - {f['Recommendation']}")
-        print()  # extra newline per cookie
+    # Overall risk: HIGH if any High, MEDIUM if no High but >=2 Medium, else LOW
+    if counts["High"] > 0:
+        overall = "HIGH"
+    elif counts["Medium"] >= 2:
+        overall = "MEDIUM"
+    else:
+        overall = "LOW"
 
-    print(Fore.CYAN + "────────────────────────────────────────────────────────" + Style.RESET_ALL)
+    # Print table
+    print("\n" + Fore.MAGENTA + "==================== Summary ====================" + Style.RESET_ALL)
+    print(Fore.WHITE + f"Total Issues: {Fore.YELLOW}{total}{Style.RESET_ALL}")
+    print(Fore.RED + f"High Severity: {counts['High']}" + Style.RESET_ALL + " | " +
+          Fore.YELLOW + f"Medium: {counts['Medium']}" + Style.RESET_ALL + " | " +
+          Fore.GREEN + f"Low: {counts['Low']}" + Style.RESET_ALL)
+    print(Fore.WHITE + "Overall Risk: " + (
+        Fore.RED if overall == "HIGH" else
+        (Fore.YELLOW if overall == "MEDIUM" else Fore.GREEN)
+    ) + f"{overall}" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "=================================================" + Style.RESET_ALL)
 
 
 # main.py
-
+'''
 from get_header import get_request, parse_headers, print_headers, print_options_response, get_allowed_methods
-from analyze_header import analyze_security_headers, print_findings, analyze_http_methods, print_http_method_findings
+from http_header import analyze_security_headers, print_findings
+from http_method import analyze_http_methods, print_http_method_findings
 from cookie_checker import analyze_cookies
+from cors_checker import analyze_cors
 from findings_summary import print_summary
+'''
 from colorama import Fore, Style
 
+print(Fore.CYAN + "\n=== Web Security Misconfiguration Analyzer ===" + Style.RESET_ALL)
+
 # === Step 0: Ask for URL ===
-url = input(Fore.WHITE + "Enter an URL to test your header: " + Style.RESET_ALL).strip()
+url = input(Fore.WHITE + "\nEnter an URL to test your header: " + Style.RESET_ALL).strip()
 
 # === Step 1: Header Check ===
 print(Fore.CYAN + "\n[1/4] Checking HTTP headers..." + Style.RESET_ALL)
@@ -680,9 +735,14 @@ if options_header == 'y':
 print(Fore.CYAN + "\n[3/4] Performing Cookie Security Analysis..." + Style.RESET_ALL)
 cookie_findings = analyze_cookies(url, include_js_cookies=True)
 
-# === Step 4: Combined Summary ===
-print(Fore.GREEN + "\n[4/4] All security misconfiguration checks completed!" + Style.RESET_ALL)
-print_summary(findings, method_findings, cookie_findings)
+# === Step 4: CORS Security Analysis ===
+print(Fore.CYAN + "\n[4/5] Checking Cross-Origin Resource Sharing (CORS) configuration..." + Style.RESET_ALL)
+cors_findings = analyze_cors(url)
+
+# === Step 5: Combined Summary ===
+print(Fore.GREEN + "\n[5/5] All security misconfiguration checks completed!" + Style.RESET_ALL)
+print_summary(findings, method_findings, cookie_findings + cors_findings)
+
 
 
 #https://httpbin.org/cookies/set?testcookie=value123

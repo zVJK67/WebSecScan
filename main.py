@@ -1,5 +1,6 @@
 from get_header import get_request, parse_headers, print_headers, print_options_response, get_allowed_methods
-from analyze_header import analyze_security_headers, print_findings, analyze_http_methods, print_http_method_findings
+from http_header import analyze_security_headers, print_findings
+from http_method import analyze_http_methods, print_http_method_findings
 from cookie_checker import analyze_cookies
 from cors_checker import analyze_cors
 from findings_summary import print_summary
