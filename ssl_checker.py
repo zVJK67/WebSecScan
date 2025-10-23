@@ -1,6 +1,7 @@
 import ssl
 import socket
 import datetime
+import urllib.parse
 
 def check_ssl_tls(hostname):
     result = {
@@ -49,7 +50,7 @@ def check_ssl_tls(hostname):
     return result
 
 
-def print_ssl_report(data):
+def print_ssl_result(data):
     print("\n🔒 SSL/TLS Security Analysis")
     print("=" * 60)
     if data["error"]:
@@ -68,7 +69,6 @@ def print_ssl_report(data):
 
     print("=" * 60)
 
-import urllib.parse
 
 def run_ssl_check(target_url):
     hostname = urllib.parse.urlparse(target_url).hostname
@@ -76,11 +76,12 @@ def run_ssl_check(target_url):
         print("[ERROR] Invalid URL format.")
         return
     ssl_data = check_ssl_tls(hostname)
-    print_ssl_report(ssl_data)
+    print_ssl_result(ssl_data)
 
-
+'''
 from colorama import Fore, Style
 # === Step 0: Ask for URL ===
 target_url = input(Fore.WHITE + "\nEnter an URL to test your header: " + Style.RESET_ALL).strip()
 
 run_ssl_check(target_url)
+'''

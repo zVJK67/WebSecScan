@@ -346,8 +346,3 @@ def analyze_cors(url):
 
     print(Fore.CYAN + "\nCORS analysis completed.\n" + Style.RESET_ALL)
     return findings
-
-# === Step 0: Ask for URL ===
-url = input(Fore.WHITE + "\nEnter an URL to test your header: " + Style.RESET_ALL).strip()
-
-cors_findings = analyze_cors(url)
