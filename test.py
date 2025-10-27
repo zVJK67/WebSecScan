@@ -1,3 +1,4 @@
+from banner import print_banner
 from get_header import get_request, parse_headers, print_headers, print_options_response, get_allowed_methods
 from http_header import analyze_security_headers, print_findings
 from http_method import analyze_http_methods, print_http_method_findings
@@ -7,7 +8,7 @@ from ssl_checker import run_ssl_check  # ✅ added import
 from findings_summary import print_summary
 from colorama import Fore, Style
 
-print(Fore.CYAN + "\n=== Web Security Misconfiguration Analyzer ===" + Style.RESET_ALL)
+print_banner()
 
 # === Step 0: Ask for URL ===
 url = input(Fore.WHITE + "\nEnter an URL to test your header: " + Style.RESET_ALL).strip()
