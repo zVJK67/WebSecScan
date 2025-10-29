@@ -38,6 +38,8 @@ This checklist outlines all tasks required to complete the WebSec Analyzer proje
 - X-Content-Type-Options
 - Referrer-Policy
 - Permissions-Policy
+- Server
+- [ ] Check every headers severity by library
 - [ ] Return findings in structured format (ID, Severity, Remediation)
 - [ ] Unit tests with mock headers
 
@@ -128,3 +130,74 @@ websec_analyzer/
 ├─ reporting.py
 ├─ utils.py
 └─ tests/
+
+ask:
+- need to combine GET and OPTIONS response into one or remain the same?
+
+https://httpbin.org/cookies/set?testcookie=value123
+https://httpbin.org/cookies/anything
+
+https://example.com
+https://httpbin.org/get
+https://httpbin.org/anything
+https://httpbin.org/status/418
+https://httpbin.org/response-headers?Allow=GET,POST,OPTIONS
+https://www.apache.org
+https://nginx.org
+https://www.cloudflare.com
+https://www.google.com
+https://github.com
+https://stackoverflow.com
+https://www.howsmyssl.com/a/check
+https://wrong.host.badssl.com/
+https://expired.badssl.com/
+http://localhost:8000
+
+General/simple
+
+https://example.com — simple static page, predictable headers.
+
+https://httpbin.org/get — echo for GET requests (shows headers, origin, url).
+
+https://httpbin.org/anything — echoes request method + body + headers (good for testing non-GET methods).
+
+
+Methods / OPTIONS / HTTP behavior
+
+https://httpbin.org/anything — accepts many methods and returns the method used.
+
+https://httpbin.org/status/418 — returns HTTP 418 (useful to test non-2xx handling).
+
+https://httpbin.org/response-headers?Allow=GET,POST,OPTIONS — returns custom headers (good to test Allow parsing).
+
+
+Server header / product/version differences
+
+https://www.apache.org — often shows an Apache-flavored Server header.
+
+https://nginx.org — will usually show nginx in Server header.
+
+https://www.cloudflare.com — typically fronted by Cloudflare (different headers).
+
+
+CDNs, redirects & real-world complex sites
+
+https://www.google.com — big site that redirects and uses complex headers/CDN.
+
+https://github.com — real-world site with redirects, security headers, CDN.
+
+https://stackoverflow.com — useful for observing HSTS, CSP and other security headers.
+
+
+TLS/SSL testing
+
+https://www.howsmyssl.com/a/check — TLS/SSL testing endpoint (returns JSON about TLS).
+
+https://wrong.host.badssl.com/ — intentionally fails hostname validation (useful to test verify=False behavior with caution).
+
+https://expired.badssl.com/ — expired cert (test SSL verify handling).
+
+
+Local / controlled testing (if you run services locally)
+
+http://localhost:8000 — if you run a local server (quick to spin up and fully under your control).

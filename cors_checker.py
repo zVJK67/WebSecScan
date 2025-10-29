@@ -1,335 +1,214 @@
-'''
+from typing import List, Dict, Any, Optional
+from urllib.parse import urlparse
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from colorama import Fore, Style
 
-def analyze_cors(url):
-    """
-    Analyze CORS configuration for potential misconfigurations.
-    Returns a list of findings with severity for summary aggregation.
-    """
-    print(Fore.CYAN + "\n🌍 CORS Security Analysis")
-    print("=" * 36)
+# --- Helpers ---
+def _normalize_url(url: str) -> str:
+    parsed = urlparse(url)
+    if not parsed.scheme:
+        return "http://" + url
+    return url
 
-    fake_origin = "https://evil-attacker.com"
-    headers = {"Origin": fake_origin}
-    findings = []
+def _get_session(retries: int = 2, backoff: float = 0.2) -> requests.Session:
+    s = requests.Session()
+    retry = Retry(total=retries, backoff_factor=backoff,
+                  status_forcelist=(429, 500, 502, 503, 504),
+                  allowed_methods=frozenset(["GET", "HEAD", "OPTIONS"]))
+    adapter = HTTPAdapter(max_retries=retry)
+    s.mount("http://", adapter)
+    s.mount("https://", adapter)
+    s.headers.update({"User-Agent": "WebSecScan/1.0"})
+    return s
+
+def _hdr(resp: Optional[requests.Response], name: str) -> Optional[str]:
+    if resp is None:
+        return None
+    return resp.headers.get(name)
+
+# --- Main function ---
+def analyze_cors(url: str, fake_origin: str = "https://evil-attacker.com", timeout: int = 10) -> List[Dict[str, Any]]:
+    """
+    Perform CORS analysis:
+      - original GET and OPTIONS (no Origin)
+      - probe GET and OPTIONS with a fake attacker Origin
+    Returns a list of findings (each finding is a dict with keys Category, Description, Severity, Recommendation, Context).
+    """
+    target = _normalize_url(url)
+    session = _get_session()
+    findings: List[Dict[str, Any]] = []
+
+    print(Fore.CYAN + "\n🌍 CORS Security Analysis (Detailed View)" + Style.RESET_ALL)
+    print(Fore.CYAN + "=" * 60 + Style.RESET_ALL)
 
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-    except requests.exceptions.RequestException as e:
-        print(Fore.RED + f"[ERROR] Failed to check CORS: {e}" + Style.RESET_ALL)
-        return findings
-
-    allow_origin = response.headers.get("Access-Control-Allow-Origin", "")
-    allow_credentials = response.headers.get("Access-Control-Allow-Credentials", "")
-    allow_methods = response.headers.get("Access-Control-Allow-Methods", "")
-
-    print(Fore.WHITE + "\n📋 CORS Response Headers:")
-    print("-" * 36)
-    print(f"Access-Control-Allow-Origin: {allow_origin or 'N/A'}")
-    print(f"Access-Control-Allow-Credentials: {allow_credentials or 'N/A'}")
-    print(f"Access-Control-Allow-Methods: {allow_methods or 'N/A'}")
-    print("-" * 36)
-
-    # === Misconfiguration Detection ===
-    if not allow_origin:
-        findings.append({
-            "Category": "CORS",
-            "Description": "CORS not configured (no Access-Control-Allow-Origin header).",
-            "Severity": "Low"
-        })
-        print(Fore.YELLOW + "[!] No Access-Control-Allow-Origin header found. CORS may not be enabled." + Style.RESET_ALL)
-    else:
-        if allow_origin == "*":
-            if allow_credentials.lower() == "true":
-                findings.append({
-                    "Category": "CORS",
-                    "Description": "Wildcard origin ('*') combined with credentials allowed — severe misconfiguration.",
-                    "Severity": "High"
-                })
-                print(Fore.RED + "[CRITICAL] Wildcard origin with credentials allowed!" + Style.RESET_ALL)
-            else:
-                findings.append({
-                    "Category": "CORS",
-                    "Description": "Wildcard origin allowed ('*') — potential data exposure risk.",
-                    "Severity": "Medium"
-                })
-                print(Fore.YELLOW + "[!] Wildcard origin detected ('*')." + Style.RESET_ALL)
-        elif fake_origin in allow_origin:
-            findings.append({
-                "Category": "CORS",
-                "Description": f"Server reflects arbitrary origin ({fake_origin}) — possible CORS misconfiguration.",
-                "Severity": "High"
-            })
-            print(Fore.RED + "[!] Server reflected attacker-controlled Origin. Potential CORS bypass." + Style.RESET_ALL)
-        else:
-            print(Fore.GREEN + "[+] Origin not reflected. CORS seems properly restricted." + Style.RESET_ALL)
-
-    print(Fore.GREEN + "\n✅ CORS analysis completed.\n" + Style.RESET_ALL)
-    return findings
-
-
-import requests
-from colorama import Fore, Style
-
-def analyze_cors(url):
-    """
-    Analyze CORS configuration for potential misconfigurations.
-    Returns a list of findings with severity for summary aggregation.
-    """
-    print(Fore.CYAN + "\n🌍 CORS Security Analysis")
-    print("=" * 36)
-
-    fake_origin = "https://evil-attacker.com"
-    headers = {"Origin": fake_origin}
-    findings = []
+        orig_get = session.get(target, timeout=timeout)
+    except requests.RequestException as e:
+        print(Fore.RED + f"[ERROR] Original GET request failed: {e}" + Style.RESET_ALL)
+        orig_get = None
 
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-    except requests.exceptions.RequestException as e:
-        print(Fore.RED + f"[ERROR] Failed to check CORS: {e}" + Style.RESET_ALL)
-        return findings
+        orig_options = session.options(target, timeout=timeout)
+    except requests.RequestException:
+        orig_options = None
 
-    # Extract headers safely
-    allow_origin = response.headers.get("Access-Control-Allow-Origin", "")
-    allow_credentials = response.headers.get("Access-Control-Allow-Credentials", "")
-    allow_methods = response.headers.get("Access-Control-Allow-Methods", "")
-    vary_header = response.headers.get("Vary", "")
-
-    # Show CORS response headers
-    print(Fore.WHITE + "\n📋 CORS Response Headers:")
-    print("-" * 36)
-    print(f"Access-Control-Allow-Origin: {allow_origin or 'N/A'}")
-    print(f"Access-Control-Allow-Credentials: {allow_credentials or 'N/A'}")
-    print(f"Access-Control-Allow-Methods: {allow_methods or 'N/A'}")
-    print(f"Vary: {vary_header or 'N/A'}")
-    print("-" * 36)
-
-    # === Misconfiguration Detection ===
-    if not allow_origin:
-        findings.append({
-            "Category": "CORS",
-            "Description": "CORS not configured (no Access-Control-Allow-Origin header).",
-            "Severity": "Low",
-            "Recommendation": "Add Access-Control-Allow-Origin for controlled cross-domain resource sharing."
-        })
-        print(Fore.YELLOW + "[!] No Access-Control-Allow-Origin header found. CORS may not be enabled." + Style.RESET_ALL)
-
-    else:
-        if allow_origin == "*":
-            if allow_credentials.lower() == "true":
-                findings.append({
-                    "Category": "CORS",
-                    "Description": "Wildcard origin ('*') combined with credentials allowed — severe misconfiguration.",
-                    "Severity": "High",
-                    "Recommendation": "Never use '*' with Access-Control-Allow-Credentials: true. Use specific origins."
-                })
-                print(Fore.RED + "[CRITICAL] Wildcard origin with credentials allowed!" + Style.RESET_ALL)
-            else:
-                findings.append({
-                    "Category": "CORS",
-                    "Description": "Wildcard origin allowed ('*') — potential data exposure risk.",
-                    "Severity": "Medium",
-                    "Recommendation": "Avoid wildcard origin ('*'). Specify trusted origins explicitly."
-                })
-                print(Fore.YELLOW + "[!] Wildcard origin detected ('*')." + Style.RESET_ALL)
-
-        elif fake_origin in allow_origin:
-            findings.append({
-                "Category": "CORS",
-                "Description": f"Server reflects arbitrary origin ({fake_origin}) — possible CORS misconfiguration.",
-                "Severity": "High",
-                "Recommendation": "Do not dynamically reflect Origin headers. Use strict whitelisting."
-            })
-            print(Fore.RED + "[!] Server reflected attacker-controlled Origin. Potential CORS bypass." + Style.RESET_ALL)
-
-        else:
-            print(Fore.GREEN + "[+] Origin not reflected. CORS seems properly restricted." + Style.RESET_ALL)
-
-    # === Check for missing 'Vary: Origin' header ===
-    if allow_origin and "*" not in allow_origin and "Origin" not in vary_header:
-        findings.append({
-            "Category": "CORS",
-            "Description": "Missing 'Vary: Origin' header with specific origin — could cause caching vulnerabilities.",
-            "Severity": "Low",
-            "Recommendation": "Add 'Vary: Origin' when responding with specific Access-Control-Allow-Origin values."
-        })
-        print(Fore.YELLOW + "[!] Missing 'Vary: Origin' — caching issues possible for dynamic CORS responses." + Style.RESET_ALL)
-
-    print(Fore.GREEN + "\n✅ CORS analysis completed.\n" + Style.RESET_ALL)
-    return findings
-'''
-
-import requests
-from colorama import Fore, Style
-
-def analyze_cors(url):
-    """
-    CORS analysis that shows:
-      1) original GET response (no Origin header)
-      2) original OPTIONS response (no Origin)
-      3) probe GET and probe OPTIONS with a malicious Origin
-    Then it prints findings based on the observed headers.
-    """
-    print(Fore.CYAN + "\n🌍 CORS Security Analysis (Detailed View)")
-    print("=" * 60)
-
-    fake_origin = "https://evil-attacker.com"
-    findings = []
-
+    # Probe with fake origin
+    probe_headers = {"Origin": fake_origin}
     try:
-        # 1) Original GET (no Origin)
-        orig_get = requests.get(url, timeout=10)
+        probe_get = session.get(target, headers=probe_headers, timeout=timeout)
+    except requests.RequestException:
+        probe_get = None
 
-        # 2) Original OPTIONS (no Origin) - some servers may respond differently
-        orig_options = requests.options(url, timeout=10)
+    preflight_headers = {
+        "Origin": fake_origin,
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "X-Test-Header"
+    }
+    try:
+        probe_options = session.options(target, headers=preflight_headers, timeout=timeout)
+    except requests.RequestException:
+        probe_options = None
 
-        # 3) Probe GET with attacker Origin (simple request)
-        probe_get = requests.get(url, headers={"Origin": fake_origin}, timeout=10)
-
-        # 4) Probe OPTIONS (preflight) with attacker Origin
-        probe_options = requests.options(url, headers={
-            "Origin": fake_origin,
-            "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "X-Test-Header"
-        }, timeout=10)
-
-    except requests.exceptions.RequestException as e:
-        print(Fore.RED + f"[ERROR] Failed to perform CORS checks: {e}" + Style.RESET_ALL)
-        return findings
-
-    # Helper to pretty-print a subset of CORS headers from a response
-    def cors_headers_from(resp):
+    # Extract relevant CORS headers (use full names now)
+    def cors_subset(resp: Optional[requests.Response]) -> Dict[str, Optional[str]]:
         return {
-            "Access-Control-Allow-Origin": resp.headers.get("Access-Control-Allow-Origin"),
-            "Access-Control-Allow-Credentials": resp.headers.get("Access-Control-Allow-Credentials"),
-            "Access-Control-Allow-Methods": resp.headers.get("Access-Control-Allow-Methods"),
-            "Vary": resp.headers.get("Vary"),
-            "Access-Control-Max-Age": resp.headers.get("Access-Control-Max-Age")
+            "Access-Control-Allow-Origin": _hdr(resp, "Access-Control-Allow-Origin"),
+            "Access-Control-Allow-Credentials": _hdr(resp, "Access-Control-Allow-Credentials"),
+            "Access-Control-Allow-Methods": _hdr(resp, "Access-Control-Allow-Methods"),
+            "Access-Control-Max-Age": _hdr(resp, "Access-Control-Max-Age"),
+            "Vary": _hdr(resp, "Vary"),
         }
 
-    # Gather headers
-    orig_get_h = cors_headers_from(orig_get)
-    orig_options_h = cors_headers_from(orig_options)
-    probe_get_h = cors_headers_from(probe_get)
-    probe_options_h = cors_headers_from(probe_options)
+    orig_get_h = cors_subset(orig_get)
+    orig_options_h = cors_subset(orig_options)
+    probe_get_h = cors_subset(probe_get)
+    probe_options_h = cors_subset(probe_options)
 
-    # --- 1) Show Original GET response headers (no Origin sent) ---
-    print(Fore.WHITE + "\n1) Original GET response (no Origin header sent):")
-    print("-" * 60)
-    for k, v in orig_get_h.items():
-        print(f"{k}: {v or 'N/A'}")
-    print("-" * 60)
+    # --- Print observed headers (useful for debug/report) ---
+    def _print_section(title: str, headers: Dict[str, Optional[str]]) -> None:
+        print(Fore.WHITE + f"\n{title}" + Style.RESET_ALL)
+        print("-" * 60)
+        for k, v in headers.items():
+            print(f"{k}: {v or 'N/A'}")
+        print("-" * 60)
 
-    # --- 2) Show Original OPTIONS response headers (no Origin) ---
-    print(Fore.WHITE + "\n2) Original OPTIONS response (no Origin header sent):")
-    print("-" * 60)
-    for k, v in orig_options_h.items():
-        print(f"{k}: {v or 'N/A'}")
-    print("-" * 60)
+    _print_section("1) Original GET response (no Origin header sent):", orig_get_h)
+    _print_section("2) Original OPTIONS response (no Origin header sent):", orig_options_h)
+    _print_section(f"3) Probe GET response (Origin: {fake_origin}):", probe_get_h)
+    _print_section(f"4) Probe OPTIONS response (preflight, Origin: {fake_origin}):", probe_options_h)
 
-    # --- 3) Show Probe GET response headers (we sent attacker Origin) ---
-    print(Fore.WHITE + f"\n3) Probe GET response (Origin: {fake_origin}):")
-    print("-" * 60)
-    for k, v in probe_get_h.items():
-        print(f"{k}: {v or 'N/A'}")
-    print("-" * 60)
+    # --- Analysis ---
+    print(Fore.WHITE + "\n🔎 Analysis (based on probe and original responses):\n" + Style.RESET_ALL)
 
-    # --- 4) Show Probe OPTIONS (preflight) response headers (we sent attacker Origin) ---
-    print(Fore.WHITE + f"\n4) Probe OPTIONS response (Origin: {fake_origin} preflight):")
-    print("-" * 60)
-    for k, v in probe_options_h.items():
-        print(f"{k}: {v or 'N/A'}")
-    print("-" * 60)
+    # pick best sources for values
+    allow_origin = probe_options_h.get("Access-Control-Allow-Origin") or probe_get_h.get("Access-Control-Allow-Origin") \
+                   or orig_options_h.get("Access-Control-Allow-Origin") or orig_get_h.get("Access-Control-Allow-Origin")
+    allow_credentials = probe_options_h.get("Access-Control-Allow-Credentials") or probe_get_h.get("Access-Control-Allow-Credentials") \
+                        or orig_options_h.get("Access-Control-Allow-Credentials") or orig_get_h.get("Access-Control-Allow-Credentials")
+    allow_methods = probe_options_h.get("Access-Control-Allow-Methods") or orig_options_h.get("Access-Control-Allow-Methods")
+    vary_val = probe_options_h.get("Vary") or probe_get_h.get("Vary") or orig_options_h.get("Vary") or orig_get_h.get("Vary")
 
-    # --- Analysis / Findings ---
-    print(Fore.WHITE + f"\n🔎 Analysis (based on probe and original responses):\n")
+    # Normalize credential header presence
+    allow_credentials_bool = bool(allow_credentials and str(allow_credentials).strip().lower() == "true")
 
-    # Prefer probe_options for methods if present, else probe_get, else original options
-    allow_origin_probe = probe_options_h.get("Access-Control-Allow-Origin") or probe_get_h.get("Access-Control-Allow-Origin")
-    allow_credentials_probe = probe_options_h.get("Access-Control-Allow-Credentials") or probe_get_h.get("Access-Control-Allow-Credentials")
-    allow_methods_probe = probe_options_h.get("Access-Control-Allow-Methods") or probe_get_h.get("Access-Control-Allow-Methods")
-    vary_probe = probe_options_h.get("Vary") or probe_get_h.get("Vary")
-
-    # Immediate critical short-circuit: wildcard + credentials (any context)
-    if (allow_origin_probe == "*" or orig_get_h.get("Access-Control-Allow-Origin") == "*"
-        or orig_options_h.get("Access-Control-Allow-Origin") == "*") \
-       and (allow_credentials_probe and allow_credentials_probe.lower() == "true"):
+    # 1) Wildcard + credentials (critical)
+    wildcard_seen = any((v == "*") for v in [
+        allow_origin,
+        orig_get_h.get("Access-Control-Allow-Origin"),
+        orig_options_h.get("Access-Control-Allow-Origin")
+    ])
+    if wildcard_seen and allow_credentials_bool:
         findings.append({
             "Category": "CORS",
             "Description": "Access-Control-Allow-Origin is '*' while Access-Control-Allow-Credentials is true — invalid and critical.",
             "Severity": "High",
             "Context": "Observed in original or probe responses",
-            "Recommendation": "Do not use '*' with credentials. Return explicit trusted origin(s) instead and ensure credentials are only allowed for those origins."
+            "Recommendation": "Do not use '*' with credentials. Return explicit trusted origin(s) instead."
         })
-        print(Fore.RED + "[CRITICAL] Detected Access-Control-Allow-Origin: *  AND  Access-Control-Allow-Credentials: true")
-        print(Fore.RED + "→ Browsers disallow credentials with wildcard; this signals a server-side misconfiguration.\n" + Style.RESET_ALL)
+        print(Fore.RED + "[CRITICAL] ACAO='*' with credentials=true detected.\n" + Style.RESET_ALL)
 
-    # If not short-circuited, continue deeper checks:
-    # Check reflection: did the server echo our fake origin back?
-    if allow_origin_probe:
-        if fake_origin in str(allow_origin_probe):
+    # 2) Reflection: server echoed attacker origin back
+    if allow_origin:
+        allowed = str(allow_origin).strip()
+        if allowed == fake_origin or fake_origin in allowed:
             findings.append({
                 "Category": "CORS",
                 "Description": f"Server reflected attacker Origin ({fake_origin}) in Access-Control-Allow-Origin.",
                 "Severity": "High",
                 "Context": "Probe response",
-                "Recommendation": "Do not reflect arbitrary Origin values. Use a strict server-side whitelist with absolute comparisons."
+                "Recommendation": "Do not reflect arbitrary Origin values. Use a strict server-side whitelist."
             })
-            print(Fore.RED + f"[!] Server reflected attacker Origin in probe response: {allow_origin_probe}" + Style.RESET_ALL)
-        elif allow_origin_probe == "*":
-            # flagged earlier if credentials true; otherwise medium
+            print(Fore.RED + f"[!] Reflected attacker origin in ACAO: {allowed}" + Style.RESET_ALL)
+        elif allowed == "null":
             findings.append({
                 "Category": "CORS",
-                "Description": "Access-Control-Allow-Origin: * (wildcard) observed in probe response.",
+                "Description": "Access-Control-Allow-Origin: null returned (opaque origin).",
+                "Severity": "Low",
+                "Context": "Probe response",
+                "Recommendation": "Check if 'null' is required; otherwise restrict CORS origins."
+            })
+            print(Fore.YELLOW + "[!] ACAO: null observed." + Style.RESET_ALL)
+        elif allowed == "*":
+            findings.append({
+                "Category": "CORS",
+                "Description": "Access-Control-Allow-Origin: * (wildcard) observed in response.",
                 "Severity": "Medium",
                 "Context": "Probe / Original responses",
-                "Recommendation": "Avoid wildcard origins; use an explicit whitelist of trusted origins."
+                "Recommendation": "Avoid wildcard origins; use an explicit whitelist."
             })
-            print(Fore.YELLOW + "[!] Access-Control-Allow-Origin: * observed in probe response." + Style.RESET_ALL)
+            print(Fore.YELLOW + "[!] ACAO: * observed." + Style.RESET_ALL)
         else:
-            print(Fore.GREEN + "[+] Probe response did not reflect attacker origin and did not return wildcard." + Style.RESET_ALL)
+            print(Fore.GREEN + "[+] No reflection or wildcard origin found." + Style.RESET_ALL)
     else:
-        print(Fore.YELLOW + "[!] Probe did not return Access-Control-Allow-Origin header." + Style.RESET_ALL)
+        print(Fore.YELLOW + "[!] No ACAO header returned in probe." + Style.RESET_ALL)
         findings.append({
             "Category": "CORS",
-            "Description": "No Access-Control-Allow-Origin returned in probe response.",
+            "Description": "No Access-Control-Allow-Origin header in probe response.",
             "Severity": "Low",
             "Context": "Probe response",
-            "Recommendation": "If cross-origin access is required, use a strict whitelist and return that origin explicitly."
+            "Recommendation": "If cross-origin access is needed, return specific allowed origins explicitly."
         })
 
-    # Vary: Origin check when specific origin(s) are returned (avoid caching pitfalls)
-    # We examine original and probe vary headers — prefer probe options
-    vary_val = (probe_options_h.get("Vary") or probe_get_h.get("Vary") or orig_options_h.get("Vary") or orig_get_h.get("Vary") or "")
-    if allow_origin_probe and "*" not in (allow_origin_probe or ""):
+    # 3) Vary header check
+    if allow_origin and allow_origin not in ("*", "null"):
         if "origin" not in (vary_val or "").lower():
             findings.append({
                 "Category": "CORS",
                 "Description": "Missing 'Vary: Origin' when returning specific Access-Control-Allow-Origin values.",
                 "Severity": "Medium",
                 "Context": "Observed in responses (probe/original)",
-                "Recommendation": "Add 'Vary: Origin' to prevent caching of a CORS response for multiple different origins."
+                "Recommendation": "Add 'Vary: Origin' to prevent caching issues with dynamic origins."
             })
-            print(Fore.YELLOW + "[!] Missing 'Vary: Origin' — caching issues possible for dynamic CORS responses." + Style.RESET_ALL)
+            print(Fore.YELLOW + "[!] Missing 'Vary: Origin' header." + Style.RESET_ALL)
 
-    # Methods exposure: look at preflight probe OR original options
-    methods_val = allow_methods_probe or orig_options_h.get("Access-Control-Allow-Methods") or ""
-    if methods_val:
-        methods_set = {m.strip().upper() for m in methods_val.split(",")}
-        unsafe = {"PUT", "DELETE", "PATCH"}
-        exposed = methods_set.intersection(unsafe)
+    # 4) Methods exposure
+    if allow_methods:
+        methods_set = {m.strip().upper() for m in str(allow_methods).split(",") if m.strip()}
+        unsafe_methods = {"PUT", "DELETE", "PATCH"}
+        exposed = methods_set.intersection(unsafe_methods)
         if exposed:
             findings.append({
                 "Category": "CORS",
-                "Description": f"Unsafe HTTP methods exposed via CORS or preflight: {', '.join(sorted(exposed))}",
+                "Description": f"Unsafe HTTP methods exposed via CORS/preflight: {', '.join(sorted(exposed))}",
                 "Severity": "Medium",
                 "Context": "Probe preflight or original OPTIONS",
-                "Recommendation": "Avoid allowing unsafe methods cross-origin or require strict authentication/authorization."
+                "Recommendation": "Restrict unsafe HTTP methods or require authentication."
             })
-            print(Fore.YELLOW + f"[!] Unsafe methods exposed via CORS/preflight: {', '.join(sorted(exposed))}" + Style.RESET_ALL)
+            print(Fore.YELLOW + f"[!] Unsafe methods exposed: {', '.join(sorted(exposed))}" + Style.RESET_ALL)
 
-    # final summary header
+    # 5) Credentials allowed but no explicit origin
+    if allow_credentials_bool and (allow_origin is None or allow_origin in ("", "null")):
+        findings.append({
+            "Category": "CORS",
+            "Description": "Access-Control-Allow-Credentials is true but no explicit allowed origin returned.",
+            "Severity": "Medium",
+            "Context": "Probe/original responses",
+            "Recommendation": "Return explicit trusted origin when credentials are allowed."
+        })
+
+    # Summary
     total = len(findings)
     print(Fore.WHITE + f"\nSummary: {total} CORS findings detected." + Style.RESET_ALL)
     if total:
@@ -340,9 +219,8 @@ def analyze_cors(url):
             if "Context" in f:
                 print(f"   Context: {f['Context']}")
             print(f"   Recommendation: {f['Recommendation']}")
-
     else:
-        print(Fore.GREEN + "No CORS issues detected.\n" + Style.RESET_ALL)
+        print(Fore.GREEN + "✅ No CORS issues detected.\n" + Style.RESET_ALL)
 
     print(Fore.CYAN + "\nCORS analysis completed.\n" + Style.RESET_ALL)
     return findings

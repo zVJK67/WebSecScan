@@ -1,10 +1,32 @@
+import re
+from typing import Dict, List, Any
 from colorama import Fore, Style
 
-def analyze_security_headers(headers):
-    findings = []
+"""
+http_header.py — improved HTTP security header analyzer
+
+Usage:
+    findings = analyze_security_headers(response.headers)
+    print_findings(findings)
+"""
+
+def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
+    """
+    Analyze a headers mapping for common security header issues.
+
+    - headers: mapping-like object (case-insensitive expected). We normalize to lowercase keys internally.
+    - returns: list of findings dicts with keys: Header, Status, Severity, Recommendation, (optional) Detail
+    """
+    findings: List[Dict[str, Any]] = []
+
+    # Normalize header keys to lowercase for robust lookup
+    lower_headers = {k.lower(): (v if v is not None else "") for k, v in headers.items()}
+
+    def hdr(name: str) -> str:
+        return lower_headers.get(name.lower(), "")
 
     # --- Content Security Policy (CSP) ---
-    csp = headers.get("Content-Security-Policy")
+    csp = hdr("Content-Security-Policy")
     if not csp:
         findings.append({
             "Header": "Content-Security-Policy",
@@ -13,23 +35,36 @@ def analyze_security_headers(headers):
             "Recommendation": "Add a CSP header to control sources of scripts, styles, and media."
         })
     else:
-        if "'unsafe-inline'" in csp or "'unsafe-eval'" in csp:
+        # use regex to detect unsafe tokens robustly
+        if re.search(r"(?:'|\")?unsafe-inline(?:'|\")?", csp, re.IGNORECASE) or re.search(r"(?:'|\")?unsafe-eval(?:'|\")?", csp, re.IGNORECASE):
             findings.append({
                 "Header": "Content-Security-Policy",
                 "Status": "Misconfigured",
                 "Severity": "Medium",
-                "Recommendation": "Avoid using 'unsafe-inline' or 'unsafe-eval' in CSP for stronger XSS protection."
+                "Recommendation": "Avoid 'unsafe-inline' and 'unsafe-eval' in CSP. Use nonces/hashes or stricter directives.",
+                "Detail": csp
             })
         else:
-            findings.append({
-                "Header": "Content-Security-Policy",
-                "Status": "Present",
-                "Severity": "Low",
-                "Recommendation": "CSP implemented properly."
-            })
+            # check presence of at least a default-src or script-src directive
+            if not re.search(r"(?:^|\s)(default-src|script-src)\s", csp, re.IGNORECASE):
+                findings.append({
+                    "Header": "Content-Security-Policy",
+                    "Status": "Misconfigured",
+                    "Severity": "Medium",
+                    "Recommendation": "CSP present but lacks default-src or script-src directive; add explicit directives.",
+                    "Detail": csp
+                })
+            else:
+                findings.append({
+                    "Header": "Content-Security-Policy",
+                    "Status": "Present",
+                    "Severity": "Low",
+                    "Recommendation": "CSP found. Review directives for overly permissive sources.",
+                    "Detail": csp
+                })
 
     # --- Strict Transport Security (HSTS) ---
-    hsts = headers.get("Strict-Transport-Security")
+    hsts = hdr("Strict-Transport-Security")
     if not hsts:
         findings.append({
             "Header": "Strict-Transport-Security",
@@ -38,16 +73,49 @@ def analyze_security_headers(headers):
             "Recommendation": "Enable HSTS (Strict-Transport-Security) to enforce HTTPS and prevent downgrade attacks."
         })
     else:
-        if "max-age" not in hsts.lower():
+        # try to extract max-age
+        m = re.search(r"max-age\s*=\s*(\d+)", hsts, re.IGNORECASE)
+        if not m:
             findings.append({
                 "Header": "Strict-Transport-Security",
                 "Status": "Misconfigured",
                 "Severity": "Medium",
-                "Recommendation": "Add 'max-age' directive (e.g., max-age=31536000) to HSTS for proper enforcement."
+                "Recommendation": "Add 'max-age' directive (e.g., max-age=31536000) to HSTS for proper enforcement.",
+                "Detail": hsts
             })
+        else:
+            try:
+                max_age = int(m.group(1))
+            except ValueError:
+                max_age = 0
+            # recommended at least 1 year (31536000 seconds)
+            if max_age < 31536000:
+                findings.append({
+                    "Header": "Strict-Transport-Security",
+                    "Status": "Misconfigured",
+                    "Severity": "Medium",
+                    "Recommendation": "Increase HSTS max-age to at least 31536000 (1 year) and consider includeSubDomains + preload.",
+                    "Detail": hsts
+                })
+            else:
+                # check includeSubDomains and preload presence as recommendations
+                subs = bool(re.search(r"includesubdomains", hsts, re.IGNORECASE))
+                preload = bool(re.search(r"\bpreload\b", hsts, re.IGNORECASE))
+                recs = []
+                if not subs:
+                    recs.append("includeSubDomains")
+                if not preload:
+                    recs.append("preload")
+                findings.append({
+                    "Header": "Strict-Transport-Security",
+                    "Status": "Present",
+                    "Severity": "Low" if subs and preload else "Medium",
+                    "Recommendation": "HSTS configured. Consider adding: " + (", ".join(recs) if recs else "none (good)."),
+                    "Detail": hsts
+                })
 
     # --- X-Frame-Options ---
-    xfo = headers.get("X-Frame-Options")
+    xfo = hdr("X-Frame-Options")
     if not xfo:
         findings.append({
             "Header": "X-Frame-Options",
@@ -56,34 +124,56 @@ def analyze_security_headers(headers):
             "Recommendation": "Add X-Frame-Options: DENY or SAMEORIGIN to protect against clickjacking."
         })
     else:
-        if xfo.strip().upper() not in ["DENY", "SAMEORIGIN"]:
+        val = xfo.strip().upper()
+        if val not in {"DENY", "SAMEORIGIN"}:
+            # ALLOW-FROM is deprecated and rarely useful; report as misconfigured.
             findings.append({
                 "Header": "X-Frame-Options",
                 "Status": "Misconfigured",
                 "Severity": "Medium",
-                "Recommendation": "Set X-Frame-Options to DENY or SAMEORIGIN for better clickjacking protection."
+                "Recommendation": "Set X-Frame-Options to DENY or SAMEORIGIN. 'ALLOW-FROM' is deprecated; prefer CSP frame-ancestors.",
+                "Detail": xfo
+            })
+        else:
+            findings.append({
+                "Header": "X-Frame-Options",
+                "Status": "Present",
+                "Severity": "Low",
+                "Recommendation": "X-Frame-Options set appropriately.",
+                "Detail": xfo
             })
 
     # --- X-XSS-Protection ---
-    xxp = headers.get("X-XSS-Protection")
+    xxp = hdr("X-XSS-Protection")
     if not xxp:
+        # modern guidance: this header is deprecated; report as low severity missing for legacy browsers
         findings.append({
             "Header": "X-XSS-Protection",
             "Status": "Missing",
             "Severity": "Low",
-            "Recommendation": "Add X-XSS-Protection: 1; mode=block for legacy browser XSS mitigation."
+            "Recommendation": "X-XSS-Protection is largely deprecated in modern browsers. If supporting legacy browsers, consider '1; mode=block'."
         })
     else:
+        # flag if value not the recommended legacy value
         if xxp.strip() != "1; mode=block":
             findings.append({
                 "Header": "X-XSS-Protection",
                 "Status": "Misconfigured",
                 "Severity": "Low",
-                "Recommendation": "Set X-XSS-Protection: 1; mode=block for older browsers."
+                "Recommendation": "For legacy browsers use 'X-XSS-Protection: 1; mode=block' if desired, but note this header is deprecated.",
+                "Detail": xxp
+            })
+        else:
+            findings.append({
+                "Header": "X-XSS-Protection",
+                "Status": "Present",
+                "Severity": "Low",
+                "Recommendation": "Legacy XSS protection header present.",
+                "Detail": xxp
             })
 
     # --- X-Content-Type-Options ---
-    xcto = headers.get("X-Content-Type-Options")
+    xcto = hdr("X-Content-Type-Options")
     if not xcto:
         findings.append({
             "Header": "X-Content-Type-Options",
@@ -97,76 +187,174 @@ def analyze_security_headers(headers):
                 "Header": "X-Content-Type-Options",
                 "Status": "Misconfigured",
                 "Severity": "Low",
-                "Recommendation": "Ensure X-Content-Type-Options is set to 'nosniff'."
+                "Recommendation": "Ensure X-Content-Type-Options is set to 'nosniff'.",
+                "Detail": xcto
+            })
+        else:
+            findings.append({
+                "Header": "X-Content-Type-Options",
+                "Status": "Present",
+                "Severity": "Low",
+                "Recommendation": "Configured correctly.",
+                "Detail": xcto
             })
 
     # --- Referrer Policy ---
-    rp = headers.get("Referrer-Policy")
+    rp = hdr("Referrer-Policy")
     if not rp:
         findings.append({
             "Header": "Referrer-Policy",
             "Status": "Missing",
             "Severity": "Low",
-            "Recommendation": "Add Referrer-Policy: strict-origin-when-cross-origin to control referrer data leakage."
+            "Recommendation": "Add Referrer-Policy (recommended: strict-origin-when-cross-origin or no-referrer)."
         })
     else:
-        allowed_policies = [
-            "no-referrer", "strict-origin", "strict-origin-when-cross-origin", 
-            "same-origin", "no-referrer-when-downgrade"
-        ]
-        if rp.strip().lower() not in allowed_policies:
+        rp_val = rp.strip().lower()
+        allowed_policies = {
+            "no-referrer", "strict-origin", "strict-origin-when-cross-origin",
+            "same-origin", "no-referrer-when-downgrade", "origin", "origin-when-cross-origin"
+        }
+        if rp_val not in allowed_policies:
             findings.append({
                 "Header": "Referrer-Policy",
                 "Status": "Misconfigured",
                 "Severity": "Low",
-                "Recommendation": "Use a secure Referrer-Policy such as 'strict-origin-when-cross-origin'."
+                "Recommendation": "Use a known referrer policy such as 'strict-origin-when-cross-origin' or 'no-referrer'.",
+                "Detail": rp
             })
+        else:
+            # mark certain policies as weak
+            if rp_val == "no-referrer-when-downgrade":
+                findings.append({
+                    "Header": "Referrer-Policy",
+                    "Status": "Present (weak)",
+                    "Severity": "Low",
+                    "Recommendation": "Consider 'strict-origin-when-cross-origin' or 'no-referrer' for stronger privacy.",
+                    "Detail": rp
+                })
+            else:
+                findings.append({
+                    "Header": "Referrer-Policy",
+                    "Status": "Present",
+                    "Severity": "Low",
+                    "Recommendation": "Referrer-Policy looks acceptable.",
+                    "Detail": rp
+                })
 
-    # --- Permissions Policy ---
-    pp = headers.get("Permissions-Policy")
+    # --- Permissions-Policy (formerly Feature-Policy) ---
+    pp = hdr("Permissions-Policy") or hdr("Feature-Policy")
     if not pp:
         findings.append({
             "Header": "Permissions-Policy",
             "Status": "Missing",
             "Severity": "Low",
-            "Recommendation": "Add Permissions-Policy to control access to features like camera, microphone, or geolocation."
+            "Recommendation": "Add Permissions-Policy to control access to powerful features (camera, microphone, geolocation)."
+        })
+    else:
+        findings.append({
+            "Header": "Permissions-Policy",
+            "Status": "Present",
+            "Severity": "Low",
+            "Recommendation": "Review Permissions-Policy to ensure only required features are allowed.",
+            "Detail": pp
         })
 
-    # --- Cross-Origin Embedder/Opener/Resource Policies (COEP/COOP/CORP) ---
-    for policy in ["Cross-Origin-Embedder-Policy", "Cross-Origin-Opener-Policy", "Cross-Origin-Resource-Policy"]:
-        if policy not in headers:
-            findings.append({
-                "Header": policy,
-                "Status": "Missing",
-                "Severity": "Low",
-                "Recommendation": f"Add {policy} header to improve cross-origin isolation and resource protection."
-            })
+    # --- COEP / COOP / CORP ---
+    coep = hdr("Cross-Origin-Embedder-Policy")
+    coop = hdr("Cross-Origin-Opener-Policy")
+    corp = hdr("Cross-Origin-Resource-Policy")
+
+    if not coep:
+        findings.append({
+            "Header": "Cross-Origin-Embedder-Policy",
+            "Status": "Missing",
+            "Severity": "Low",
+            "Recommendation": "Consider adding Cross-Origin-Embedder-Policy (e.g., 'require-corp') if using cross-origin isolation."
+        })
+    else:
+        findings.append({
+            "Header": "Cross-Origin-Embedder-Policy",
+            "Status": "Present",
+            "Severity": "Low",
+            "Recommendation": "Verify COEP value (e.g., 'require-corp').",
+            "Detail": coep
+        })
+
+    if not coop:
+        findings.append({
+            "Header": "Cross-Origin-Opener-Policy",
+            "Status": "Missing",
+            "Severity": "Low",
+            "Recommendation": "Consider adding Cross-Origin-Opener-Policy: same-origin to improve isolation against side-channel attacks."
+        })
+    else:
+        findings.append({
+            "Header": "Cross-Origin-Opener-Policy",
+            "Status": "Present",
+            "Severity": "Low",
+            "Recommendation": "Verify COOP value (e.g., 'same-origin' or 'same-origin-allow-popups').",
+            "Detail": coop
+        })
+
+    if not corp:
+        findings.append({
+            "Header": "Cross-Origin-Resource-Policy",
+            "Status": "Missing",
+            "Severity": "Low",
+            "Recommendation": "Consider Cross-Origin-Resource-Policy to restrict which origins can load resources."
+        })
+    else:
+        findings.append({
+            "Header": "Cross-Origin-Resource-Policy",
+            "Status": "Present",
+            "Severity": "Low",
+            "Recommendation": "Verify CORP value (e.g., 'same-origin' or 'same-site').",
+            "Detail": corp
+        })
 
     # --- Server Information Disclosure ---
-    if "Server" in headers:
+    server = hdr("Server")
+    if server:
+        # lightweight parse to extract product/version (useful for fingerprinting reporting)
+        m = re.search(r'^\s*([^/\s]+)(?:/([\d\.]+))?', server)
+        parsed = {"raw": server}
+        if m:
+            parsed["product"] = m.group(1)
+            parsed["version"] = m.group(2)
         findings.append({
             "Header": "Server",
             "Status": "Misconfigured",
             "Severity": "Medium",
-            "Recommendation": "Avoid exposing the Server header to reduce fingerprinting and information disclosure."
+            "Recommendation": "Avoid exposing the Server header to reduce fingerprinting and information disclosure.",
+            "Detail": parsed
         })
 
     # --- Allow Header Disclosure ---
-    if "Allow" in headers:
+    allow = hdr("Allow")
+    if allow:
+        # parse and normalize methods
+        methods = [m.strip().upper() for m in allow.split(",") if m.strip()]
         findings.append({
             "Header": "Allow",
             "Status": "Misconfigured",
             "Severity": "Medium",
-            "Recommendation": "Avoid exposing the 'Allow' header as it reveals supported HTTP methods."
+            "Recommendation": "Avoid exposing the 'Allow' header as it reveals supported HTTP methods. Review allowed methods.",
+            "Detail": methods
         })
 
     return findings
 
-def print_findings(findings):
+
+def print_findings(findings: List[Dict[str, Any]]) -> None:
+    """
+    Nicely print the findings produced by analyze_security_headers.
+    """
     missing = [f for f in findings if f["Status"].lower() == "missing"]
     misconfigured = [f for f in findings if f["Status"].lower() == "misconfigured"]
+    # include "present (weak)" or other statuses as misconfigured-ish if needed
+    present_weak = [f for f in findings if "weak" in f.get("Status", "").lower()]
 
-    total_issues = len(missing) + len(misconfigured)
+    total_issues = len(missing) + len(misconfigured) + len(present_weak)
 
     # Top framing
     print("\n" + Fore.MAGENTA + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
@@ -175,7 +363,7 @@ def print_findings(findings):
     print(Fore.WHITE + f"Total Issues Detected: {Fore.YELLOW}{total_issues}{Style.RESET_ALL}")
     print(Fore.WHITE + f"Missing Headers: {Fore.RED}{len(missing)}{Style.RESET_ALL} | Misconfigured: {Fore.YELLOW}{len(misconfigured)}\n")
 
-    def print_group(title, items, color):
+    def print_group(title: str, items: List[Dict[str, Any]], color: str) -> None:
         if not items:
             return
         print(color + f"{title}:" + Style.RESET_ALL)
@@ -185,17 +373,21 @@ def print_findings(findings):
                 "High": Fore.RED,
                 "Medium": Fore.YELLOW,
                 "Low": Fore.GREEN
-            }.get(f["Severity"], Fore.WHITE)
+            }.get(f.get("Severity", "Low"), Fore.WHITE)
 
             print(f"{Fore.WHITE}{i}. {f['Header']}")
-            print(f"   {severity_color}Severity: {f['Severity']}")
-            print(f"{Fore.CYAN}   Recommendation: {f['Recommendation']}\n")
+            print(f"   {severity_color}Severity: {f.get('Severity', 'Low')}{Style.RESET_ALL}")
+            rec = f.get("Recommendation", "")
+            print(f"{Fore.CYAN}   Recommendation: {rec}{Style.RESET_ALL}")
+            if "Detail" in f:
+                print(f"   {Fore.WHITE}Detail: {f['Detail']}{Style.RESET_ALL}")
+            print()
 
     # Print groups
     print_group("🚫 Missing Headers", missing, Fore.RED)
-    print_group("⚠️ Misconfigured Headers", misconfigured, Fore.YELLOW)
+    print_group("⚠️ Misconfigured Headers", misconfigured + present_weak, Fore.YELLOW)
 
-    if not missing and not misconfigured:
+    if not missing and not misconfigured and not present_weak:
         print(Fore.GREEN + "\n✅ All security headers are properly configured!\n" + Style.RESET_ALL)
 
     # bottom framing
