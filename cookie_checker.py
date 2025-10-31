@@ -1,4 +1,3 @@
-# cookie_checker.py
 import re
 from typing import List, Dict, Any, Optional
 from datetime import datetime

@@ -1,109 +1,167 @@
-# test_cors_checker.py
-import unittest
-from unittest.mock import Mock, patch
-import cors_checker
+from flask import Flask, request, make_response, jsonify
 
+app = Flask(__name__)
 
-def _make_resp(headers: dict):
+# ---------- helpers ----------
+
+UNSAFE_METHODS = "GET, POST, PUT, DELETE, PATCH, OPTIONS"  # we'll also try TRACE for fun
+POWERED_BY = "FlaskBad/9.9"
+BACKEND = "internal-01"
+
+def add_leaky_headers(resp):
     """
-    Utility to create a simple mock response object with a headers attribute.
+    Add headers that leak server/framework details on purpose.
+    Also intentionally OMIT secure headers (CSP, HSTS, X-Frame-Options, etc.)
     """
-    resp = Mock()
-    # ensure dict-like .headers.get works
-    resp.headers = headers
+    # Server banner (version leak)
+    resp.headers["Server"] = "BadServer/0.1"
+
+    # Framework / proxy / backend leaks
+    resp.headers["X-Powered-By"] = POWERED_BY
+    resp.headers["Via"] = "debug-proxy"
+    resp.headers["X-Backend-Server"] = BACKEND
+
+    # Intentionally do NOT set security headers like:
+    # - Content-Security-Policy
+    # - Strict-Transport-Security
+    # - X-Frame-Options
+    # - X-Content-Type-Options
+    # - Referrer-Policy
+    # - Permissions-Policy
+    # - COEP/COOP/CORP
+
     return resp
 
+def add_bad_cors(resp):
+    """
+    Deliberately misconfigure CORS:
+    - If an Origin is sent, REFLECT it in ACAO (High)
+    - Otherwise use wildcard (Medium)
+    - Always set credentials=true (critical with wildcard)
+    - Expose unsafe methods in ACAM
+    """
+    origin = request.headers.get("Origin")
+    if origin:
+        resp.headers["Access-Control-Allow-Origin"] = origin  # reflection (High)
+    else:
+        resp.headers["Access-Control-Allow-Origin"] = "*"     # wildcard (Medium)
 
-class TestCORSChecker(unittest.TestCase):
-    fake_origin = "https://evil-attacker.com"
+    resp.headers["Access-Control-Allow-Credentials"] = "true"  # credentials allowed
+    resp.headers["Access-Control-Allow-Methods"] = UNSAFE_METHODS
+    resp.headers["Access-Control-Max-Age"] = "3600"
 
-    @patch("cors_checker._get_session")
-    def test_reflection_detection(self, mock_get_session):
-        """
-        If the server reflects the attacker origin in Access-Control-Allow-Origin, we expect a High severity reflection finding.
-        """
-        # Prepare mock responses
-        orig_get = _make_resp({})
-        orig_options = _make_resp({})
-        # Probe GET/OPTIONS respond with ACAO reflecting fake_origin
-        probe_get = _make_resp({"Access-Control-Allow-Origin": self.fake_origin})
-        probe_options = _make_resp({"Access-Control-Allow-Origin": self.fake_origin})
+    # Intentionally omit 'Vary: Origin' (Medium)
+    # resp.headers["Vary"] = "Origin"
 
-        # Mock session: get() called twice (orig_get, probe_get); options() twice (orig_options, probe_options)
-        session = Mock()
-        session.get.side_effect = [orig_get, probe_get]
-        session.options.side_effect = [orig_options, probe_options]
-        mock_get_session.return_value = session
+    return resp
 
-        findings = cors_checker.analyze_cors("http://example.test", fake_origin=self.fake_origin)
-        descriptions = " ".join(f["Description"] for f in findings)
-        self.assertIn("reflected attacker Origin", descriptions.lower())
+def set_bad_cookies(resp):
+    """
+    Set server-side cookie WITHOUT Secure/HttpOnly/SameSite (bad).
+    Also the root page sets a JS cookie client-side.
+    """
+    resp.headers.add("Set-Cookie", "sessionid=abc123; Path=/")  # missing Secure, HttpOnly, SameSite
+    return resp
 
-    @patch("cors_checker._get_session")
-    def test_wildcard_with_credentials_detection(self, mock_get_session):
-        """
-        If ACAO is '*' and ACAC is 'true', expect a High severity critical finding.
-        """
-        orig_get = _make_resp({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Credentials": "true"})
-        orig_options = _make_resp({})
-        probe_get = _make_resp({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Credentials": "true"})
-        probe_options = _make_resp({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Credentials": "true"})
+def make_html(body):
+    html = f"""<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Bad Test Server</title></head>
+<body>
+<h1>Bad Test Server</h1>
+<p>{body}</p>
+<!-- Intentionally set JS cookie without flags -->
+<script>document.cookie = "jsbad=1; path=/";</script>
+</body>
+</html>"""
+    return html
 
-        session = Mock()
-        session.get.side_effect = [orig_get, probe_get]
-        session.options.side_effect = [orig_options, probe_options]
-        mock_get_session.return_value = session
+# ---------- routes ----------
 
-        findings = cors_checker.analyze_cors("http://example.test", fake_origin=self.fake_origin)
-        # Look for the wildcard+credentials description
-        found = any("wildcard" in f["Description"].lower() and "credentials" in f["Description"].lower() for f in findings)
-        self.assertTrue(found, f"Expected wildcard+credentials finding, got: {findings}")
+@app.route("/", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE"])
+def index():
+    # For TRACE, echo request (simulated)
+    if request.method == "TRACE":
+        resp = make_response(request.environ.get("RAW_URI", "/"), 200)
+        resp.mimetype = "message/http"
+    else:
+        body = "This page intentionally misconfigured for testing."
+        resp = make_response(make_html(body), 200)
+        resp.mimetype = "text/html"
 
-    @patch("cors_checker._get_session")
-    def test_missing_vary_detection(self, mock_get_session):
-        """
-        If server returns a specific Access-Control-Allow-Origin but no 'Vary: Origin', expect a Medium severity finding about missing Vary.
-        """
-        # orig responses empty
-        orig_get = _make_resp({})
-        orig_options = _make_resp({})
-        # probe returns ACAO = specific allowed origin but Vary missing
-        probe_get = _make_resp({"Access-Control-Allow-Origin": "https://good.example.com"})
-        probe_options = _make_resp({"Access-Control-Allow-Origin": "https://good.example.com"})
+    # Add intentionally bad pieces
+    resp = add_leaky_headers(resp)
+    resp = add_bad_cors(resp)
+    resp = set_bad_cookies(resp)
 
-        session = Mock()
-        session.get.side_effect = [orig_get, probe_get]
-        session.options.side_effect = [orig_options, probe_options]
-        mock_get_session.return_value = session
+    # For preflight OPTIONS, ensure Allow header present
+    if request.method == "OPTIONS":
+        resp.headers["Allow"] = UNSAFE_METHODS + ", TRACE"
 
-        findings = cors_checker.analyze_cors("http://example.test", fake_origin=self.fake_origin)
-        # Expect a finding mentioning "Missing 'Vary: Origin'"
-        found = any("vary" in f["Description"].lower() for f in findings)
-        self.assertTrue(found, f"Expected missing Vary finding, got: {findings}")
+    return resp
 
-    @patch("cors_checker._get_session")
-    def test_unsafe_methods_exposed_detection(self, mock_get_session):
-        """
-        If Access-Control-Allow-Methods exposes unsafe methods (e.g., PUT or DELETE) via preflight/OPTIONS, expect detection.
-        """
-        orig_get = _make_resp({})
-        orig_options = _make_resp({})
-        probe_get = _make_resp({})
-        # preflight returns Allow-Methods containing PUT and DELETE
-        probe_options = _make_resp({"Access-Control-Allow-Methods": "GET, POST, PUT, DELETE"})
+@app.route("/cookies/anything", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE"])
+def cookies_anything():
+    # Similar to index but different path (to mimic httpbin style)
+    if request.method == "TRACE":
+        resp = make_response(request.environ.get("RAW_URI", "/cookies/anything"), 200)
+        resp.mimetype = "message/http"
+    else:
+        body = "Cookie path (intentionally misconfigured)."
+        resp = make_response(make_html(body), 404)  # return 404 to test non-200 behavior
+        resp.mimetype = "text/html"
 
-        session = Mock()
-        session.get.side_effect = [orig_get, probe_get]
-        session.options.side_effect = [orig_options, probe_options]
-        mock_get_session.return_value = session
+    resp = add_leaky_headers(resp)
+    resp = add_bad_cors(resp)
+    resp = set_bad_cookies(resp)
 
-        findings = cors_checker.analyze_cors("http://example.test", fake_origin=self.fake_origin)
-        # Find description mentioning unsafe methods
-        found = any("unsafe http methods" in f["Description"].lower() or "unsafe methods" in f["Description"].lower() for f in findings)
-        # Alternatively, check that method names appear in Description
-        contains_put = any("put" in f["Description"].lower() for f in findings)
-        self.assertTrue(found or contains_put, f"Expected unsafe methods finding, got: {findings}")
+    if request.method == "OPTIONS":
+        resp.headers["Allow"] = UNSAFE_METHODS + ", TRACE"
 
+    return resp
+
+@app.route("/api/data", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE"])
+def api_data():
+    # Return JSON but keep bad headers/cors/cookies the same
+    if request.method == "TRACE":
+        resp = make_response(request.environ.get("RAW_URI", "/api/data"), 200)
+        resp.mimetype = "message/http"
+    else:
+        data = {"ok": True, "note": "Insecure CORS and cookies here too."}
+        resp = make_response(jsonify(data), 200)
+
+    resp = add_leaky_headers(resp)
+    resp = add_bad_cors(resp)
+    resp = set_bad_cookies(resp)
+
+    if request.method == "OPTIONS":
+        resp.headers["Allow"] = UNSAFE_METHODS + ", TRACE"
+
+    return resp
+
+# Catch-all for other paths (also misconfigured)
+@app.route("/<path:rest>", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "TRACE"])
+def catch_all(rest):
+    if request.method == "TRACE":
+        resp = make_response(request.environ.get("RAW_URI", f"/{rest}"), 200)
+        resp.mimetype = "message/http"
+    else:
+        body = f"Catch-all route for /{rest} (intentionally misconfigured)."
+        resp = make_response(make_html(body), 200)
+        resp.mimetype = "text/html"
+
+    resp = add_leaky_headers(resp)
+    resp = add_bad_cors(resp)
+    resp = set_bad_cookies(resp)
+
+    if request.method == "OPTIONS":
+        resp.headers["Allow"] = UNSAFE_METHODS + ", TRACE"
+
+    return resp
 
 if __name__ == "__main__":
-    unittest.main()
+    # Run HTTP only (so your SSL/TLS check reports 'HTTPS not supported' or flags issues).
+    # If you want to test HTTPS later, generate a self-signed cert and start with ssl_context.
+    app.run(host="127.0.0.1", port=5000, debug=False)
+    # For self-signed HTTPS (optional later):
+    # app.run(host="127.0.0.1", port=5001, ssl_context=("cert.pem", "key.pem"))
