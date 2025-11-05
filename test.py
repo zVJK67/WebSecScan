@@ -8,13 +8,18 @@ from cors_checker import analyze_cors
 from ssl_tls import run_ssl_check, check_ssl_tls
 from server_info import get_server_info, print_server_info
 from findings_summary import print_summary
+from path_traversal import test_path_traversal  # Path Traversal module
+from directory_scan import scan_common_paths, print_dir_scan_results  # <-- NEW: Directory scan
+
 from colorama import Fore, Style, init
 import urllib.parse
 import sys
 import time
 
+
 # initialize colorama
 init(autoreset=True)
+
 
 def normalize_and_validate_url(raw_url: str) -> str:
     """Ensure URL has a scheme. Return normalized URL or raise ValueError if invalid."""
@@ -28,10 +33,11 @@ def normalize_and_validate_url(raw_url: str) -> str:
         raise ValueError("Invalid URL (no hostname found). Provide full URL like 'https://example.com' or 'example.com'.")
     return raw_url
 
+
 def _tag_findings_with_category(findings_list, category_name):
     """
     Ensure each finding dict in findings_list has a Category, Severity and Description.
-    This mutates the provided list in-place (Option A).
+    This mutates the provided list in-place.
     """
     for f in (findings_list or []):
         if not f.get("Category"):
@@ -39,7 +45,54 @@ def _tag_findings_with_category(findings_list, category_name):
         if not f.get("Severity"):
             f["Severity"] = "Low"
         if not f.get("Description"):
-            f["Description"] = f.get("Recommendation") or f.get("Status") or f.get("Header") or f.get("Name") or ""
+            f["Description"] = (
+                f.get("Recommendation")
+                or f.get("Status")
+                or f.get("Header")
+                or f.get("Name")
+                or ""
+            )
+
+
+def _print_path_traversal_findings(pt_findings):
+    """Pretty, grouped output for path traversal results."""
+    if not pt_findings:
+        return
+
+    for f in pt_findings:
+        print()
+        print(Fore.WHITE + "Path Traversal" + Style.RESET_ALL)
+        print(Fore.WHITE + "---------------------------------------" + Style.RESET_ALL)
+        sev_color = {"High": Fore.RED, "Medium": Fore.YELLOW, "Low": Fore.GREEN}.get(f.get("Severity", "Low"), Fore.WHITE)
+        print(f"Severity: {sev_color}{f.get('Severity', 'Low')}{Style.RESET_ALL}")
+
+        endpoint = f.get("Endpoint") or f.get("Path") or "/"
+        print(f"Endpoint: {endpoint}")
+
+        payloads = f.get("Payloads") or []
+        if payloads:
+            print("\nPayloads triggering:")
+            for p in payloads:
+                print(f"  {p}")
+
+        if f.get("Behavior"):
+            print(f"\nBehavior: {f['Behavior']}")
+
+        interp = f.get("Interpretation")
+        if interp:
+            print(f"\nPossible interpretation: {interp}")
+
+        if f.get("Recommendation"):
+            print("\nRecommendation:")
+            for line in f["Recommendation"].split("\n"):
+                print(line)
+
+        if f.get("Details"):
+            print(f"\nDetails: {f['Details']}")
+
+        if f.get("Status") is not None:
+            print(f"HTTP Status (example): {f['Status']}")
+
 
 def main():
     print_banner()
@@ -71,12 +124,14 @@ def main():
     header_findings = []
     method_findings = []
     server_findings = []
+    dir_findings = []      # NEW: Directory scan findings
     cookie_findings = []
     cors_findings = []
     ssl_findings = []
+    pt_findings = []       # Path Traversal
 
     # === Step 1: Header Check ===
-    print(Fore.CYAN + "\n[1/6] Checking HTTP headers..." + Style.RESET_ALL)
+    print(Fore.CYAN + "\n[1/8] Checking HTTP headers..." + Style.RESET_ALL)
     t0 = time.time()
     try:
         response = get_request(url)
@@ -89,14 +144,13 @@ def main():
             if verbose:
                 if input("\nSee raw GET headers? (y/n): ").strip().lower() == 'y':
                     print_headers(headers)
-            # Note for users about header provenance
             print(Fore.WHITE + "Note: Headers shown are from the scanned path; CDNs/proxies may alter them." + Style.RESET_ALL)
     except Exception as e:
         print(Fore.RED + f"[ERROR] Header check failed: {e}" + Style.RESET_ALL)
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # === Step 2: HTTP Method Check ===
-    print(Fore.CYAN + "\n[2/6] Checking HTTP methods..." + Style.RESET_ALL)
+    print(Fore.CYAN + "\n[2/8] Checking HTTP methods..." + Style.RESET_ALL)
     t0 = time.time()
     try:
         methods = get_allowed_methods(url)
@@ -110,7 +164,7 @@ def main():
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # === Step 3: Server Info Check ===
-    print(Fore.CYAN + "\n[3/6] Checking server information & exposures..." + Style.RESET_ALL)
+    print(Fore.CYAN + "\n[3/8] Checking server information & exposures..." + Style.RESET_ALL)
     t0 = time.time()
     try:
         info, server_findings = get_server_info(url)
@@ -120,7 +174,7 @@ def main():
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # === Step 4: Cookie Security Analysis ===
-    print(Fore.CYAN + "\n[4/6] Performing Cookie Security Analysis..." + Style.RESET_ALL)
+    print(Fore.CYAN + "\n[4/8] Performing Cookie Security Analysis..." + Style.RESET_ALL)
     t0 = time.time()
     try:
         capture_js = input("Capture JS-created cookies via Selenium? (y/n): ").strip().lower() == "y" if verbose else False
@@ -130,22 +184,47 @@ def main():
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # === Step 5: CORS Security Analysis ===
-    print(Fore.CYAN + "\n[5/6] Checking Cross-Origin Resource Sharing (CORS) configuration..." + Style.RESET_ALL)
+    print(Fore.CYAN + "\n[5/8] Checking Cross-Origin Resource Sharing (CORS) configuration..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        # Note: cors_checker currently prints detailed sections unconditionally.
-        # We still run it here so findings are produced consistently.
         cors_findings = analyze_cors(url)
     except Exception as e:
         print(Fore.RED + f"[ERROR] CORS check failed: {e}" + Style.RESET_ALL)
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
-    # === Step 6: SSL/TLS Check ===
-    print(Fore.CYAN + "\n[6/6] Checking SSL/TLS configuration..." + Style.RESET_ALL)
+    # === Step 6: Directory & File Exposure  ===
+    print(Fore.CYAN + "\n[6/8] Scanning for common directory & file exposures..." + Style.RESET_ALL)
+    t0 = time.time()
+    try:
+        dir_findings = scan_common_paths(url, timeout=6, max_results=50)
+        print_dir_scan_results(dir_findings)
+    except Exception as e:
+        print(Fore.RED + f"[ERROR] Directory scan failed: {e}" + Style.RESET_ALL)
+        dir_findings = []
+    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
+
+    # === Step 7: Path Traversal ===
+    print(Fore.CYAN + "\n[7/8] Checking for basic Path Traversal patterns..." + Style.RESET_ALL)
+    t0 = time.time()
+    try:
+        pt_findings = test_path_traversal(
+            base_url=url,
+            timeout=10,
+            max_tests=300,     # adjust if needed
+            verbose=verbose
+        )
+        _tag_findings_with_category(pt_findings, "Path Traversal")
+        _print_path_traversal_findings(pt_findings)
+    except Exception as e:
+        print(Fore.RED + f"[ERROR] Path Traversal check failed: {e}" + Style.RESET_ALL)
+        pt_findings = []
+    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
+
+    # === Step 8: SSL/TLS Check ===
+    print(Fore.CYAN + "\n[8/8] Checking SSL/TLS configuration..." + Style.RESET_ALL)
     t0 = time.time()
     try:
         run_ssl_check(url)  # prints details to console
-        # collect a concise structured finding for the summary
         try:
             ssl_data = check_ssl_tls(urllib.parse.urlparse(url).hostname)
             if ssl_data.get("error"):
@@ -171,16 +250,25 @@ def main():
         if not (f.get("Header") == "Server")
     ]
 
-    # Tag categories (Option A) so the summary table shows per-category rows
-    _tag_findings_with_category(header_findings, "Headers")
-    _tag_findings_with_category(method_findings, "HTTP Methods")
-    _tag_findings_with_category(server_findings, "Server")
-    _tag_findings_with_category(cookie_findings, "Cookies")
+    # Tag categories
+    _tag_findings_with_category(header_findings, "Improper HTTP Security Headers")
+    _tag_findings_with_category(method_findings, "Unsafe HTTP Methods")
+    _tag_findings_with_category(server_findings, "Server Info Leakage")
+    _tag_findings_with_category(dir_findings, "Directory/File Exposure")  # NEW
+    _tag_findings_with_category(cookie_findings, "Cookies Flags Misconfiguration")
     _tag_findings_with_category(cors_findings, "CORS")
-    _tag_findings_with_category(ssl_findings, "SSL/TLS")
+    _tag_findings_with_category(ssl_findings, "SSL/TLS Misconfiguration")
+    _tag_findings_with_category(pt_findings, "Path Traversal")
 
-    # Combine "other" categories into one list (server, cookies, cors, ssl)
-    other_findings = (server_findings or []) + (cookie_findings or []) + (cors_findings or []) + (ssl_findings or [])
+    # Combine "other" categories into one list
+    other_findings = (
+        (server_findings or [])
+        + (dir_findings or [])
+        + (cookie_findings or [])
+        + (cors_findings or [])
+        + (ssl_findings or [])
+        + (pt_findings or [])
+    )
 
     # Render the wide pretty summary table
     summary = print_summary(header_findings or [], method_findings or [], other_findings or [])
@@ -189,13 +277,14 @@ def main():
     high = summary["counts"]["High"]
     med = summary["counts"]["Medium"]
     if high > 0:
-        print(Fore.RED + "Next step: Fix HIGH issues first (e.g., enable HSTS/CSP, remove CORS wildcard+credentials, hide 'Server' version)." + Style.RESET_ALL)
+        print(Fore.RED + "Next step: Fix HIGH issues first (e.g., remove exposed secrets/backups, harden CORS, hide server versions, validate file paths)." + Style.RESET_ALL)
     elif med > 0:
-        print(Fore.YELLOW + "Next step: Address MEDIUM issues next (e.g., Vary: Origin, cookie flags)." + Style.RESET_ALL)
+        print(Fore.YELLOW + "Next step: Address MEDIUM issues next (e.g., Vary: Origin, cookie flags, traversal heuristics, admin paths)." + Style.RESET_ALL)
     else:
         print(Fore.GREEN + "Great! No High/Medium issues detected." + Style.RESET_ALL)
 
     print(Fore.WHITE + "\nSummary data object produced (in-memory). You can export it to JSON if needed." + Style.RESET_ALL)
+
 
 if __name__ == "__main__":
     main()
