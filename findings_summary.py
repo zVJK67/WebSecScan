@@ -34,18 +34,12 @@ def normalize_findings(findings: List[Dict[str, Any]], force_category: str = Non
     Args:
         findings: List of finding dictionaries
         force_category: Optional category name to force on all findings
-        exclude_safe: If True, exclude findings with Status="Safe", "Present", "Not exposed", etc.
+        exclude_safe: If True, exclude findings that are informational/non-issues only
         
     Returns:
         Normalized list of findings
     """
     normalized = []
-    
-    # Safe/informational statuses that shouldn't be counted as problems
-    safe_statuses = {
-        "safe", "present", "not exposed", "acceptable", 
-        "configured correctly", "looks acceptable", "good practice"
-    }
     
     for f in (findings or []):
         # Create a copy to avoid mutating the original
@@ -54,13 +48,41 @@ def normalize_findings(findings: List[Dict[str, Any]], force_category: str = Non
         # Skip "safe" findings if exclude_safe is True
         if exclude_safe:
             status = str(finding.get("Status", "")).lower()
-            # Check if this is a "safe" or "informational only" finding
-            if any(safe_word in status for safe_word in safe_statuses):
-                continue
-            # Also skip if the finding explicitly says it's good/acceptable
-            desc = str(finding.get("Description", "")).lower()
-            rec = str(finding.get("Recommendation", "")).lower()
-            if "no issues" in desc or "properly configured" in desc or "good practice" in rec:
+            
+            # IMPORTANT: Only exclude if it's CLEARLY a "good" status
+            # Be very specific to avoid false exclusions
+            truly_safe_statuses = [
+                "safe",                    # HTTP Methods: Status="Safe"
+                "not exposed",            # Server Info: Status="Not exposed"
+                "configured correctly",   # Headers: Status="Configured correctly"
+            ]
+            
+            # Check if status exactly matches or is a safe variant
+            is_safe = False
+            for safe_status in truly_safe_statuses:
+                if status == safe_status or status.startswith(safe_status):
+                    is_safe = True
+                    break
+            
+            # Additional check: if it explicitly says things are OK in the description/recommendation
+            if not is_safe:
+                desc = str(finding.get("Description", "")).lower()
+                rec = str(finding.get("Recommendation", "")).lower()
+                
+                # These phrases indicate informational/good findings
+                good_phrases = [
+                    "no issues detected",
+                    "properly configured",
+                    "looks acceptable",
+                    "set appropriately",
+                    "no unsafe",
+                    "no commonly unsafe",
+                ]
+                
+                if any(phrase in desc or phrase in rec for phrase in good_phrases):
+                    is_safe = True
+            
+            if is_safe:
                 continue
         
         # Force category if specified (this fixes the duplication issue)
@@ -298,3 +320,4 @@ def export_summary_csv(summary: Dict[str, Dict[str, int]], filename: str = "secu
                         total_high + total_medium + total_low])
     
     print(Fore.GREEN + f"✅ Summary exported to {filename}\n" + Style.RESET_ALL)
+
