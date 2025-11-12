@@ -1,0 +1,9 @@
+Category,High,Medium,Low,Total
+Directory/File Exposure,12,15,0,27
+Security Headers,2,0,7,9
+SSL/TLS,1,0,0,1
+CORS,0,2,0,2
+HTTP Methods,0,1,0,1
+Path Traversal,0,1,0,1
+Server Information,0,0,1,1
+TOTAL,15,19,8,42
