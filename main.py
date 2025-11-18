@@ -10,8 +10,6 @@ from server_info import get_server_info, print_server_info
 from findings_summary import print_summary_table, print_detailed_findings, generate_summary, export_summary_csv, normalize_findings
 from path_traversal import test_path_traversal  # Path Traversal module
 from directory_scan import scan_common_paths, print_dir_scan_results  # Directory scan
-
-# NEW: exporter integration (no changes to export_findings.py required)
 from export_findings import export_to_html, export_to_json
 
 from colorama import Fore, Style, init

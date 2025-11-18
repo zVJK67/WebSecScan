@@ -1,3 +1,4 @@
+'''
 """
 Export Findings Module
 
@@ -623,6 +624,357 @@ def _generate_html_template(target_url: str, scan_time: str, total_findings: int
 </html>
 """
     
+    return html
+
+
+# Example usage
+if __name__ == "__main__":
+    from findings_summary import generate_summary
+    
+    # Sample data
+    sample_findings = [
+        {
+            "Category": "Security Headers",
+            "Severity": "High",
+            "Description": "Content-Security-Policy header is missing",
+            "Recommendation": "Add a CSP header to control sources of scripts, styles, and media."
+        },
+        {
+            "Category": "CORS",
+            "Severity": "High",
+            "Description": "Wildcard origin with credentials enabled",
+            "Recommendation": "Do not use '*' with credentials. Return explicit trusted origin(s) instead.",
+            "Context": "Observed in probe response"
+        },
+    ]
+    
+    summary = generate_summary(sample_findings)
+    
+    # Export examples
+    export_to_html(sample_findings, summary, "test_report.html", "https://example.com")
+    export_to_json(sample_findings, summary, "test_report.json", "https://example.com")
+    '''
+
+"""
+Export Findings Module
+
+Exports security scan findings to HTML and JSON formats.
+
+Usage:
+    from export_findings import export_to_html, export_to_json
+    
+    export_to_html(all_findings, summary, "scan_report.html", target_url="https://example.com")
+    export_to_json(all_findings, summary, "scan_report.json", target_url="https://example.com")
+"""
+
+import json
+from typing import List, Dict, Any
+from datetime import datetime
+from colorama import Fore, Style
+
+
+def export_to_json(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, int]], 
+                   filename: str = "security_scan_report.json", target_url: str = None) -> bool:
+    """
+    Export findings to a JSON file.
+    
+    Args:
+        findings: List of all findings
+        summary: Summary dictionary from generate_summary()
+        filename: Output filename
+        target_url: Target URL that was scanned
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Calculate totals
+        total_high = sum(counts["High"] for counts in summary.values())
+        total_medium = sum(counts["Medium"] for counts in summary.values())
+        total_low = sum(counts["Low"] for counts in summary.values())
+        
+        report = {
+            "scan_metadata": {
+                "target_url": target_url or "Unknown",
+                "scan_time": datetime.now().isoformat(),
+                "total_findings": len(findings),
+                "severity_counts": {
+                    "High": total_high,
+                    "Medium": total_medium,
+                    "Low": total_low
+                }
+            },
+            "summary": summary,
+            "findings": findings
+        }
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+        
+        print(Fore.GREEN + f"✅ JSON report exported to {filename}" + Style.RESET_ALL)
+        return True
+        
+    except Exception as e:
+        print(Fore.RED + f"[ERROR] Failed to export JSON: {e}" + Style.RESET_ALL)
+        return False
+
+
+def export_to_html(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, int]], 
+                   filename: str = "security_scan_report.html", target_url: str = None) -> bool:
+    """
+    Export findings to an HTML file with styling.
+    
+    Args:
+        findings: List of all findings
+        summary: Summary dictionary from generate_summary()
+        filename: Output filename
+        target_url: Target URL that was scanned
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Sort categories by severity
+        sorted_categories = sorted(
+            summary.items(),
+            key=lambda x: (x[1]["High"] * 100 + x[1]["Medium"] * 10 + x[1]["Low"]),
+            reverse=True
+        )
+        
+        # Calculate totals
+        total_high = sum(counts["High"] for _, counts in sorted_categories)
+        total_medium = sum(counts["Medium"] for _, counts in sorted_categories)
+        total_low = sum(counts["Low"] for _, counts in sorted_categories)
+        total_findings = total_high + total_medium + total_low
+        
+        # Group findings by category
+        findings_by_category: Dict[str, List[Dict]] = {}
+        for finding in findings:
+            category = finding.get("Category", "Unknown")
+            if category not in findings_by_category:
+                findings_by_category[category] = []
+            findings_by_category[category].append(finding)
+        
+        # Sort findings within each category by severity
+        severity_order = {"High": 0, "Medium": 1, "Low": 2}
+        for category in findings_by_category:
+            findings_by_category[category].sort(
+                key=lambda f: severity_order.get(f.get("Severity", "Low"), 3)
+            )
+        
+        # Generate HTML
+        html_content = _generate_html_template(
+            target_url=target_url or "Unknown",
+            scan_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            total_findings=total_findings,
+            total_high=total_high,
+            total_medium=total_medium,
+            total_low=total_low,
+            sorted_categories=sorted_categories,
+            findings_by_category=findings_by_category
+        )
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        print(Fore.GREEN + f"✅ HTML report exported to {filename}" + Style.RESET_ALL)
+        return True
+        
+    except Exception as e:
+        print(Fore.RED + f"[ERROR] Failed to export HTML: {e}" + Style.RESET_ALL)
+        return False
+
+
+def _generate_html_template(target_url: str, scan_time: str, total_findings: int,
+                            total_high: int, total_medium: int, total_low: int,
+                            sorted_categories: List, findings_by_category: Dict) -> str:
+    
+    # Build summary rows
+    summary_rows = ""
+    for category, counts in sorted_categories:
+        total = counts["High"] + counts["Medium"] + counts["Low"]
+        summary_rows += f"""
+            <tr>
+                <td>{category}</td>
+                <td>{counts['High']}</td>
+                <td>{counts['Medium']}</td>
+                <td>{counts['Low']}</td>
+                <td><strong>{total}</strong></td>
+            </tr>
+        """
+
+    # Build detailed finding blocks
+    detailed_html = ""
+    for category, counts in sorted_categories:
+        findings = findings_by_category.get(category, [])
+        if not findings:
+            continue
+        
+        for finding in findings:
+            detailed_html += f"""
+            <div class="finding-block">
+                <h3 class="finding-title">Vulnerability: {finding.get("Description", "Unnamed Finding")}</h3>
+
+                <p><strong>Risk rating:</strong> <span class="severity">{finding.get("Severity")}</span></p>
+
+                <p><strong>Instances:</strong><br> {finding.get("URL", "N/A")}</p>
+                <p><strong>Page Affected:</strong><br> {finding.get("Context", "N/A")}</p>
+
+                <p><strong>Impact/Consequence:</strong><br>
+                    Attackers may exploit this vulnerability to gain unauthorized access or compromise the system.
+                </p>
+
+                <p><strong>Remediation:</strong><br>
+                    {finding.get('Recommendation', "No remediation provided.")}
+                </p>
+            </div>
+            <hr>
+            """
+
+    # The chart data
+    categories = [c for c, _ in sorted_categories]
+    highs = [counts["High"] for _, counts in sorted_categories]
+    meds = [counts["Medium"] for _, counts in sorted_categories]
+    lows = [counts["Low"] for _, counts in sorted_categories]
+
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>WebSecScan Security Report</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body {{
+    font-family: Arial, sans-serif;
+    margin: 40px;
+    background: #fff;
+}}
+
+.header {{
+    background: #4A60E0;
+    padding: 25px;
+    color: white;
+}}
+
+.header h1 {{
+    font-size: 32px;
+}}
+
+.info-box {{
+    margin-top: 20px;
+}}
+
+.summary-table table {{
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}}
+
+.summary-table th {{
+    background: #2c3e50;
+    color: white;
+    padding: 10px;
+    text-align: left;
+}}
+
+.summary-table td {{
+    padding: 8px;
+    border-bottom: 1px solid #ccc;
+}}
+
+.finding-block {{
+    margin-top: 30px;
+}}
+
+.finding-title {{
+    font-size: 20px;
+    color: #2c3e50;
+}}
+
+.severity {{
+    color: red;
+    font-weight: bold;
+}}
+
+.red-box {{
+    width: 150px;
+    background: #d62828;
+    padding: 10px;
+    color: white;
+    font-weight: bold;
+    text-align: center;
+    border-radius: 6px;
+}}
+</style>
+</head>
+
+<body>
+
+<div class="header">
+    <h1>WebSecScan Security Report</h1>
+    <div>Comprehensive Security Analysis</div>
+</div>
+
+<div class="info-box">
+    <p><strong>Target URL:</strong> {target_url}</p>
+    <p><strong>Scan Time:</strong> {scan_time}</p>
+    <p><strong>Total Findings:</strong> {total_findings}</p>
+    <div class="red-box">Risk Level: CRITICAL</div>
+</div>
+
+<h2>Identified Vulnerabilities</h2>
+
+<canvas id="donutChart" width="260" height="260"></canvas>
+
+<script>
+const ctx = document.getElementById('donutChart').getContext('2d');
+new Chart(ctx, {{
+    type: 'doughnut',
+    data: {{
+        labels: {categories},
+        datasets: [{{
+            data: { [sum(x) for x in zip(highs, meds, lows)] },
+            backgroundColor: ['#ff4d4d','#ffa502','#2ed573','#1e90ff','#5352ed','#3742fa']
+        }}]
+    }},
+    options: {{
+        cutout: '50%',
+        responsive: false
+    }}
+}});
+</script>
+
+<h2>Categories</h2>
+
+<div class="summary-table">
+<table>
+<thead>
+<tr>
+    <th>Category</th>
+    <th>High</th>
+    <th>Medium</th>
+    <th>Low</th>
+    <th>Total</th>
+</tr>
+</thead>
+<tbody>
+{summary_rows}
+</tbody>
+</table>
+</div>
+
+<h2>Detailed Findings</h2>
+
+{detailed_html}
+
+<br><br>
+
+</body>
+</html>
+"""
     return html
 
 

@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>WebSecScan — Security Report</title>
+<style>
+  :root{
+    --bg1: #667eea;
+    --bg2: #764ba2;
+    --card-bg: #ffffff;
+    --muted: #6c757d;
+    --accent-high: #e04949;
+    --accent-medium: #ffb347;
+    --accent-low: #60c08a;
+    --accent-total: #4f8ef7;
+    --glass: rgba(255,255,255,0.88);
+    --radius: 12px;
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  }
+
+  html,body{height:100%}
+  body{
+    margin:0;
+    background: linear-gradient(135deg,var(--bg1) 0%, var(--bg2) 100%);
+    color:#222;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+    padding:28px;
+    box-sizing:border-box;
+  }
+
+  .container{ max-width:1200px; margin:0 auto; background:var(--glass); border-radius:var(--radius); overflow:hidden; box-shadow: 0 18px 50px rgba(0,0,0,0.25); }
+
+  .header{ padding:28px 36px; background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02)); display:flex; align-items:center; justify-content:space-between; gap:20px; }
+  .header .title { display:flex; gap:18px; align-items:center; }
+  .logo { width:72px; height:72px; border-radius:12px; background: linear-gradient(135deg,var(--bg1),var(--bg2)); display:flex; align-items:center; justify-content:center; color:white; font-weight:700; font-size:22px; box-shadow: 0 6px 18px rgba(0,0,0,0.2); }
+  .title h1{margin:0;font-size:20px;color:#fff}
+  .title p{margin:0;color:rgba(255,255,255,0.9);opacity:0.9;font-size:13px}
+
+  .meta{ text-align:right; color:rgba(255,255,255,0.95); }
+  .meta .small{font-size:12px;opacity:0.9}
+  .meta .risk{ margin-top:6px; display:inline-block; padding:8px 12px; border-radius:8px; background:#ff4d4f; color:white; font-weight:700; box-shadow: 0 6px 16px rgba(0,0,0,0.18); }
+
+  .dashboard{ padding:28px 36px 36px 36px; }
+  .top-cards{ display:grid; grid-template-columns: 380px 1fr; gap:20px; align-items:center; }
+  .left-card{ background:var(--card-bg); border-radius:10px; padding:22px; display:flex; gap:16px; align-items:center; }
+  .donut{ width:140px;height:140px;border-radius:50%;position:relative; display:flex;align-items:center;justify-content:center;
+    background: conic-gradient(
+       var(--accent-high) 0deg calc(36 * 3.6deg),
+       var(--accent-medium) calc(36 * 3.6deg) calc((36 + 45) * 3.6deg),
+       var(--accent-low) calc((36 + 45) * 3.6deg) 360deg
+    );
+    box-shadow: inset 0 -6px 20px rgba(0,0,0,0.06);
+  }
+  .donut .center{ width:74px;height:74px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-weight:700; box-shadow: 0 6px 20px rgba(0,0,0,0.06); }
+  .left-card .legend{ flex:1 }
+  .legend-item{ display:flex;align-items:center;gap:10px;margin-bottom:10px }
+  .swatch{ width:14px;height:14px;border-radius:4px;display:inline-block }
+  .legend-item .label{ font-size:14px }
+  .stat-large{ font-size:26px;font-weight:800;color:var(--accent-total) }
+
+  .right-grid{ display:grid; grid-template-columns: repeat(3,1fr); gap:14px; }
+  .stat{ background:var(--card-bg); padding:18px; border-radius:10px; display:flex; flex-direction:column; justify-content:space-between; min-height:94px; }
+  .stat .label{ font-size:13px;color:var(--muted) }
+  .stat .num{ font-size:28px;font-weight:800;margin-top:6px }
+  .stat.high .num{ color:var(--accent-high) }
+  .stat.medium .num{ color:var(--accent-medium) }
+  .stat.low .num{ color:var(--accent-low) }
+  .stat.total .num{ color:var(--accent-total) }
+
+  .findings{ margin-top:22px; display:flex; gap:20px; }
+  .findings .list{ flex:1; background:var(--card-bg); border-radius:10px; padding:18px; }
+  .list h3{ margin:0 0 12px 0 }
+  .finding-row{ padding:12px;border-radius:8px;border:1px solid #f0f0f0;margin-bottom:10px;display:flex;align-items:flex-start;gap:12px; }
+  .finding-row .sev{ width:10px;height:40px;border-radius:6px;margin-top:4px; }
+  .finding-row .content{ flex:1 }
+  .finding-row .content .path{ font-weight:700 }
+  .finding-row .content .desc{ color:var(--muted);font-size:13px;margin-top:6px }
+  .finding-row .meta{ font-size:12px;color:var(--muted);margin-top:6px }
+
+  .footer{ padding:18px 36px;background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); display:flex;justify-content:space-between;align-items:center;color:rgba(255,255,255,0.9); }
+
+  @media (max-width:900px){ .top-cards{ grid-template-columns:1fr;align-items:stretch } .right-grid{ grid-template-columns: repeat(2,1fr) } }
+  @media (max-width:520px){ .right-grid{ grid-template-columns:1fr } .donut{ width:110px;height:110px } .donut .center{ width:60px;height:60px } }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="title">
+        <div class="logo">WS</div>
+        <div>
+          <h1>WebSecScan — Security Report</h1>
+          <p>Target: <strong><code>http://127.0.0.1:3000</code></strong> • Scan time: <span>2025-11-18 16:44:04</span></p>
+        </div>
+      </div>
+
+      <div class="meta">
+        <div class="small">Total Requests: <strong></strong></div>
+        <div class="small">Scan duration: <strong></strong></div>
+        <div class="risk">RISK: <span>HIGH</span></div>
+      </div>
+    </header>
+
+    <main class="dashboard">
+      <div class="top-cards">
+        <div class="left-card">
+          <div class="donut" id="donut">
+            <div class="center">
+              <div>
+                <div style="font-size:12px;color:#777">Total</div>
+                <div class="stat-large">42</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="legend">
+            <div style="margin-bottom:6px;color:#555;font-weight:700">Severity distribution</div>
+            <div class="legend-item"><span class="swatch" style="background:var(--accent-high)"></span><span class="label">High</span> <span style="margin-left:8px;color:#777">(15)</span></div>
+            <div class="legend-item"><span class="swatch" style="background:var(--accent-medium)"></span><span class="label">Medium</span> <span style="margin-left:8px;color:#777">(19)</span></div>
+            <div class="legend-item"><span class="swatch" style="background:var(--accent-low)"></span><span class="label">Low</span> <span style="margin-left:8px;color:#777">(8)</span></div>
+          </div>
+        </div>
+
+        <div class="right-grid">
+          <div class="stat total">
+            <div class="label">Total Findings</div>
+            <div class="num">42</div>
+          </div>
+          <div class="stat high">
+            <div class="label">High Severity</div>
+            <div class="num">15</div>
+          </div>
+          <div class="stat medium">
+            <div class="label">Medium Severity</div>
+            <div class="num">19</div>
+          </div>
+          <div class="stat low">
+            <div class="label">Low Severity</div>
+            <div class="num">8</div>
+          </div>
+          <div class="stat">
+            <div class="label">Unique Categories</div>
+            <div class="num">7</div>
+          </div>
+          <div class="stat">
+            <div class="label">Timestamp</div>
+            <div class="num">2025-11-18 16:44:04</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="findings">
+        <div class="list" style="min-width:0">
+          <h3>Detailed Findings</h3>
+          <p style="color:var(--muted);margin:0 0 12px 0">Below are the scan findings grouped by category.</p>
+
+          
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">1) Category: <strong>Security Headers</strong> — <code></code></div>
+                    <div class="desc">Add a CSP header to control sources of scripts, styles, and media.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: Missing </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">2) Category: <strong>Security Headers</strong> — <code></code></div>
+                    <div class="desc">Enable HSTS (Strict-Transport-Security) to enforce HTTPS and prevent downgrade attacks.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: Missing </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#60c08a"></div>
+                  <div class="content">
+                    <div class="path">3) Category: <strong>Security Headers</strong> — <code></code></div>
+                    <div class="desc">X-XSS-Protection is largely deprecated in modern browsers. If supporting legacy browsers, consider '1; mode=block'.</div>
+                    <div class="meta">Severity: <strong>Low</strong> • HTTP Status: Missing </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#60c08a"></div>
+                  <div class="content">
+                    <div class="path">4) Category: <strong>Security Headers</strong> — <code></code></div>
+                    <div class="desc">Configured correctly.</div>
+                    <div class="meta">Severity: <strong>Low</strong> • HTTP Status: Present <span>• Details: nosniff</span></div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#60c08a"></div>
+                  <div class="content">
+                    <div class="path">5) Category: <strong>Security Headers</strong> — <code></code></div>
+                    <div class="desc">Add Referrer-Policy (recommended: strict-origin-when-cross-origin or no-referrer).</div>
+                    <div class="meta">Severity: <strong>Low</strong> • HTTP Status: Missing </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#60c08a"></div>
+                  <div class="content">
+                    <div class="path">6) Category: <strong>Security Headers</strong> — <code></code></div>
+                    <div class="desc">Review Permissions-Policy to ensure only required features are allowed.</div>
+                    <div class="meta">Severity: <strong>Low</strong> • HTTP Status: Present <span>• Details: payment 'self'</span></div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#60c08a"></div>
+                  <div class="content">
+                    <div class="path">7) Category: <strong>Security Headers</strong> — <code></code></div>
+                    <div class="desc">Consider adding Cross-Origin-Embedder-Policy (e.g., 'require-corp') if using cross-origin isolation.</div>
+                    <div class="meta">Severity: <strong>Low</strong> • HTTP Status: Missing </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#60c08a"></div>
+                  <div class="content">
+                    <div class="path">8) Category: <strong>Security Headers</strong> — <code></code></div>
+                    <div class="desc">Consider adding Cross-Origin-Opener-Policy: same-origin to improve isolation against side-channel attacks.</div>
+                    <div class="meta">Severity: <strong>Low</strong> • HTTP Status: Missing </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#60c08a"></div>
+                  <div class="content">
+                    <div class="path">9) Category: <strong>Security Headers</strong> — <code></code></div>
+                    <div class="desc">Consider Cross-Origin-Resource-Policy to restrict which origins can load resources.</div>
+                    <div class="meta">Severity: <strong>Low</strong> • HTTP Status: Missing </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">10) Category: <strong>HTTP Methods</strong> — <code></code></div>
+                    <div class="desc">Server did not advertise allowed methods. Try an OPTIONS request or manual testing.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: Unknown </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#60c08a"></div>
+                  <div class="content">
+                    <div class="path">11) Category: <strong>Server Information</strong> — <code></code></div>
+                    <div class="desc">Ensure content types are correctly set; avoid serving sensitive data with permissive types.</div>
+                    <div class="meta">Severity: <strong>Low</strong> • HTTP Status: Present: text/html; charset=UTF-8 <span>• Details: text/html; charset=UTF-8</span></div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">12) Category: <strong>CORS</strong> — <code></code></div>
+                    <div class="desc">Access-Control-Allow-Origin: * (wildcard) observed in response.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status:  </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">13) Category: <strong>CORS</strong> — <code></code></div>
+                    <div class="desc">Unsafe HTTP methods exposed via CORS/preflight: DELETE, PATCH, PUT</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status:  </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">14) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/.git/</code></div>
+                    <div class="desc">Path /.git/ returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">15) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/.env</code></div>
+                    <div class="desc">Path /.env returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">16) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/config.php</code></div>
+                    <div class="desc">Path /config.php returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">17) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/config.php.bak</code></div>
+                    <div class="desc">Path /config.php.bak returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">18) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/config.bak</code></div>
+                    <div class="desc">Path /config.bak returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">19) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/backup.zip</code></div>
+                    <div class="desc">Path /backup.zip returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">20) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/wp-config.php</code></div>
+                    <div class="desc">Path /wp-config.php returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">21) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/phpinfo.php</code></div>
+                    <div class="desc">Path /phpinfo.php returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">22) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/.git/config</code></div>
+                    <div class="desc">Path /.git/config returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">23) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/.gitignore</code></div>
+                    <div class="desc">Path /.gitignore returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">24) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/.htpasswd</code></div>
+                    <div class="desc">Path /.htpasswd returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">25) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/backup.tar.gz</code></div>
+                    <div class="desc">Path /backup.tar.gz returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">26) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/</code></div>
+                    <div class="desc">Path / returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">27) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/robots.txt</code></div>
+                    <div class="desc">Path /robots.txt returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">28) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/sitemap.xml</code></div>
+                    <div class="desc">Path /sitemap.xml returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">29) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/.htaccess</code></div>
+                    <div class="desc">Path /.htaccess returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">30) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/admin/</code></div>
+                    <div class="desc">Path /admin/ returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">31) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/admin/index.php</code></div>
+                    <div class="desc">Path /admin/index.php returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">32) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/server-status</code></div>
+                    <div class="desc">Path /server-status returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">33) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/.well-known/security.txt</code></div>
+                    <div class="desc">Path /.well-known/security.txt returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">34) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/.well-known/change-password</code></div>
+                    <div class="desc">Path /.well-known/change-password returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">35) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/.DS_Store</code></div>
+                    <div class="desc">Path /.DS_Store returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">36) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/logs/</code></div>
+                    <div class="desc">Path /logs/ returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">37) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/error_log</code></div>
+                    <div class="desc">Path /error_log returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">38) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/README</code></div>
+                    <div class="desc">Path /README returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">39) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/readme.html</code></div>
+                    <div class="desc">Path /readme.html returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">40) Category: <strong>Directory/File Exposure</strong> — <code>http://127.0.0.1:3000/readme.txt</code></div>
+                    <div class="desc">Path /readme.txt returned HTTP 200.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 </div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#ffb347"></div>
+                  <div class="content">
+                    <div class="path">41) Category: <strong>Path Traversal</strong> — <code>/ftp</code></div>
+                    <div class="desc">Server response changed a lot when traversal sequences were included.</div>
+                    <div class="meta">Severity: <strong>Medium</strong> • HTTP Status: 200 <span>• Details: Response grew from ~11.0KB to ~73.2KB when traversal patterns were used.</span></div>
+                  </div>
+                </div>
+                
+                <div class="finding-row">
+                  <div class="sev" style="background:#e04949"></div>
+                  <div class="content">
+                    <div class="path">42) Category: <strong>SSL/TLS</strong> — <code></code></div>
+                    <div class="desc">SSL/TLS error: Connection refused — likely not supporting HTTPS on port 443.</div>
+                    <div class="meta">Severity: <strong>High</strong> • HTTP Status:  </div>
+                  </div>
+                </div>
+                
+
+        </div>
+      </div>
+
+    </main>
+
+    <footer class="footer">
+      <div>WebSecScan — Web Security Misconfiguration Analyzer</div>
+      <div>Generated by WebSecScan • <small>2025-11-18 16:44:04</small></div>
+    </footer>
+  </div>
+</body>
+</html>
