@@ -719,50 +719,47 @@ def export_to_json(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, 
         return False
 
 
-def export_to_html(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, int]], 
-                   filename: str = "security_scan_report.html", target_url: str = None) -> bool:
+def export_to_pdf(findings: List[Dict[str, Any]],
+                  summary: Dict[str, Dict[str, int]],
+                  filename: str = "security_scan_report.pdf",
+                  target_url: str = None) -> bool:
     """
-    Export findings to an HTML file with styling.
-    
-    Args:
-        findings: List of all findings
-        summary: Summary dictionary from generate_summary()
-        filename: Output filename
-        target_url: Target URL that was scanned
-        
-    Returns:
-        True if successful, False otherwise
+    Export findings to a PDF file by rendering an HTML template and converting it with WeasyPrint.
+    Requires: weasyprint (and system libs: cairo, pango).
     """
     try:
-        # Sort categories by severity
+        # lazy import so script won't fail when not using PDF
+        from weasyprint import HTML, CSS
+    except Exception as e:
+        print(Fore.RED + "[ERROR] WeasyPrint is required to export PDF. Install it and system dependencies." + Style.RESET_ALL)
+        print(Fore.RED + f"Details: {e}" + Style.RESET_ALL)
+        return False
+
+    try:
+        # Sort categories by severity (same logic you used before)
         sorted_categories = sorted(
             summary.items(),
             key=lambda x: (x[1]["High"] * 100 + x[1]["Medium"] * 10 + x[1]["Low"]),
             reverse=True
         )
-        
+
         # Calculate totals
         total_high = sum(counts["High"] for _, counts in sorted_categories)
         total_medium = sum(counts["Medium"] for _, counts in sorted_categories)
         total_low = sum(counts["Low"] for _, counts in sorted_categories)
         total_findings = total_high + total_medium + total_low
-        
-        # Group findings by category
+
+        # Group findings by category and sort by severity
         findings_by_category: Dict[str, List[Dict]] = {}
         for finding in findings:
             category = finding.get("Category", "Unknown")
-            if category not in findings_by_category:
-                findings_by_category[category] = []
-            findings_by_category[category].append(finding)
-        
-        # Sort findings within each category by severity
+            findings_by_category.setdefault(category, []).append(finding)
+
         severity_order = {"High": 0, "Medium": 1, "Low": 2}
         for category in findings_by_category:
-            findings_by_category[category].sort(
-                key=lambda f: severity_order.get(f.get("Severity", "Low"), 3)
-            )
-        
-        # Generate HTML
+            findings_by_category[category].sort(key=lambda f: severity_order.get(f.get("Severity", "Low"), 3))
+
+        # Build HTML (same function used for PDF rendering)
         html_content = _generate_html_template(
             target_url=target_url or "Unknown",
             scan_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -773,204 +770,230 @@ def export_to_html(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, 
             sorted_categories=sorted_categories,
             findings_by_category=findings_by_category
         )
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        
-        print(Fore.GREEN + f"✅ HTML report exported to {filename}" + Style.RESET_ALL)
+
+        # Render PDF
+        HTML(string=html_content).write_pdf(filename)
+        print(Fore.GREEN + f"✅ PDF report exported to {filename}" + Style.RESET_ALL)
         return True
-        
+
     except Exception as e:
-        print(Fore.RED + f"[ERROR] Failed to export HTML: {e}" + Style.RESET_ALL)
+        print(Fore.RED + f"[ERROR] Failed to export PDF: {e}" + Style.RESET_ALL)
         return False
 
 
+# --- UPDATED: HTML template generator (produces HTML that WeasyPrint can render to PDF) ---
 def _generate_html_template(target_url: str, scan_time: str, total_findings: int,
                             total_high: int, total_medium: int, total_low: int,
                             sorted_categories: List, findings_by_category: Dict) -> str:
-    
-    # Build summary rows
+    """
+    Generate an HTML document string which is suitable for WeasyPrint rendering to PDF.
+    Includes an inline SVG donut chart (no JS required).
+    """
+    # Build summary table rows
     summary_rows = ""
     for category, counts in sorted_categories:
-        total = counts["High"] + counts["Medium"] + counts["Low"]
+        high = counts["High"]
+        medium = counts["Medium"]
+        low = counts["Low"]
+        total = high + medium + low
         summary_rows += f"""
-            <tr>
-                <td>{category}</td>
-                <td>{counts['High']}</td>
-                <td>{counts['Medium']}</td>
-                <td>{counts['Low']}</td>
-                <td><strong>{total}</strong></td>
-            </tr>
+        <tr>
+            <td style="padding:8px 10px;border-bottom:1px solid #ddd;">{category}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #ddd;">{high}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #ddd;">{medium}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #ddd;">{low}</td>
+            <td style="padding:8px 10px;border-bottom:1px solid #ddd;"><strong>{total}</strong></td>
+        </tr>
         """
 
-    # Build detailed finding blocks
-    detailed_html = ""
+    # Build detailed findings
+    detailed_sections = ""
+    finding_global_index = 1
     for category, counts in sorted_categories:
-        findings = findings_by_category.get(category, [])
-        if not findings:
+        findings_list = findings_by_category.get(category, [])
+        if not findings_list:
             continue
-        
-        for finding in findings:
-            detailed_html += f"""
-            <div class="finding-block">
-                <h3 class="finding-title">Vulnerability: {finding.get("Description", "Unnamed Finding")}</h3>
 
-                <p><strong>Risk rating:</strong> <span class="severity">{finding.get("Severity")}</span></p>
+        # Section header with counts
+        detailed_sections += f"""
+        <div class="category-section">
+            <h2 style="margin:0 0 8px 0;font-size:18px;color:#222;">{category}
+                <span style="float:right;font-size:13px;color:#555;">
+                    {counts['High']} High | {counts['Medium']} Medium | {counts['Low']} Low
+                </span>
+            </h2>
+        """
 
-                <p><strong>Instances:</strong><br> {finding.get("URL", "N/A")}</p>
-                <p><strong>Page Affected:</strong><br> {finding.get("Context", "N/A")}</p>
+        for f in findings_list:
+            severity = f.get("Severity", "Low")
+            severity_color = "#dc3545" if severity == "High" else ("#fd7e14" if severity == "Medium" else "#28a745")
+            description = f.get("Description", "No description provided.")
+            recommendation = f.get("Recommendation", "No recommendation provided.")
+            url = f.get("URL", "N/A")
+            context = f.get("Context", "N/A")
+            detail_val = f.get("Detail", "")
+            if isinstance(detail_val, dict):
+                detail_val = json.dumps(detail_val, indent=2)
 
-                <p><strong>Impact/Consequence:</strong><br>
-                    Attackers may exploit this vulnerability to gain unauthorized access or compromise the system.
-                </p>
+            detail_block = ""
+            if detail_val:
+                detail_block = f'<div style="background:#f7f7f7;padding:8px;border-radius:4px;margin:6px 0;"><pre style="white-space:pre-wrap;margin:0;">{detail_val}</pre></div>'
 
-                <p><strong>Remediation:</strong><br>
-                    {finding.get('Recommendation', "No remediation provided.")}
-                </p>
+            detailed_sections += f"""
+            <div style="margin:14px 0;padding:12px;border-left:6px solid {severity_color};background:#fff;border-radius:4px;">
+                <div style="font-weight:700;margin-bottom:6px;">#{finding_global_index} — {description}</div>
+                <div style="margin-bottom:6px;"><strong>Risk rating:</strong> <span style="color:{severity_color};font-weight:700;">{severity}</span></div>
+
+                <div style="margin-bottom:6px;"><strong>Instances:</strong><br><code style="background:#f1f1f1;padding:2px 6px;border-radius:3px;">{url}</code></div>
+                <div style="margin-bottom:6px;"><strong>Page Affected / Context:</strong><br>{context}</div>
+
+                <div style="margin-bottom:6px;"><strong>Impact/Consequence:</strong><br>
+                    Exploitation of this issue may allow unauthorized access, data leakage, or system compromise depending on the nature of the vulnerability.
+                </div>
+
+                <div style="margin-bottom:6px;background:#fffbe6;padding:8px;border-left:4px solid #ffd43b;border-radius:3px;"><strong>Remediation:</strong><br>{recommendation}</div>
+
+                {detail_block}
             </div>
-            <hr>
             """
+            finding_global_index += 1
 
-    # The chart data
-    categories = [c for c, _ in sorted_categories]
-    highs = [counts["High"] for _, counts in sorted_categories]
-    meds = [counts["Medium"] for _, counts in sorted_categories]
-    lows = [counts["Low"] for _, counts in sorted_categories]
+        detailed_sections += "</div>"
 
+    # Build small inline SVG donut (proportions)
+    total_for_chart = float(total_high + total_medium + total_low) or 1.0
+    ph = (total_high / total_for_chart) * 100
+    pm = (total_medium / total_for_chart) * 100
+    pl = (total_low / total_for_chart) * 100
+
+    # use stroke-dasharray on circles to make donut segments
+    # We'll create concentric arcs by rotating stroke-dasharray. This is a simple representation.
+    svg_donut = f"""
+    <svg width="220" height="220" viewBox="0 0 42 42" class="donut">
+      <defs></defs>
+      <circle r="15.9155" cx="21" cy="21" fill="transparent" stroke="#eee" stroke-width="8"></circle>
+
+      <!-- High -->
+      <circle r="15.9155" cx="21" cy="21" fill="transparent" stroke="#dc3545" stroke-width="8"
+              stroke-dasharray="{ph} {100-ph}" stroke-dashoffset="0" transform="rotate(-90 21 21)"></circle>
+
+      <!-- Medium -->
+      <circle r="15.9155" cx="21" cy="21" fill="transparent" stroke="#fd7e14" stroke-width="8"
+              stroke-dasharray="{pm} {100-pm}" stroke-dashoffset="{ -ph }" transform="rotate(-90 21 21)"></circle>
+
+      <!-- Low -->
+      <circle r="15.9155" cx="21" cy="21" fill="transparent" stroke="#28a745" stroke-width="8"
+              stroke-dasharray="{pl} {100-pl}" stroke-dashoffset="{ -(ph+pm) }" transform="rotate(-90 21 21)"></circle>
+
+      <g font-family="Arial" font-size="3" text-anchor="middle">
+        <text x="21" y="20.5" style="font-size:3.6px;font-weight:700;">{int(total_for_chart)}</text>
+        <text x="21" y="24.5" style="fill:#666;">Total</text>
+      </g>
+    </svg>
+    """
+
+    # Compose full HTML
     html = f"""
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="utf-8"/>
 <title>WebSecScan Security Report</title>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 <style>
-body {{
-    font-family: Arial, sans-serif;
-    margin: 40px;
+  body {{
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    color:#222;
+    margin: 24px;
     background: #fff;
-}}
-
-.header {{
-    background: #4A60E0;
-    padding: 25px;
-    color: white;
-}}
-
-.header h1 {{
-    font-size: 32px;
-}}
-
-.info-box {{
-    margin-top: 20px;
-}}
-
-.summary-table table {{
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 20px;
-}}
-
-.summary-table th {{
-    background: #2c3e50;
-    color: white;
-    padding: 10px;
-    text-align: left;
-}}
-
-.summary-table td {{
-    padding: 8px;
-    border-bottom: 1px solid #ccc;
-}}
-
-.finding-block {{
-    margin-top: 30px;
-}}
-
-.finding-title {{
-    font-size: 20px;
-    color: #2c3e50;
-}}
-
-.severity {{
-    color: red;
-    font-weight: bold;
-}}
-
-.red-box {{
-    width: 150px;
-    background: #d62828;
-    padding: 10px;
-    color: white;
-    font-weight: bold;
-    text-align: center;
-    border-radius: 6px;
-}}
+  }}
+  .header {{
+    background:#4a60e0;
+    color:#fff;
+    padding:18px 20px;
+    border-radius:6px;
+  }}
+  .meta {{
+    margin-top:14px;
+    display:flex;
+    gap:40px;
+    align-items:center;
+  }}
+  .meta .left {{
+    flex:1;
+  }}
+  .meta .right {{
+    width:220px;
+    text-align:center;
+  }}
+  table.summary {{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:12px;
+  }}
+  table.summary th {{
+    background:#2c3e50;
+    color:#fff;
+    text-align:left;
+    padding:10px;
+  }}
+  table.summary td {{
+    padding:8px 10px;
+    border-bottom:1px solid #eee;
+  }}
+  .category-section {{
+    margin-top:18px;
+  }}
+  .donut {{
+    margin-top:6px;
+  }}
+  pre {{
+    font-family: monospace;
+  }}
 </style>
 </head>
-
 <body>
+  <div class="header">
+    <h1 style="margin:0;font-size:20px;">WebSecScan Security Report</h1>
+    <div style="opacity:0.9;margin-top:6px;">Comprehensive Security Analysis</div>
+  </div>
 
-<div class="header">
-    <h1>WebSecScan Security Report</h1>
-    <div>Comprehensive Security Analysis</div>
-</div>
+  <div class="meta" style="margin-top:12px;">
+    <div class="left">
+      <div><strong>Target URL:</strong> <code>{target_url}</code></div>
+      <div style="margin-top:6px;"><strong>Scan Date:</strong> {scan_time}</div>
+      <div style="margin-top:6px;"><strong>Total Findings:</strong> {total_findings}</div>
+    </div>
 
-<div class="info-box">
-    <p><strong>Target URL:</strong> {target_url}</p>
-    <p><strong>Scan Time:</strong> {scan_time}</p>
-    <p><strong>Total Findings:</strong> {total_findings}</p>
-    <div class="red-box">Risk Level: CRITICAL</div>
-</div>
+    <div class="right">
+      <div style="display:inline-block;padding:8px;background:#d62828;color:#fff;border-radius:4px;font-weight:700;">RISK: CRITICAL</div>
+      {svg_donut}
+      <div style="font-size:12px;margin-top:6px;">
+        <span style="color:#dc3545;">High: {total_high}</span> &nbsp;|&nbsp;
+        <span style="color:#fd7e14;">Medium: {total_medium}</span> &nbsp;|&nbsp;
+        <span style="color:#28a745;">Low: {total_low}</span>
+      </div>
+    </div>
+  </div>
 
-<h2>Identified Vulnerabilities</h2>
+  <h2 style="margin-top:18px;">Identified Vulnerabilities — Categories</h2>
 
-<canvas id="donutChart" width="260" height="260"></canvas>
+  <table class="summary" aria-label="Summary table">
+    <thead>
+      <tr>
+        <th>Category</th>
+        <th>High</th>
+        <th>Medium</th>
+        <th>Low</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {summary_rows}
+    </tbody>
+  </table>
 
-<script>
-const ctx = document.getElementById('donutChart').getContext('2d');
-new Chart(ctx, {{
-    type: 'doughnut',
-    data: {{
-        labels: {categories},
-        datasets: [{{
-            data: { [sum(x) for x in zip(highs, meds, lows)] },
-            backgroundColor: ['#ff4d4d','#ffa502','#2ed573','#1e90ff','#5352ed','#3742fa']
-        }}]
-    }},
-    options: {{
-        cutout: '50%',
-        responsive: false
-    }}
-}});
-</script>
-
-<h2>Categories</h2>
-
-<div class="summary-table">
-<table>
-<thead>
-<tr>
-    <th>Category</th>
-    <th>High</th>
-    <th>Medium</th>
-    <th>Low</th>
-    <th>Total</th>
-</tr>
-</thead>
-<tbody>
-{summary_rows}
-</tbody>
-</table>
-</div>
-
-<h2>Detailed Findings</h2>
-
-{detailed_html}
-
-<br><br>
+  <h2 style="margin-top:18px;">Detailed Findings</h2>
+  {detailed_sections}
 
 </body>
 </html>

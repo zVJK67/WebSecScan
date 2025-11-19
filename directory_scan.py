@@ -132,15 +132,14 @@ def print_dir_scan_results(findings: List[Dict], show_counts: bool = True) -> No
             if sev in counts:
                 counts[sev] += 1
         total = sum(counts.values())
-        print(Fore.MAGENTA + "\nDirectory & File Exposure — Summary" + Style.RESET_ALL)
+        print(Fore.CYAN + "\nDirectory & File Exposure" + Style.RESET_ALL)
         print("---------------------------------------")
         print(f"Total Findings: {total} | "
               f"{Fore.RED}High: {counts['High']}{Style.RESET_ALL} | "
               f"{Fore.YELLOW}Medium: {counts['Medium']}{Style.RESET_ALL} | "
               f"{Fore.GREEN}Low: {counts['Low']}{Style.RESET_ALL}\n")
 
-    print(Fore.WHITE + "Directory & File Exposure" + Style.RESET_ALL)
-    print("---------------------------------------")
+    print(Fore.MAGENTA + "Findings:\n" + Style.RESET_ALL)
 
     for idx, f in enumerate(findings_sorted, 1):
         sev = f.get("Severity", "Low")

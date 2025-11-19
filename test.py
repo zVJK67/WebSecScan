@@ -8,20 +8,26 @@ from cors_checker import analyze_cors
 from ssl_tls import run_ssl_check, check_ssl_tls
 from server_info import get_server_info, print_server_info
 from findings_summary import print_summary_table, print_detailed_findings, generate_summary, export_summary_csv, normalize_findings
-from path_traversal import test_path_traversal  # Path Traversal module
-from directory_scan import scan_common_paths, print_dir_scan_results  # Directory scan
-
-# NEW: exporter integration (no changes to export_findings.py required)
-from export_findings import export_to_html, export_to_json
+from path_traversal import test_path_traversal  
+from directory_scan import scan_common_paths, print_dir_scan_results
+from export_findings import export_to_pdf, export_to_json
 
 from colorama import Fore, Style, init
 import urllib.parse
 import sys
 import time
 
+import signal
+
+def handle_interrupt(sig, frame):
+    print("\n\n" + Fore.RED + "⚠️ Scan interrupted by user (Ctrl + C). Exiting safely..." + Style.RESET_ALL)
+    sys.exit(0)
+
 
 # initialize colorama
 init(autoreset=True)
+# Capture Ctrl+C and exit gracefully
+signal.signal(signal.SIGINT, handle_interrupt)
 
 
 def normalize_and_validate_url(raw_url: str) -> str:
@@ -274,15 +280,15 @@ def main():
         # NEW: Ask if user wants full report export 
         if input(Fore.YELLOW + "\nExport scan results to a report file? (y/n): " + Style.RESET_ALL).strip().lower() == 'y':
             print(Fore.CYAN + "\nAvailable export formats:" + Style.RESET_ALL)
-            print("  1. HTML  – Beautiful visual report (for presentation/sharing)")
+            print("  1. PDF  – Beautiful visual report (for presentation/sharing)")
             print("  2. JSON  – Structured data (for analysis or integration)")
             print("  3. CSV   – Table summary (for spreadsheets)")
-            print("  4. All   – Export all formats (HTML, JSON, CSV)")
+            print("  4. All   – Export all formats (PDF, JSON, CSV)")
             print("You can choose multiple, e.g. '1,2' or '1,3'.")
 
             fmt_choice = input(Fore.YELLOW + "\nEnter your choice(s): " + Style.RESET_ALL).strip().lower()
 
-            export_html = '1' in fmt_choice or 'html' in fmt_choice
+            export_html = '1' in fmt_choice or 'pdf' in fmt_choice
             export_json = '2' in fmt_choice or 'json' in fmt_choice
             export_csv = '3' in fmt_choice or 'csv' in fmt_choice
 
@@ -290,17 +296,17 @@ def main():
             if '4' in fmt_choice or 'all' in fmt_choice:
                 export_html = export_json = export_csv = True
 
-            # --- HTML Export ---
+            # --- PDF Export ---
             if export_html:
-                html_fname = input("Enter HTML filename (default: security_scan_report.html): ").strip()
+                html_fname = input("Enter PDF filename (default: security_scan_report.pdf): ").strip()
                 if not html_fname:
-                    html_fname = "security_scan_report.html"
-                elif not html_fname.lower().endswith('.html'):
-                    html_fname += '.html'
+                    html_fname = "security_scan_report.pdf"
+                elif not html_fname.lower().endswith('.pdf'):
+                    html_fname += '.pdf'
                 try:
-                    export_to_html(all_findings, summary, filename=html_fname, target_url=url)
+                    export_to_pdf(all_findings, summary, filename=html_fname, target_url=url)
                 except Exception as e:
-                    print(Fore.RED + f"[ERROR] export_to_html failed: {e}" + Style.RESET_ALL)
+                    print(Fore.RED + f"[ERROR] export_to_pdf failed: {e}" + Style.RESET_ALL)
 
             # --- JSON Export ---
             if export_json:
