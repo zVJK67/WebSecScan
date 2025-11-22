@@ -8,18 +8,28 @@ from cors_checker import analyze_cors
 from ssl_tls import run_ssl_check, check_ssl_tls
 from server_info import get_server_info, print_server_info
 from findings_summary import print_summary_table, print_detailed_findings, generate_summary, export_summary_csv, normalize_findings
-from path_traversal import test_path_traversal  # Path Traversal module
-from directory_scan import scan_common_paths, print_dir_scan_results  # Directory scan
-from export_findings import export_to_html, export_to_json
+from path_traversal import test_path_traversal
+from directory_scan import scan_common_paths, print_dir_scan_results
+from export_findings import generate_interactive_html_report, export_to_json
 
 from colorama import Fore, Style, init
 import urllib.parse
 import sys
 import time
+import webbrowser
+import os
+from datetime import datetime
+import signal
 
 
 # initialize colorama
 init(autoreset=True)
+
+def handle_interrupt(sig, frame):
+    print("\n\n" + Fore.RED + "⚠️ Scan interrupted by user (Ctrl + C). Exiting safely..." + Style.RESET_ALL)
+    sys.exit(0)
+# Capture Ctrl+C and exit gracefully
+signal.signal(signal.SIGINT, handle_interrupt)
 
 
 def normalize_and_validate_url(raw_url: str) -> str:
@@ -158,14 +168,50 @@ def main():
     # Tag method findings with proper category
     method_findings = _tag_findings_with_category(method_findings, "HTTP Methods")
 
-    # === Step 3: Server Info Check ===
+    # === Step 3: Server Info Check (ENHANCED) ===
     print(Fore.CYAN + "\n[3/8] Checking server information & exposures..." + Style.RESET_ALL)
+    print(Fore.YELLOW + "   → Analyzing headers, error pages, and fingerprinting patterns..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        info, server_findings = get_server_info(url)
+        info, server_findings = get_server_info(url, timeout=10)
         print_server_info(info, server_findings)
+        
+        # Optional: Show additional technical details in verbose mode
+        if verbose:
+            show_details = input(Fore.YELLOW + "\nShow detailed server fingerprinting analysis? (y/n): " + Style.RESET_ALL).strip().lower()
+            if show_details == 'y':
+                # Display header order analysis
+                header_order = info.get("header_order_analysis", {})
+                if header_order.get("potential_matches"):
+                    print(Fore.CYAN + "\n📊 Server Fingerprint Matches:" + Style.RESET_ALL)
+                    for server_type, match_info in header_order["potential_matches"].items():
+                        print(f"  • {server_type}: {match_info['confidence']:.0%} confidence")
+                        print(f"    Matching headers: {', '.join(match_info['matching_headers'])}")
+                
+                # Display error response details
+                error_responses = info.get("error_responses", [])
+                if error_responses:
+                    print(Fore.CYAN + f"\n🔍 Error Page Analysis ({len(error_responses)} tests):" + Style.RESET_ALL)
+                    for err in error_responses:
+                        print(f"\n  Test: {err['test']}")
+                        print(f"  Status: {err['status_code']}")
+                        if err.get('server_header'):
+                            print(f"  Server Header: {err['server_header']}")
+                        if err.get('mentions_in_body'):
+                            print(f"  Body Mentions: {', '.join(err['mentions_in_body'])}")
+                
+                # Display status line info
+                status_line = info.get("status_line", {})
+                if status_line:
+                    print(Fore.CYAN + "\n📋 HTTP Status Line Details:" + Style.RESET_ALL)
+                    print(f"  HTTP Version: {status_line.get('http_version')}")
+                    print(f"  Status Code: {status_line.get('status_code')}")
+                    print(f"  Reason Phrase: {status_line.get('reason_phrase')}")
     except Exception as e:
         print(Fore.RED + f"[ERROR] Server info check failed: {e}" + Style.RESET_ALL)
+        import traceback
+        if verbose:
+            print(Fore.RED + traceback.format_exc() + Style.RESET_ALL)
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # Tag server findings with proper category
@@ -269,63 +315,77 @@ def main():
         summary = generate_summary(all_findings)
         print_summary_table(summary, title="🔍 Security Scan Results Summary")
 
-        # NEW: Ask if user wants full report export 
-        if input(Fore.YELLOW + "\nExport scan results to a report file? (y/n): " + Style.RESET_ALL).strip().lower() == 'y':
-            print(Fore.CYAN + "\nAvailable export formats:" + Style.RESET_ALL)
-            print("  1. HTML  – Beautiful visual report (for presentation/sharing)")
-            print("  2. JSON  – Structured data (for analysis or integration)")
-            print("  3. CSV   – Table summary (for spreadsheets)")
-            print("  4. All   – Export all formats (HTML, JSON, CSV)")
-            print("You can choose multiple, e.g. '1,2' or '1,3'.")
-
-            fmt_choice = input(Fore.YELLOW + "\nEnter your choice(s): " + Style.RESET_ALL).strip().lower()
-
-            export_html = '1' in fmt_choice or 'html' in fmt_choice
-            export_json = '2' in fmt_choice or 'json' in fmt_choice
-            export_csv = '3' in fmt_choice or 'csv' in fmt_choice
-
-            # If user chooses option 4 or types "all", export everything
-            if '4' in fmt_choice or 'all' in fmt_choice:
-                export_html = export_json = export_csv = True
-
-            # --- HTML Export ---
-            if export_html:
-                html_fname = input("Enter HTML filename (default: security_scan_report.html): ").strip()
-                if not html_fname:
-                    html_fname = "security_scan_report.html"
-                elif not html_fname.lower().endswith('.html'):
-                    html_fname += '.html'
+        # === NEW: Ask if user wants to generate interactive HTML report ===
+        print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
+        generate_report = input(Fore.YELLOW + "\n📊 Generate interactive HTML report? (y/n): " + Style.RESET_ALL).strip().lower()
+        
+        if generate_report == 'y':
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            html_filename = f"security_scan_report_{timestamp}.html"
+            
+            print(Fore.CYAN + f"\n🔨 Generating interactive report..." + Style.RESET_ALL)
+            
+            success = generate_interactive_html_report(
+                findings=all_findings,
+                summary=summary,
+                filename=html_filename,
+                target_url=url
+            )
+            
+            if success:
+                print(Fore.GREEN + f"\n✅ Report generated successfully!" + Style.RESET_ALL)
+                print(Fore.CYAN + f"   📁 File: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
+                print(Fore.CYAN + f"   🌐 Opening in browser..." + Style.RESET_ALL)
+                
+                # Automatically open in browser
                 try:
-                    export_to_html(all_findings, summary, filename=html_fname, target_url=url)
+                    webbrowser.open('file://' + os.path.abspath(html_filename))
+                    print(Fore.GREEN + "   ✓ Opened in default browser" + Style.RESET_ALL)
                 except Exception as e:
-                    print(Fore.RED + f"[ERROR] export_to_html failed: {e}" + Style.RESET_ALL)
-
-            # --- JSON Export ---
-            if export_json:
-                json_fname = input("Enter JSON filename (default: security_scan_report.json): ").strip()
-                if not json_fname:
-                    json_fname = "security_scan_report.json"
-                elif not json_fname.lower().endswith('.json'):
-                    json_fname += '.json'
-                try:
-                    export_to_json(all_findings, summary, filename=json_fname, target_url=url)
-                except Exception as e:
-                    print(Fore.RED + f"[ERROR] export_to_json failed: {e}" + Style.RESET_ALL)
-
-            # --- CSV Export ---
-            if export_csv:
-                csv_fname = input("Enter CSV filename (default: security_findings_summary.csv): ").strip()
-                if not csv_fname:
-                    csv_fname = "security_findings_summary.csv"
-                elif not csv_fname.lower().endswith('.csv'):
-                    csv_fname += '.csv'
-                try:
-                    export_summary_csv(summary, csv_fname)
-                except Exception as e:
-                    print(Fore.RED + f"[ERROR] export_summary_csv failed: {e}" + Style.RESET_ALL)
-
-            if not (export_html or export_json or export_csv):
-                print(Fore.YELLOW + "No valid export format selected. Skipping export." + Style.RESET_ALL)
+                    print(Fore.RED + f"   ✗ Could not open browser: {e}" + Style.RESET_ALL)
+                    print(Fore.YELLOW + f"   Please open manually: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
+            else:
+                print(Fore.RED + "\n✗ Failed to generate report" + Style.RESET_ALL)
+        
+        # === LEGACY: Option for direct CSV/JSON export (without interactive HTML) ===
+        else:
+            export_legacy = input(Fore.YELLOW + "\nExport to CSV or JSON directly? (y/n): " + Style.RESET_ALL).strip().lower()
+            
+            if export_legacy == 'y':
+                print(Fore.CYAN + "\nAvailable export formats:" + Style.RESET_ALL)
+                print("  1. JSON  – Structured data (for analysis or integration)")
+                print("  2. CSV   – Table summary (for spreadsheets)")
+                print("  3. Both  – Export both formats")
+                
+                fmt_choice = input(Fore.YELLOW + "\nEnter your choice: " + Style.RESET_ALL).strip().lower()
+                
+                export_json_flag = fmt_choice in ['1', '3', 'json', 'both']
+                export_csv_flag = fmt_choice in ['2', '3', 'csv', 'both']
+                
+                # --- JSON Export ---
+                if export_json_flag:
+                    json_fname = input("Enter JSON filename (default: security_scan_report.json): ").strip()
+                    if not json_fname:
+                        json_fname = "security_scan_report.json"
+                    elif not json_fname.lower().endswith('.json'):
+                        json_fname += '.json'
+                    try:
+                        export_to_json(all_findings, summary, filename=json_fname, target_url=url)
+                    except Exception as e:
+                        print(Fore.RED + f"[ERROR] export_to_json failed: {e}" + Style.RESET_ALL)
+                
+                # --- CSV Export ---
+                if export_csv_flag:
+                    csv_fname = input("Enter CSV filename (default: security_findings_summary.csv): ").strip()
+                    if not csv_fname:
+                        csv_fname = "security_findings_summary.csv"
+                    elif not csv_fname.lower().endswith('.csv'):
+                        csv_fname += '.csv'
+                    try:
+                        export_summary_csv(summary, csv_fname)
+                    except Exception as e:
+                        print(Fore.RED + f"[ERROR] export_summary_csv failed: {e}" + Style.RESET_ALL)
 
     else:
         print(Fore.GREEN + "\n✅ No security findings detected across all categories!" + Style.RESET_ALL)
