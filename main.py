@@ -230,16 +230,35 @@ def main():
     # Tag cookie findings with proper category
     cookie_findings = _tag_findings_with_category(cookie_findings, "Cookie Security")
 
-    # === Step 5: CORS Security Analysis ===
+    # === Step 5: CORS Security Analysis (IMPROVED) ===
     print(Fore.CYAN + "\n[5/8] Checking Cross-Origin Resource Sharing (CORS) configuration..." + Style.RESET_ALL)
+    print(Fore.YELLOW + "   → Testing origin reflection, credentials handling, and preflight responses..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        cors_findings = analyze_cors(url)
+        # Option to customize test origin in verbose mode
+        if verbose:
+            custom_origin = input(Fore.YELLOW + "\nUse custom test origin? (press Enter for default 'https://evil-attacker.com'): " + Style.RESET_ALL).strip()
+            test_origin = custom_origin if custom_origin else "https://evil-attacker.com"
+        else:
+            test_origin = "https://evil-attacker.com"
+        
+        cors_findings = analyze_cors(url, fake_origin=test_origin)
+        
+        # The improved cors_checker.py already prints detailed output
+        # No need for additional printing here
+        
     except Exception as e:
         print(Fore.RED + f"[ERROR] CORS check failed: {e}" + Style.RESET_ALL)
+        import traceback
+        if verbose:
+            print(Fore.RED + traceback.format_exc() + Style.RESET_ALL)
+        cors_findings = []
+    
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
-    # CORS findings already have Category set
+    # CORS findings already have Category set by the improved analyzer
+    # But let's ensure consistency
+    cors_findings = _tag_findings_with_category(cors_findings, "CORS Security")
 
     # === Step 6: Directory & File Exposure  ===
     print(Fore.CYAN + "\n[6/8] Scanning for common directory & file exposures..." + Style.RESET_ALL)
@@ -253,6 +272,7 @@ def main():
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # Directory findings already have Category set
+    dir_findings = _tag_findings_with_category(dir_findings, "Directory Exposure")
 
     # === Step 7: Path Traversal ===
     print(Fore.CYAN + "\n[7/8] Checking for basic Path Traversal patterns..." + Style.RESET_ALL)
@@ -291,6 +311,9 @@ def main():
     except Exception as e:
         print(Fore.RED + f"[ERROR] SSL/TLS check failed: {e}" + Style.RESET_ALL)
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
+
+    # Tag SSL findings
+    ssl_findings = _tag_findings_with_category(ssl_findings, "SSL/TLS")
 
     # ========================================================================
     # === FINDINGS SUMMARY: Aggregate all findings and display summary table
