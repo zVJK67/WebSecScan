@@ -31,6 +31,13 @@ SERVER_FINGERPRINTS = {
     "lighttpd": ["server", "content-type", "content-length", "date"],
 }
 
+# CVSS Score for Server Information Leak category
+CATEGORY_CVSS = {
+    "score": "3.1",
+    "vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "severity": "Low"
+}
+
 def _get_retry_session(retries: int = 2, backoff: float = 0.2) -> requests.Session:
     """
     Return a requests.Session with a Retry policy to reduce false negatives on transient network errors.
@@ -237,7 +244,7 @@ def get_server_info(target_url: str, timeout: int = 10, session: Optional[reques
 
     Returns:
       info: dict (url, hostname, ips, status_code, reason, elapsed, headers, header_order, status_line, error_responses)
-      findings: list of findings with keys Header, Status, Severity, Recommendation, (optional) Detail
+      findings: list of findings with keys Header, Detail, Recommendation
     """
     session = session or _get_retry_session()
     target_url = _normalize_url(target_url)
@@ -261,8 +268,7 @@ def get_server_info(target_url: str, timeout: int = 10, session: Optional[reques
     if not hostname:
         findings.append({
             "Header": "Server Info",
-            "Status": "Invalid URL",
-            "Severity": "Medium",
+            "Detail": "Invalid URL",
             "Recommendation": "Provide a valid URL (including scheme, e.g., https://example.com)."
         })
         return info, findings
@@ -275,9 +281,8 @@ def get_server_info(target_url: str, timeout: int = 10, session: Optional[reques
     if resp is None:
         findings.append({
             "Header": "Server Info",
-            "Status": "No response",
-            "Severity": "Medium",
-            "Recommendation": "Target did not respond to HTTP requests or timed out."
+            "Detail": "No response - Target did not respond to HTTP requests or timed out.",
+            "Recommendation": "Verify the target URL is accessible and responding to HTTP requests."
         })
         return info, findings
 
@@ -301,110 +306,103 @@ def get_server_info(target_url: str, timeout: int = 10, session: Optional[reques
     headers_subset = {h: headers.get(h) for h in COMMON_LEAK_HEADERS if headers.get(h)}
     info["headers"] = headers_subset
 
-    # ----- Analyze exposures -----
+    # ----- Analyze exposures (ONLY report when exposed) -----
 
-    # 1) Server header presence and version leak
+    # 1) Server header presence
     server_hdr = headers.get("server")
     if server_hdr:
         parsed_server = parse_server_header(server_hdr)
-        has_version = bool(parsed_server.get("version")) or any(ch.isdigit() for ch in (server_hdr or ""))
         findings.append({
-            "Header": "Server",
-            "Status": f"Present: {server_hdr}",
-            "Severity": "High" if has_version else "Medium",
-            "Recommendation": ("Remove or minimize the Server header exposure. Do not reveal software or version numbers; "
-                               "configure the web server to return generic values or hide the header."),
-            "Detail": parsed_server
+            "Header": "Server Header Exposed",
+            "Detail": f"server: {server_hdr}",
+            "Recommendation": "Disable or mask the Server header through server configuration or by using a reverse proxy."
         })
 
-    # 2) X-Powered-By and framework/version headers
+    # 2) X-Powered-By
     xpby = headers.get("x-powered-by")
     if xpby:
         findings.append({
-            "Header": "X-Powered-By",
-            "Status": f"Present: {xpby}",
-            "Severity": "High",
-            "Recommendation": "Remove X-Powered-By header (or disable in framework) to avoid framework fingerprinting.",
-            "Detail": xpby
+            "Header": "Technology Header Exposed",
+            "Detail": f"X-Powered-By: {xpby}",
+            "Recommendation": "Remove or obfuscate the X-Powered-By header to prevent unnecessary information disclosure."
         })
 
+    # 3) Framework/Generator headers
+    framework_headers = []
     for h in ("x-aspnet-version", "x-aspnetmvc-version", "x-powered-by-plesk", "x-generator"):
         val = headers.get(h)
         if val:
-            findings.append({
-                "Header": h,
-                "Status": f"Present: {val}",
-                "Severity": "High",
-                "Recommendation": f"Remove or disable the {h} header to avoid disclosing internal framework/version details.",
-                "Detail": val
-            })
+            framework_headers.append(f"{h}: {val}")
+    
+    if framework_headers:
+        findings.append({
+            "Header": "Framework/Generator Header Exposed",
+            "Detail": ", ".join(framework_headers),
+            "Recommendation": "Disable framework-identifying headers within application configuration."
+        })
 
-    # 3) Via header — indicates intermediate proxies / gateways
+    # 4) Via header — indicates intermediate proxies / gateways
     via = headers.get("via")
     if via:
         findings.append({
-            "Header": "Via",
-            "Status": f"Present: {via}",
-            "Severity": "Medium",
-            "Recommendation": "Via header present; it may reveal proxy topology or intermediaries. Consider normalizing at the edge.",
-            "Detail": via
+            "Header": "Proxy Header Exposed",
+            "Detail": f"Via: {via}",
+            "Recommendation": "Via header present; it may reveal proxy topology or intermediaries. Consider normalizing at the edge."
         })
 
-    # 4) X-Cache / X-Backend-Server / X-CF-Powered-By — backend/proxy info
-    for proxy_hdr in ("x-cache", "x-backend-server", "x-cf-powered-by"):
+    # 5) X-Cache / X-Backend-Server / X-CF-Powered-By — backend/proxy info
+    backend_headers = []
+    for proxy_hdr in ("x-cache", "x-backend-server", "x-cf-powered-by", "x-drupal-cache"):
         v = headers.get(proxy_hdr)
         if v:
-            findings.append({
-                "Header": proxy_hdr,
-                "Status": f"Present: {v}",
-                "Severity": "Low",
-                "Recommendation": f"Consider removing or normalizing the {proxy_hdr} header to avoid exposing infrastructure details.",
-                "Detail": v
-            })
+            backend_headers.append(f"{proxy_hdr}: {v}")
+    
+    if backend_headers:
+        findings.append({
+            "Header": "Backend/Cache Header Exposed",
+            "Detail": ", ".join(backend_headers),
+            "Recommendation": "Consider removing or normalizing these headers to avoid exposing infrastructure details."
+        })
 
-    # 5) Header order analysis
+    # 6) Header order analysis (fingerprinting) - Show matching headers instead of percentage
     header_order_result = info.get("header_order_analysis", {})
     potential_matches = header_order_result.get("potential_matches", {})
     if potential_matches:
         for server_type, match_info in potential_matches.items():
+            matching_hdrs = match_info['matching_headers']
             findings.append({
-                "Header": "Header Order Pattern",
-                "Status": f"Matches {server_type} signature",
-                "Severity": "Medium",
-                "Recommendation": f"HTTP header ordering suggests {server_type} server. Consider randomizing header order to prevent fingerprinting.",
-                "Detail": f"Confidence: {match_info['confidence']:.0%}, Matching headers: {', '.join(match_info['matching_headers'])}"
+                "Header": "Server Behavior Fingerprinting",
+                "Detail": f"The server's unique response patterns match known fingerprints -> {server_type}\n   Matching headers: {', '.join(matching_hdrs)}",
+                "Recommendation": "Add a reverse proxy or WAF to normalize responses and reduce fingerprinting accuracy."
             })
 
-    # 6) Error page analysis
+    # 7) Error page analysis (Option B: Separate findings for each error test)
     error_responses = info.get("error_responses", [])
     for err in error_responses:
         if err.get("server_header") or err.get("mentions_in_body"):
+            detail_parts = [f"HTTP {err['status_code']} response exposed server information"]
+            if err.get("server_header"):
+                detail_parts.append(f"Server header: {err['server_header']}")
+            if err.get("mentions_in_body"):
+                detail_parts.append(f"Body mentions: {', '.join(err['mentions_in_body'])}")
+            
             findings.append({
-                "Header": "Error Page Disclosure",
-                "Status": f"{err['test']} (HTTP {err['status_code']})",
-                "Severity": "High",
-                "Recommendation": "Error pages reveal server information. Configure custom error pages that don't expose server details.",
-                "Detail": f"Server header: {err.get('server_header')}, Body mentions: {err.get('mentions_in_body')}"
+                "Header": f"Error Page Reveals Server Details ({err['test']})",
+                "Detail": "\n   ".join(detail_parts),
+                "Recommendation": "Replace default error pages with custom ones that do not reveal server details."
             })
-
-    # 7) If no identifying headers found
-    if not headers_subset and not potential_matches and not error_responses:
-        findings.append({
-            "Header": "Server Info",
-            "Status": "Not exposed",
-            "Severity": "Low",
-            "Recommendation": "Server-identifying headers not found — good practice. Continue to monitor on changes."
-        })
 
     return info, findings
 
 def print_server_info(info: Dict[str, Any], findings: List[Dict[str, Any]]) -> None:
     """
-    Nicely print server information and the related findings.
+    Print server information and findings in the new format.
     """
-    print(Fore.CYAN + "\n🌐 Server Information & Exposure Check" + Style.RESET_ALL)
-    print(Fore.CYAN + "============================================================" + Style.RESET_ALL)
-
+    print(Fore.CYAN + "\nServer Information Leak" + Style.RESET_ALL)
+    print(Fore.CYAN + "═" * 64 + Style.RESET_ALL)
+    
+    # Target information with asterisk borders
+    print(Fore.YELLOW + "*" * 64 + Style.RESET_ALL)
     print(Fore.WHITE + f"Target URL: {info.get('url')}")
     print(Fore.WHITE + f"Hostname: {info.get('hostname')}")
     ips = info.get("ips") or []
@@ -412,55 +410,29 @@ def print_server_info(info: Dict[str, Any], findings: List[Dict[str, Any]]) -> N
         print(Fore.WHITE + f"Resolved IPs: {', '.join(ips)}")
     else:
         print(Fore.WHITE + "Resolved IPs: N/A")
-
-    status = info.get("status_code")
-    if status:
-        print(Fore.WHITE + f"HTTP Status: {status} {info.get('reason')}")
-    else:
-        print(Fore.WHITE + "HTTP Status: N/A")
-
-    elapsed = info.get("elapsed")
-    if elapsed is not None:
-        print(Fore.WHITE + f"Response Time: {elapsed:.3f}s")
-
-    # Status line info
-    status_line = info.get("status_line", {})
-    if status_line:
-        print(Fore.WHITE + f"\nHTTP Status Line:")
-        print(Fore.WHITE + f"  Version: {status_line.get('http_version')}")
-        print(Fore.WHITE + f"  Reason Phrase: {status_line.get('reason_phrase')}")
-
-    # Header order analysis
-    header_order = info.get("header_order_analysis", {})
-    if header_order.get("header_order"):
-        print(Fore.WHITE + f"\nHeader Order: {' → '.join(header_order['header_order'][:5])}...")
-
-    # Show header subset
-    headers = info.get("headers", {}) or {}
-    if headers:
-        print(Fore.WHITE + "\nObserved Server Headers:")
-        print(Fore.WHITE + "------------------------")
-        for k, v in headers.items():
-            print(f"{k}: {v}")
-    else:
-        print(Fore.WHITE + "\nObserved Server Headers: None of the common fingerprint headers were present.")
-
-    # Error responses
-    error_responses = info.get("error_responses", [])
-    if error_responses:
-        print(Fore.YELLOW + f"\nError Page Analysis: {len(error_responses)} test(s) revealed server information" + Style.RESET_ALL)
-
-    # Print findings grouped by severity
+    print(Fore.YELLOW + "*" * 64 + Style.RESET_ALL)
+    
+    # Risk Rating section
+    print(Fore.WHITE + "\nRisk Rating:")
+    print(Fore.WHITE + f"Severity: {CATEGORY_CVSS['severity']}")
+    print(Fore.WHITE + f"CVSS: {CATEGORY_CVSS['score']} ({CATEGORY_CVSS['vector']})")
+    
+    # Findings section
     if findings:
-        print(Fore.MAGENTA + "\nFindings:" + Style.RESET_ALL)
+        print(Fore.WHITE + "\nFindings:")
+        print(Fore.WHITE + "`" * 80)
+        
         for i, f in enumerate(findings, 1):
-            sev_color = {"High": Fore.RED, "Medium": Fore.YELLOW, "Low": Fore.GREEN}.get(f.get("Severity"), Fore.WHITE)
-            print(f"\n{i}. {f.get('Header')} — {f.get('Status')}")
-            print(f"   Severity: {sev_color}{f.get('Severity')}{Style.RESET_ALL}")
-            print(f"   Recommendation: {Fore.CYAN}{f.get('Recommendation')}{Style.RESET_ALL}")
-            if "Detail" in f:
-                print(f"   Detail: {Fore.WHITE}{f.get('Detail')}{Style.RESET_ALL}")
+            print(Fore.WHITE + f"{i}. {f.get('Header')}")
+            print(Fore.WHITE + f"   Detail: {f.get('Detail')}")
+            print(Fore.WHITE + f"   Recommendation: {f.get('Recommendation')}")
+            if i < len(findings):  # Add blank line between findings except after last one
+                print()
+        
+        # Add note about fingerprinting accuracy
+        print(Fore.YELLOW + "\nNote: Server fingerprinting based on response patterns is not 100% accurate. " + Style.RESET_ALL)
+        print(Fore.YELLOW + "Manual verification is recommended to confirm the actual server software in use." + Style.RESET_ALL)
     else:
-        print(Fore.GREEN + "\nNo server exposure findings." + Style.RESET_ALL)
-
-    print(Fore.CYAN + "\n============================================================" + Style.RESET_ALL)
+        print(Fore.GREEN + "\nFindings: None - No server information exposure detected." + Style.RESET_ALL)
+    
+    print(Fore.CYAN + "═" * 64 + Style.RESET_ALL)

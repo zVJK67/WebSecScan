@@ -1,422 +1,438 @@
-# main.py
-from banner import print_banner
-from get_header import get_request, parse_headers, print_headers, print_options_response, get_allowed_methods
-from http_header import analyze_security_headers, print_findings
-from http_method import analyze_http_methods, print_http_method_findings
-from cookie_checker import analyze_cookies
-from test2 import analyze_cors
-from ssl_tls import run_ssl_check, check_ssl_tls
-from server_info import get_server_info, print_server_info
-from findings_summary import print_summary_table, print_detailed_findings, generate_summary, export_summary_csv, normalize_findings
-from path_traversal import test_path_traversal
-from directory_scan import scan_common_paths, print_dir_scan_results
-from export_findings import generate_interactive_html_report, export_to_json
-
-from colorama import Fore, Style, init
-import urllib.parse
-import sys
+import re
+import socket
 import time
-import webbrowser
-import os
-from datetime import datetime
-import signal
+from typing import Dict, List, Tuple, Any, Optional
+from urllib.parse import urlparse
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from colorama import Fore, Style
 
+# Common fingerprinting headers (lowercase for normalized lookups)
+COMMON_LEAK_HEADERS = [
+    "server",
+    "x-powered-by",
+    "via",
+    "x-aspnet-version",
+    "x-aspnetmvc-version",
+    "x-powered-by-plesk",
+    "x-generator",
+    "x-drupal-cache",
+    "x-cache",
+    "x-backend-server",
+    "x-cf-powered-by",
+]
 
-# initialize colorama
-init(autoreset=True)
+# Known server fingerprints (header order patterns)
+SERVER_FINGERPRINTS = {
+    "nginx": ["server", "date", "content-type", "content-length", "connection"],
+    "apache": ["date", "server", "content-length", "content-type"],
+    "iis": ["content-type", "server", "date"],
+    "lighttpd": ["server", "content-type", "content-length", "date"],
+}
 
-def handle_interrupt(sig, frame):
-    print("\n\n" + Fore.RED + "⚠️ Scan interrupted by user (Ctrl + C). Exiting safely..." + Style.RESET_ALL)
-    sys.exit(0)
-# Capture Ctrl+C and exit gracefully
-signal.signal(signal.SIGINT, handle_interrupt)
+# CVSS Score for Server Information Leak category
+CATEGORY_CVSS = {
+    "score": "3.1",
+    "vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "severity": "Low"
+}
 
-
-def normalize_and_validate_url(raw_url: str) -> str:
-    """Ensure URL has a scheme. Return normalized URL or raise ValueError if invalid."""
-    if not raw_url:
-        raise ValueError("Empty URL provided.")
-    parsed = urllib.parse.urlparse(raw_url)
-    if not parsed.scheme:
-        raw_url = "http://" + raw_url
-        parsed = urllib.parse.urlparse(raw_url)
-    if not parsed.hostname:
-        raise ValueError("Invalid URL (no hostname found). Provide full URL like 'https://example.com' or 'example.com'.")
-    return raw_url
-
-
-def _tag_findings_with_category(findings_list, category_name):
+def _get_retry_session(retries: int = 2, backoff: float = 0.2) -> requests.Session:
     """
-    Normalize findings with the proper category name.
-    Returns a new list (doesn't mutate the original).
+    Return a requests.Session with a Retry policy to reduce false negatives on transient network errors.
     """
-    return normalize_findings(findings_list, force_category=category_name)
+    s = requests.Session()
+    retry = Retry(total=retries, backoff_factor=backoff,
+                  status_forcelist=(429, 500, 502, 503, 504),
+                  allowed_methods=frozenset(['HEAD', 'GET', 'OPTIONS', 'POST']))
+    adapter = HTTPAdapter(max_retries=retry)
+    s.mount("http://", adapter)
+    s.mount("https://", adapter)
+    s.headers.update({"User-Agent": "WebSecScan/1.0"})
+    return s
 
-
-def _print_path_traversal_findings(pt_findings):
-    """Pretty, grouped output for path traversal results."""
-    if not pt_findings:
-        return
-
-    for f in pt_findings:
-        print()
-        print(Fore.WHITE + "Path Traversal" + Style.RESET_ALL)
-        print(Fore.WHITE + "---------------------------------------" + Style.RESET_ALL)
-        sev_color = {"High": Fore.RED, "Medium": Fore.YELLOW, "Low": Fore.GREEN}.get(f.get("Severity", "Low"), Fore.WHITE)
-        print(f"Severity: {sev_color}{f.get('Severity', 'Low')}{Style.RESET_ALL}")
-
-        endpoint = f.get("Endpoint") or f.get("Path") or "/"
-        print(f"Endpoint: {endpoint}")
-
-        payloads = f.get("Payloads") or []
-        if payloads:
-            print("\nPayloads triggering:")
-            for p in payloads:
-                print(f"  {p}")
-
-        if f.get("Behavior"):
-            print(f"\nBehavior: {f['Behavior']}")
-
-        interp = f.get("Interpretation")
-        if interp:
-            print(f"\nPossible interpretation: {interp}")
-
-        if f.get("Recommendation"):
-            print("\nRecommendation:")
-            for line in f["Recommendation"].split("\n"):
-                print(line)
-
-        if f.get("Details"):
-            print(f"\nDetails: {f['Details']}")
-
-        if f.get("Status") is not None:
-            print(f"HTTP Status (example): {f['Status']}")
-
-
-def main():
-    print_banner()
-
-    # === Step 0: Ask for URL ===
-    raw = input(Fore.WHITE + "\nEnter an URL to scan (e.g. example.com or https://example.com): " + Style.RESET_ALL).strip()
+def _resolve_hostname(hostname: str) -> List[str]:
+    """Resolve hostname to a list of unique IP addresses (IPv4/IPv6)."""
+    ips: List[str] = []
     try:
-        url = normalize_and_validate_url(raw)
-    except ValueError as e:
-        print(Fore.RED + f"[ERROR] {e}" + Style.RESET_ALL)
-        sys.exit(1)
-
-    print(Fore.YELLOW + f"\nNormalized target URL: {url}" + Style.RESET_ALL)
-
-    # Verbosity toggle (controls noisy prints like raw header/OPTIONS dumps)
-    verbose = input("Verbose output (raw headers / OPTIONS details)? (y/n): ").strip().lower() == 'y'
-
-    # Show initial status early to explain behavior on non-200 pages (e.g., 404 paths)
-    try:
-        head_resp = get_request(url, method="HEAD")
-        if head_resp is None or getattr(head_resp, "status_code", 0) in (405, 501):
-            head_resp = get_request(url, method="GET")
-        if head_resp is not None:
-            print(Fore.WHITE + f"Initial HTTP Status: {head_resp.status_code} {head_resp.reason}" + Style.RESET_ALL)
+        for res in socket.getaddrinfo(hostname, None):
+            ip = res[4][0]
+            if ip not in ips:
+                ips.append(ip)
     except Exception:
         pass
+    return ips
 
-    # Prepare holders for findings
-    header_findings = []
-    method_findings = []
-    server_findings = []
-    dir_findings = []      # Directory scan findings
-    cookie_findings = []
-    cors_findings = []
-    ssl_findings = []
-    pt_findings = []       # Path Traversal
+def _normalize_url(url: str) -> str:
+    """
+    Ensure URL has a scheme; if missing default to http://
+    """
+    parsed = urlparse(url)
+    if not parsed.scheme:
+        return "http://" + url
+    return url
 
-    # === Step 1: Header Check ===
-    print(Fore.CYAN + "\n[1/8] Checking HTTP headers..." + Style.RESET_ALL)
-    t0 = time.time()
+def _safe_head_get(url: str, session: Optional[requests.Session] = None, timeout: int = 10) -> Tuple[Optional[requests.Response], Optional[float]]:
+    """
+    Try HEAD first (non-destructive). If HEAD returns 405/501 or raises specific errors, fallback to GET.
+    Returns (response or None, elapsed_seconds or None)
+    """
+    session = session or _get_retry_session()
     try:
-        response = get_request(url)
-        headers = parse_headers(response)
-        if not headers:
-            print(Fore.RED + "\n[!] Failed to retrieve headers or empty response.\n" + Style.RESET_ALL)
-        else:
-            header_findings = analyze_security_headers(headers)
-            print_findings(header_findings)
-            if verbose:
-                if input("\nSee raw GET headers? (y/n): ").strip().lower() == 'y':
-                    print_headers(headers)
-            print(Fore.WHITE + "Note: Headers shown are from the scanned path; CDNs/proxies may alter them." + Style.RESET_ALL)
-    except Exception as e:
-        print(Fore.RED + f"[ERROR] Header check failed: {e}" + Style.RESET_ALL)
-    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
-
-    # Tag header findings with proper category
-    header_findings = _tag_findings_with_category(header_findings, "Security Headers")
-
-    # === Step 2: HTTP Method Check ===
-    print(Fore.CYAN + "\n[2/8] Checking HTTP methods..." + Style.RESET_ALL)
-    t0 = time.time()
-    try:
-        methods = get_allowed_methods(url)
-        method_findings = analyze_http_methods(methods)
-        print_http_method_findings(method_findings, methods)
-        if verbose:
-            if input("\nSee OPTIONS raw response? (y/n): ").strip().lower() == 'y':
-                print_options_response(url)
-    except Exception as e:
-        print(Fore.RED + f"[ERROR] HTTP method check failed: {e}" + Style.RESET_ALL)
-    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
-
-    # Tag method findings with proper category
-    method_findings = _tag_findings_with_category(method_findings, "HTTP Methods")
-
-    # === Step 3: Server Info Check (ENHANCED) ===
-    print(Fore.CYAN + "\n[3/8] Checking server information & exposures..." + Style.RESET_ALL)
-    print(Fore.YELLOW + "   → Analyzing headers, error pages, and fingerprinting patterns..." + Style.RESET_ALL)
-    t0 = time.time()
-    try:
-        info, server_findings = get_server_info(url, timeout=10)
-        print_server_info(info, server_findings)
-        
-        # Optional: Show additional technical details in verbose mode
-        if verbose:
-            show_details = input(Fore.YELLOW + "\nShow detailed server fingerprinting analysis? (y/n): " + Style.RESET_ALL).strip().lower()
-            if show_details == 'y':
-                # Display header order analysis
-                header_order = info.get("header_order_analysis", {})
-                if header_order.get("potential_matches"):
-                    print(Fore.CYAN + "\n📊 Server Fingerprint Matches:" + Style.RESET_ALL)
-                    for server_type, match_info in header_order["potential_matches"].items():
-                        print(f"  • {server_type}: {match_info['confidence']:.0%} confidence")
-                        print(f"    Matching headers: {', '.join(match_info['matching_headers'])}")
-                
-                # Display error response details
-                error_responses = info.get("error_responses", [])
-                if error_responses:
-                    print(Fore.CYAN + f"\n🔍 Error Page Analysis ({len(error_responses)} tests):" + Style.RESET_ALL)
-                    for err in error_responses:
-                        print(f"\n  Test: {err['test']}")
-                        print(f"  Status: {err['status_code']}")
-                        if err.get('server_header'):
-                            print(f"  Server Header: {err['server_header']}")
-                        if err.get('mentions_in_body'):
-                            print(f"  Body Mentions: {', '.join(err['mentions_in_body'])}")
-                
-                # Display status line info
-                status_line = info.get("status_line", {})
-                if status_line:
-                    print(Fore.CYAN + "\n📋 HTTP Status Line Details:" + Style.RESET_ALL)
-                    print(f"  HTTP Version: {status_line.get('http_version')}")
-                    print(f"  Status Code: {status_line.get('status_code')}")
-                    print(f"  Reason Phrase: {status_line.get('reason_phrase')}")
-    except Exception as e:
-        print(Fore.RED + f"[ERROR] Server info check failed: {e}" + Style.RESET_ALL)
-        import traceback
-        if verbose:
-            print(Fore.RED + traceback.format_exc() + Style.RESET_ALL)
-    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
-
-    # Tag server findings with proper category
-    server_findings = _tag_findings_with_category(server_findings, "Server Information")
-
-    # === Step 4: Cookie Security Analysis ===
-    print(Fore.CYAN + "\n[4/8] Performing Cookie Security Analysis..." + Style.RESET_ALL)
-    t0 = time.time()
-    try:
-        capture_js = input("Capture JS-created cookies via Selenium? (y/n): ").strip().lower() == "y" if verbose else False
-        cookie_findings = analyze_cookies(url, include_js_cookies=capture_js)
-    except Exception as e:
-        print(Fore.RED + f"[ERROR] Cookie check failed: {e}" + Style.RESET_ALL)
-    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
-
-    # Tag cookie findings with proper category
-    cookie_findings = _tag_findings_with_category(cookie_findings, "Cookie Security")
-
-    # === Step 5: CORS Security Analysis (IMPROVED) ===
-    print(Fore.CYAN + "\n[5/8] Checking Cross-Origin Resource Sharing (CORS) configuration..." + Style.RESET_ALL)
-    print(Fore.YELLOW + "   → Testing origin reflection, credentials handling, and preflight responses..." + Style.RESET_ALL)
-    t0 = time.time()
-    try:
-        # Option to customize test origin in verbose mode
-        if verbose:
-            custom_origin = input(Fore.YELLOW + "\nUse custom test origin? (press Enter for default 'https://evil-attacker.com'): " + Style.RESET_ALL).strip()
-            test_origin = custom_origin if custom_origin else "https://evil-attacker.com"
-        else:
-            test_origin = "https://evil-attacker.com"
-        
-        cors_findings = analyze_cors(url, fake_origin=test_origin)
-        
-        # The improved cors_checker.py already prints detailed output
-        # No need for additional printing here
-        
-    except Exception as e:
-        print(Fore.RED + f"[ERROR] CORS check failed: {e}" + Style.RESET_ALL)
-        import traceback
-        if verbose:
-            print(Fore.RED + traceback.format_exc() + Style.RESET_ALL)
-        cors_findings = []
-    
-    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
-
-    # CORS findings already have Category set by the improved analyzer
-    # But let's ensure consistency
-    cors_findings = _tag_findings_with_category(cors_findings, "CORS Security")
-
-    # === Step 6: Directory & File Exposure  ===
-    print(Fore.CYAN + "\n[6/8] Scanning for common directory & file exposures..." + Style.RESET_ALL)
-    t0 = time.time()
-    try:
-        dir_findings = scan_common_paths(url, timeout=6, max_results=50)
-        print_dir_scan_results(dir_findings)
-    except Exception as e:
-        print(Fore.RED + f"[ERROR] Directory scan failed: {e}" + Style.RESET_ALL)
-        dir_findings = []
-    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
-
-    # Directory findings already have Category set
-    dir_findings = _tag_findings_with_category(dir_findings, "Directory Exposure")
-
-    # === Step 7: Path Traversal ===
-    print(Fore.CYAN + "\n[7/8] Checking for basic Path Traversal patterns..." + Style.RESET_ALL)
-    t0 = time.time()
-    try:
-        pt_findings = test_path_traversal(
-            base_url=url,
-            timeout=10,
-            max_tests=300,     # adjust if needed
-            verbose=verbose
-        )
-        pt_findings = _tag_findings_with_category(pt_findings, "Path Traversal")
-        _print_path_traversal_findings(pt_findings)
-    except Exception as e:
-        print(Fore.RED + f"[ERROR] Path Traversal check failed: {e}" + Style.RESET_ALL)
-        pt_findings = []
-    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
-
-    # === Step 8: SSL/TLS Check ===
-    print(Fore.CYAN + "\n[8/8] Checking SSL/TLS configuration..." + Style.RESET_ALL)
-    t0 = time.time()
-    try:
-        run_ssl_check(url)  # prints details to console
+        start = time.time()
+        resp = session.head(url, timeout=timeout, allow_redirects=True)
+        elapsed = time.time() - start
+        if resp is None:
+            return None, None
+        if resp.status_code in (405, 501):
+            start = time.time()
+            resp = session.get(url, timeout=timeout, allow_redirects=True)
+            elapsed = time.time() - start
+        return resp, elapsed
+    except requests.RequestException:
         try:
-            ssl_data = check_ssl_tls(urllib.parse.urlparse(url).hostname)
-            if ssl_data.get("error"):
-                ssl_findings = [{"Category": "SSL/TLS", "Severity": "High", "Description": f"SSL/TLS error: {ssl_data.get('error')}"}]
-            elif not ssl_data.get("https_supported"):
-                ssl_findings = [{"Category": "SSL/TLS", "Severity": "High", "Description": "HTTPS not supported; site is served over plain HTTP."}]
-            elif not ssl_data.get("certificate_valid"):
-                ssl_findings = [{"Category": "SSL/TLS", "Severity": "High", "Description": "Invalid or expired TLS certificate detected."}]
-            elif ssl_data.get("days_until_expiry") is not None and ssl_data.get("days_until_expiry") < 30:
-                ssl_findings = [{"Category": "SSL/TLS", "Severity": "Medium", "Description": f"TLS certificate will expire in {ssl_data.get('days_until_expiry')} days."}]
-        except Exception:
-            ssl_findings = []
-    except Exception as e:
-        print(Fore.RED + f"[ERROR] SSL/TLS check failed: {e}" + Style.RESET_ALL)
-    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
+            start = time.time()
+            resp = session.get(url, timeout=timeout, allow_redirects=True)
+            elapsed = time.time() - start
+            return resp, elapsed
+        except requests.RequestException:
+            return None, None
 
-    # Tag SSL findings
-    ssl_findings = _tag_findings_with_category(ssl_findings, "SSL/TLS")
-
-    # ========================================================================
-    # === FINDINGS SUMMARY: Aggregate all findings and display summary table
-    # ========================================================================
-    print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
-    print(Fore.CYAN + "SCAN COMPLETED - GENERATING SUMMARY" + Style.RESET_ALL)
-    print(Fore.CYAN + "=" * 80 + Style.RESET_ALL)
-
-    # Combine all findings into one list
-    all_findings = []
-    all_findings.extend(header_findings or [])
-    all_findings.extend(method_findings or [])
-    all_findings.extend(server_findings or [])
-    all_findings.extend(cookie_findings or [])
-    all_findings.extend(cors_findings or [])
-    all_findings.extend(dir_findings or [])
-    all_findings.extend(pt_findings or [])
-    all_findings.extend(ssl_findings or [])
-
-    # Generate and print summary table
-    if all_findings:
-        summary = generate_summary(all_findings)
-        print_summary_table(summary, title="🔍 Security Scan Results Summary")
-
-        # === NEW: Ask if user wants to generate interactive HTML report ===
-        print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
-        generate_report = input(Fore.YELLOW + "\n📊 Generate interactive HTML report? (y/n): " + Style.RESET_ALL).strip().lower()
-        
-        if generate_report == 'y':
-            # Generate filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            html_filename = f"security_scan_report_{timestamp}.html"
-            
-            print(Fore.CYAN + f"\n🔨 Generating interactive report..." + Style.RESET_ALL)
-            
-            success = generate_interactive_html_report(
-                findings=all_findings,
-                summary=summary,
-                filename=html_filename,
-                target_url=url
-            )
-            
-            if success:
-                print(Fore.GREEN + f"\n✅ Report generated successfully!" + Style.RESET_ALL)
-                print(Fore.CYAN + f"   📁 File: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
-                print(Fore.CYAN + f"   🌐 Opening in browser..." + Style.RESET_ALL)
-                
-                # Automatically open in browser
-                try:
-                    webbrowser.open('file://' + os.path.abspath(html_filename))
-                    print(Fore.GREEN + "   ✓ Opened in default browser" + Style.RESET_ALL)
-                except Exception as e:
-                    print(Fore.RED + f"   ✗ Could not open browser: {e}" + Style.RESET_ALL)
-                    print(Fore.YELLOW + f"   Please open manually: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
+def _send_malformed_requests(url: str, session: requests.Session, timeout: int = 10) -> List[Dict[str, Any]]:
+    """
+    Send malformed HTTP requests to trigger error pages that may reveal server information.
+    Returns list of error responses with their details.
+    """
+    error_responses = []
+    
+    malformed_tests = [
+        {
+            "name": "Invalid HTTP Method",
+            "method": "INVALID",
+            "path": "/"
+        },
+        {
+            "name": "Invalid HTTP Version",
+            "custom_request": b"GET / HTTP/9.9\r\nHost: test\r\n\r\n"
+        },
+        {
+            "name": "Malformed Headers",
+            "headers": {"X-Invalid": "value\r\nInjected: header"}
+        },
+        {
+            "name": "Non-existent page (404)",
+            "path": "/this-page-does-not-exist-12345.html"
+        }
+    ]
+    
+    parsed = urlparse(url)
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+    
+    for test in malformed_tests:
+        try:
+            if "custom_request" in test:
+                # Skip custom raw requests for now (requires low-level socket)
+                continue
+            elif "method" in test:
+                resp = session.request(test["method"], base_url + test.get("path", "/"), 
+                                      timeout=timeout, allow_redirects=False)
+            elif "path" in test:
+                resp = session.get(base_url + test["path"], timeout=timeout, allow_redirects=False)
             else:
-                print(Fore.RED + "\n✗ Failed to generate report" + Style.RESET_ALL)
-        
-        # === LEGACY: Option for direct CSV/JSON export (without interactive HTML) ===
-        else:
-            export_legacy = input(Fore.YELLOW + "\nExport to CSV or JSON directly? (y/n): " + Style.RESET_ALL).strip().lower()
+                resp = session.get(base_url, headers=test.get("headers"), 
+                                  timeout=timeout, allow_redirects=False)
             
-            if export_legacy == 'y':
-                print(Fore.CYAN + "\nAvailable export formats:" + Style.RESET_ALL)
-                print("  1. JSON  – Structured data (for analysis or integration)")
-                print("  2. CSV   – Table summary (for spreadsheets)")
-                print("  3. Both  – Export both formats")
+            if resp.status_code >= 400:
+                # Check for server information in error pages
+                server_mentions = []
+                content = resp.text[:2000]  # First 2000 chars
                 
-                fmt_choice = input(Fore.YELLOW + "\nEnter your choice: " + Style.RESET_ALL).strip().lower()
+                # Look for common server signatures in error pages
+                patterns = [
+                    r'(Apache[/\s][\d.]+)',
+                    r'(nginx[/\s][\d.]+)',
+                    r'(Microsoft-IIS[/\s][\d.]+)',
+                    r'(lighttpd[/\s][\d.]+)',
+                    r'(Tomcat[/\s][\d.]+)',
+                    r'(PHP[/\s][\d.]+)',
+                ]
                 
-                export_json_flag = fmt_choice in ['1', '3', 'json', 'both']
-                export_csv_flag = fmt_choice in ['2', '3', 'csv', 'both']
+                for pattern in patterns:
+                    matches = re.findall(pattern, content, re.IGNORECASE)
+                    server_mentions.extend(matches)
                 
-                # --- JSON Export ---
-                if export_json_flag:
-                    json_fname = input("Enter JSON filename (default: security_scan_report.json): ").strip()
-                    if not json_fname:
-                        json_fname = "security_scan_report.json"
-                    elif not json_fname.lower().endswith('.json'):
-                        json_fname += '.json'
-                    try:
-                        export_to_json(all_findings, summary, filename=json_fname, target_url=url)
-                    except Exception as e:
-                        print(Fore.RED + f"[ERROR] export_to_json failed: {e}" + Style.RESET_ALL)
-                
-                # --- CSV Export ---
-                if export_csv_flag:
-                    csv_fname = input("Enter CSV filename (default: security_findings_summary.csv): ").strip()
-                    if not csv_fname:
-                        csv_fname = "security_findings_summary.csv"
-                    elif not csv_fname.lower().endswith('.csv'):
-                        csv_fname += '.csv'
-                    try:
-                        export_summary_csv(summary, csv_fname)
-                    except Exception as e:
-                        print(Fore.RED + f"[ERROR] export_summary_csv failed: {e}" + Style.RESET_ALL)
+                if server_mentions or "server" in resp.headers:
+                    error_responses.append({
+                        "test": test["name"],
+                        "status_code": resp.status_code,
+                        "server_header": resp.headers.get("server"),
+                        "mentions_in_body": list(set(server_mentions)),
+                        "content_preview": content[:200]
+                    })
+        except Exception:
+            continue
+    
+    return error_responses
 
+def _analyze_header_order(headers: requests.structures.CaseInsensitiveDict) -> Dict[str, Any]:
+    """
+    Analyze the order of HTTP headers to fingerprint the server type.
+    Different servers have characteristic header orderings.
+    """
+    # Get ordered list of header names (lowercase)
+    header_order = [k.lower() for k in headers.keys()]
+    
+    # Compare against known patterns
+    matches = {}
+    for server_type, signature in SERVER_FINGERPRINTS.items():
+        # Check how many headers match in order
+        common_headers = [h for h in signature if h in header_order]
+        if len(common_headers) >= 3:
+            # Check if they appear in the same relative order
+            positions = [header_order.index(h) for h in common_headers]
+            is_ordered = all(positions[i] < positions[i+1] for i in range(len(positions)-1))
+            
+            if is_ordered:
+                matches[server_type] = {
+                    "confidence": len(common_headers) / len(signature),
+                    "matching_headers": common_headers
+                }
+    
+    return {
+        "header_order": header_order[:10],  # First 10 headers
+        "potential_matches": matches
+    }
+
+def _analyze_status_line(response: requests.Response) -> Dict[str, str]:
+    """
+    Analyze HTTP status line formatting for fingerprinting clues.
+    """
+    # Get raw response if available
+    raw = response.raw
+    status_line_info = {
+        "http_version": f"HTTP/{response.raw.version / 10:.1f}" if hasattr(response.raw, 'version') else "Unknown",
+        "status_code": response.status_code,
+        "reason_phrase": response.reason
+    }
+    
+    return status_line_info
+
+# Regex to parse Server header into product/version/extra
+_SERVER_RE = re.compile(r'^\s*(?P<product>[^/\s]+)(?:/(?P<version>[\d\.]+))?(?:\s*(?P<extra>\(.*\)))?')
+
+def parse_server_header(server_value: str) -> Dict[str, Optional[str]]:
+    """
+    Parse a Server header value into product/version/extra if possible.
+    Returns dict with keys raw, product, version, extra.
+    """
+    if not server_value:
+        return {"raw": None, "product": None, "version": None, "extra": None}
+    m = _SERVER_RE.search(server_value)
+    if not m:
+        return {"raw": server_value, "product": None, "version": None, "extra": None}
+    return {
+        "raw": server_value,
+        "product": m.group("product"),
+        "version": m.group("version"),
+        "extra": m.group("extra")
+    }
+
+def get_server_info(target_url: str, timeout: int = 10, session: Optional[requests.Session] = None) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """
+    Gather server information and analyze header exposures.
+
+    Returns:
+      info: dict (url, hostname, ips, status_code, reason, elapsed, headers, header_order, status_line, error_responses)
+      findings: list of findings with keys Header, Detail, Recommendation
+    """
+    session = session or _get_retry_session()
+    target_url = _normalize_url(target_url)
+    parsed = urlparse(target_url)
+    hostname = parsed.hostname
+
+    info: Dict[str, Any] = {
+        "url": target_url,
+        "hostname": hostname,
+        "ips": [],
+        "status_code": None,
+        "reason": None,
+        "elapsed": None,
+        "headers": {},
+        "header_order_analysis": {},
+        "status_line": {},
+        "error_responses": []
+    }
+    findings: List[Dict[str, Any]] = []
+
+    if not hostname:
+        findings.append({
+            "Header": "Server Info",
+            "Detail": "Invalid URL",
+            "Recommendation": "Provide a valid URL (including scheme, e.g., https://example.com)."
+        })
+        return info, findings
+
+    # Resolve IP(s)
+    info["ips"] = _resolve_hostname(hostname)
+
+    # Perform HEAD/GET request
+    resp, elapsed = _safe_head_get(target_url, session=session, timeout=timeout)
+    if resp is None:
+        findings.append({
+            "Header": "Server Info",
+            "Detail": "No response - Target did not respond to HTTP requests or timed out.",
+            "Recommendation": "Verify the target URL is accessible and responding to HTTP requests."
+        })
+        return info, findings
+
+    # Fill basic info
+    info["status_code"] = resp.status_code
+    info["reason"] = resp.reason
+    info["elapsed"] = elapsed
+
+    # Analyze status line formatting
+    info["status_line"] = _analyze_status_line(resp)
+
+    # Analyze header order for fingerprinting
+    info["header_order_analysis"] = _analyze_header_order(resp.headers)
+
+    # Send malformed requests to check error pages
+    info["error_responses"] = _send_malformed_requests(target_url, session, timeout)
+
+    # Normalize headers to lowercase keys for consistent analysis
+    headers = {k.lower(): v for k, v in resp.headers.items() if v is not None}
+    # subset only fingerprint headers (if present)
+    headers_subset = {h: headers.get(h) for h in COMMON_LEAK_HEADERS if headers.get(h)}
+    info["headers"] = headers_subset
+
+    # ----- Analyze exposures (ONLY report when exposed) -----
+
+    # 1) Server header presence
+    server_hdr = headers.get("server")
+    if server_hdr:
+        parsed_server = parse_server_header(server_hdr)
+        findings.append({
+            "Header": "Server Header Exposed",
+            "Detail": f"server: {server_hdr}",
+            "Recommendation": "Disable or mask the Server header through server configuration or by using a reverse proxy."
+        })
+
+    # 2) X-Powered-By
+    xpby = headers.get("x-powered-by")
+    if xpby:
+        findings.append({
+            "Header": "Technology Header Exposed",
+            "Detail": f"X-Powered-By: {xpby}",
+            "Recommendation": "Remove or obfuscate the X-Powered-By header to prevent unnecessary information disclosure."
+        })
+
+    # 3) Framework/Generator headers
+    framework_headers = []
+    for h in ("x-aspnet-version", "x-aspnetmvc-version", "x-powered-by-plesk", "x-generator"):
+        val = headers.get(h)
+        if val:
+            framework_headers.append(f"{h}: {val}")
+    
+    if framework_headers:
+        findings.append({
+            "Header": "Framework/Generator Header Exposed",
+            "Detail": ", ".join(framework_headers),
+            "Recommendation": "Disable framework-identifying headers within application configuration."
+        })
+
+    # 4) Via header — indicates intermediate proxies / gateways
+    via = headers.get("via")
+    if via:
+        findings.append({
+            "Header": "Proxy Header Exposed",
+            "Detail": f"Via: {via}",
+            "Recommendation": "Via header present; it may reveal proxy topology or intermediaries. Consider normalizing at the edge."
+        })
+
+    # 5) X-Cache / X-Backend-Server / X-CF-Powered-By — backend/proxy info
+    backend_headers = []
+    for proxy_hdr in ("x-cache", "x-backend-server", "x-cf-powered-by", "x-drupal-cache"):
+        v = headers.get(proxy_hdr)
+        if v:
+            backend_headers.append(f"{proxy_hdr}: {v}")
+    
+    if backend_headers:
+        findings.append({
+            "Header": "Backend/Cache Header Exposed",
+            "Detail": ", ".join(backend_headers),
+            "Recommendation": "Consider removing or normalizing these headers to avoid exposing infrastructure details."
+        })
+
+    # 6) Header order analysis (fingerprinting) - Show matching headers instead of percentage
+    header_order_result = info.get("header_order_analysis", {})
+    potential_matches = header_order_result.get("potential_matches", {})
+    if potential_matches:
+        for server_type, match_info in potential_matches.items():
+            matching_hdrs = match_info['matching_headers']
+            findings.append({
+                "Header": "Server Behavior Fingerprinting",
+                "Detail": f"The server's unique response patterns match known fingerprints -> {server_type}\n   Matching headers: {', '.join(matching_hdrs)}",
+                "Recommendation": "Add a reverse proxy or WAF to normalize responses and reduce fingerprinting accuracy."
+            })
+
+    # 7) Error page analysis (Option B: Separate findings for each error test)
+    error_responses = info.get("error_responses", [])
+    for err in error_responses:
+        if err.get("server_header") or err.get("mentions_in_body"):
+            detail_parts = [f"HTTP {err['status_code']} response exposed server information"]
+            if err.get("server_header"):
+                detail_parts.append(f"Server header: {err['server_header']}")
+            if err.get("mentions_in_body"):
+                detail_parts.append(f"Body mentions: {', '.join(err['mentions_in_body'])}")
+            
+            findings.append({
+                "Header": f"Error Page Reveals Server Details ({err['test']})",
+                "Detail": "\n   ".join(detail_parts),
+                "Recommendation": "Replace default error pages with custom ones that do not reveal server details."
+            })
+
+    return info, findings
+
+def print_server_info(info: Dict[str, Any], findings: List[Dict[str, Any]]) -> None:
+    """
+    Print server information and findings in the new format.
+    """
+    print(Fore.CYAN + "\nServer Information Leak" + Style.RESET_ALL)
+    print(Fore.CYAN + "═" * 64 + Style.RESET_ALL)
+    
+    # Target information with asterisk borders
+    print(Fore.YELLOW + "*" * 64 + Style.RESET_ALL)
+    print(Fore.WHITE + f"Target URL: {info.get('url')}")
+    print(Fore.WHITE + f"Hostname: {info.get('hostname')}")
+    ips = info.get("ips") or []
+    if ips:
+        print(Fore.WHITE + f"Resolved IPs: {', '.join(ips)}")
     else:
-        print(Fore.GREEN + "\n✅ No security findings detected across all categories!" + Style.RESET_ALL)
-
-    print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
-    print(Fore.GREEN + "Security scan complete. Thank you for using WebSecScan!" + Style.RESET_ALL)
-    print(Fore.CYAN + "=" * 80 + "\n" + Style.RESET_ALL)
-
-
-if __name__ == "__main__":
-    main()
+        print(Fore.WHITE + "Resolved IPs: N/A")
+    print(Fore.YELLOW + "*" * 64 + Style.RESET_ALL)
+    
+    # Risk Rating section
+    print(Fore.WHITE + "\nRisk Rating:")
+    print(Fore.WHITE + f"Severity: {CATEGORY_CVSS['severity']}")
+    print(Fore.WHITE + f"CVSS: {CATEGORY_CVSS['score']} ({CATEGORY_CVSS['vector']})")
+    
+    # Findings section
+    if findings:
+        print(Fore.WHITE + "\nFindings:")
+        print(Fore.WHITE + "`" * 80)
+        
+        for i, f in enumerate(findings, 1):
+            print(Fore.WHITE + f"{i}. {f.get('Header')}")
+            print(Fore.WHITE + f"   Detail: {f.get('Detail')}")
+            print(Fore.WHITE + f"   Recommendation: {f.get('Recommendation')}")
+            if i < len(findings):  # Add blank line between findings except after last one
+                print()
+        
+        # Add note about fingerprinting accuracy
+        print(Fore.YELLOW + "\nNote: Server fingerprinting based on response patterns is not 100% accurate. " + Style.RESET_ALL)
+        print(Fore.YELLOW + "Manual verification is recommended to confirm the actual server software in use." + Style.RESET_ALL)
+    else:
+        print(Fore.GREEN + "\nFindings: None - No server information exposure detected." + Style.RESET_ALL)
+    
+    print(Fore.CYAN + "═" * 64 + Style.RESET_ALL)

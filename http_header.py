@@ -1,3 +1,4 @@
+#http_header.py
 import re
 from typing import Dict, List, Any
 from colorama import Fore, Style
@@ -7,7 +8,7 @@ http_header.py — improved HTTP security header analyzer
 
 Usage:
     findings = analyze_security_headers(response.headers)
-    print_findings(findings)
+    print_findings(findings, response.headers)
 """
 
 def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
@@ -31,8 +32,7 @@ def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
         findings.append({
             "Header": "Content-Security-Policy",
             "Status": "Missing",
-            "Severity": "High",
-            "Recommendation": "Add a CSP header to control sources of scripts, styles, and media."
+            "Recommendation": "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'"
         })
     else:
         # use regex to detect unsafe tokens robustly
@@ -40,9 +40,8 @@ def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
             findings.append({
                 "Header": "Content-Security-Policy",
                 "Status": "Misconfigured",
-                "Severity": "Medium",
-                "Recommendation": "Avoid 'unsafe-inline' and 'unsafe-eval' in CSP. Use nonces/hashes or stricter directives.",
-                "Detail": csp
+                "Recommendation": "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'",
+                "CurrentValue": csp
             })
         else:
             # check presence of at least a default-src or script-src directive
@@ -50,17 +49,8 @@ def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
                 findings.append({
                     "Header": "Content-Security-Policy",
                     "Status": "Misconfigured",
-                    "Severity": "Medium",
-                    "Recommendation": "CSP present but lacks default-src or script-src directive; add explicit directives.",
-                    "Detail": csp
-                })
-            else:
-                findings.append({
-                    "Header": "Content-Security-Policy",
-                    "Status": "Present",
-                    "Severity": "Low",
-                    "Recommendation": "CSP found. Review directives for overly permissive sources.",
-                    "Detail": csp
+                    "Recommendation": "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'",
+                    "CurrentValue": csp
                 })
 
     # --- Strict Transport Security (HSTS) ---
@@ -69,8 +59,7 @@ def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
         findings.append({
             "Header": "Strict-Transport-Security",
             "Status": "Missing",
-            "Severity": "High",
-            "Recommendation": "Enable HSTS (Strict-Transport-Security) to enforce HTTPS and prevent downgrade attacks."
+            "Recommendation": "Strict-Transport-Security: max-age=31536000; includeSubDomains"
         })
     else:
         # try to extract max-age
@@ -79,9 +68,8 @@ def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
             findings.append({
                 "Header": "Strict-Transport-Security",
                 "Status": "Misconfigured",
-                "Severity": "Medium",
-                "Recommendation": "Add 'max-age' directive (e.g., max-age=31536000) to HSTS for proper enforcement.",
-                "Detail": hsts
+                "Recommendation": "Strict-Transport-Security: max-age=31536000; includeSubDomains",
+                "CurrentValue": hsts
             })
         else:
             try:
@@ -93,26 +81,18 @@ def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
                 findings.append({
                     "Header": "Strict-Transport-Security",
                     "Status": "Misconfigured",
-                    "Severity": "Medium",
-                    "Recommendation": "Increase HSTS max-age to at least 31536000 (1 year) and consider includeSubDomains + preload.",
-                    "Detail": hsts
+                    "Recommendation": "Strict-Transport-Security: max-age=31536000; includeSubDomains",
+                    "CurrentValue": hsts
                 })
             else:
-                # check includeSubDomains and preload presence as recommendations
-                subs = bool(re.search(r"includesubdomains", hsts, re.IGNORECASE))
-                preload = bool(re.search(r"\bpreload\b", hsts, re.IGNORECASE))
-                recs = []
-                if not subs:
-                    recs.append("includeSubDomains")
-                if not preload:
-                    recs.append("preload")
-                findings.append({
-                    "Header": "Strict-Transport-Security",
-                    "Status": "Present",
-                    "Severity": "Low" if subs and preload else "Medium",
-                    "Recommendation": "HSTS configured. Consider adding: " + (", ".join(recs) if recs else "none (good)."),
-                    "Detail": hsts
-                })
+                # check includeSubDomains presence
+                if not re.search(r"includesubdomains", hsts, re.IGNORECASE):
+                    findings.append({
+                        "Header": "Strict-Transport-Security",
+                        "Status": "Misconfigured",
+                        "Recommendation": "Strict-Transport-Security: max-age=31536000; includeSubDomains",
+                        "CurrentValue": hsts
+                    })
 
     # --- X-Frame-Options ---
     xfo = hdr("X-Frame-Options")
@@ -120,8 +100,7 @@ def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
         findings.append({
             "Header": "X-Frame-Options",
             "Status": "Missing",
-            "Severity": "Medium",
-            "Recommendation": "Add X-Frame-Options: DENY or SAMEORIGIN to protect against clickjacking."
+            "Recommendation": "X-Frame-Options: SAMEORIGIN / DENY"
         })
     else:
         val = xfo.strip().upper()
@@ -130,17 +109,8 @@ def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
             findings.append({
                 "Header": "X-Frame-Options",
                 "Status": "Misconfigured",
-                "Severity": "Medium",
-                "Recommendation": "Set X-Frame-Options to DENY or SAMEORIGIN. 'ALLOW-FROM' is deprecated; prefer CSP frame-ancestors.",
-                "Detail": xfo
-            })
-        else:
-            findings.append({
-                "Header": "X-Frame-Options",
-                "Status": "Present",
-                "Severity": "Low",
-                "Recommendation": "X-Frame-Options set appropriately.",
-                "Detail": xfo
+                "Recommendation": "X-Frame-Options: SAMEORIGIN / DENY",
+                "CurrentValue": xfo
             })
 
     # --- X-XSS-Protection ---
@@ -150,26 +120,16 @@ def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
         findings.append({
             "Header": "X-XSS-Protection",
             "Status": "Missing",
-            "Severity": "Low",
-            "Recommendation": "X-XSS-Protection is largely deprecated in modern browsers. If supporting legacy browsers, consider '1; mode=block'."
+            "Recommendation": "X-XSS-Protection: 0"
         })
     else:
-        # flag if value not the recommended legacy value
-        if xxp.strip() != "1; mode=block":
+        # flag if value not the recommended value (should be 0 in modern practice)
+        if xxp.strip() != "0":
             findings.append({
                 "Header": "X-XSS-Protection",
                 "Status": "Misconfigured",
-                "Severity": "Low",
-                "Recommendation": "For legacy browsers use 'X-XSS-Protection: 1; mode=block' if desired, but note this header is deprecated.",
-                "Detail": xxp
-            })
-        else:
-            findings.append({
-                "Header": "X-XSS-Protection",
-                "Status": "Present",
-                "Severity": "Low",
-                "Recommendation": "Legacy XSS protection header present.",
-                "Detail": xxp
+                "Recommendation": "X-XSS-Protection: 0",
+                "CurrentValue": xxp
             })
 
     # --- X-Content-Type-Options ---
@@ -178,25 +138,37 @@ def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
         findings.append({
             "Header": "X-Content-Type-Options",
             "Status": "Missing",
-            "Severity": "Low",
-            "Recommendation": "Add X-Content-Type-Options: nosniff to prevent MIME-type confusion."
+            "Recommendation": "X-Content-Type-Options: nosniff"
         })
     else:
         if xcto.strip().lower() != "nosniff":
             findings.append({
                 "Header": "X-Content-Type-Options",
                 "Status": "Misconfigured",
-                "Severity": "Low",
-                "Recommendation": "Ensure X-Content-Type-Options is set to 'nosniff'.",
-                "Detail": xcto
+                "Recommendation": "X-Content-Type-Options: nosniff",
+                "CurrentValue": xcto
             })
-        else:
+
+    # --- Cache-Control ---
+    cc = hdr("Cache-Control")
+    if not cc:
+        findings.append({
+            "Header": "Cache-Control",
+            "Status": "Missing",
+            "Recommendation": "Cache-Control: no-store, no-cache"
+        })
+    else:
+        # Check if it contains no-store OR no-cache
+        cc_lower = cc.lower()
+        has_no_store = "no-store" in cc_lower
+        has_no_cache = "no-cache" in cc_lower
+        
+        if not has_no_store and not has_no_cache:
             findings.append({
-                "Header": "X-Content-Type-Options",
-                "Status": "Present",
-                "Severity": "Low",
-                "Recommendation": "Configured correctly.",
-                "Detail": xcto
+                "Header": "Cache-Control",
+                "Status": "Misconfigured",
+                "Recommendation": "Cache-Control: no-store, no-cache",
+                "CurrentValue": cc
             })
 
     # --- Referrer Policy ---
@@ -205,41 +177,97 @@ def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
         findings.append({
             "Header": "Referrer-Policy",
             "Status": "Missing",
-            "Severity": "Low",
-            "Recommendation": "Add Referrer-Policy (recommended: strict-origin-when-cross-origin or no-referrer)."
+            "Recommendation": "Referrer-Policy: strict-origin-when-cross-origin"
         })
     else:
         rp_val = rp.strip().lower()
-        allowed_policies = {
-            "no-referrer", "strict-origin", "strict-origin-when-cross-origin",
-            "same-origin", "no-referrer-when-downgrade", "origin", "origin-when-cross-origin"
-        }
-        if rp_val not in allowed_policies:
+        # Best practice is strict-origin-when-cross-origin
+        if rp_val != "strict-origin-when-cross-origin":
             findings.append({
                 "Header": "Referrer-Policy",
                 "Status": "Misconfigured",
-                "Severity": "Low",
-                "Recommendation": "Use a known referrer policy such as 'strict-origin-when-cross-origin' or 'no-referrer'.",
-                "Detail": rp
+                "Recommendation": "Referrer-Policy: strict-origin-when-cross-origin",
+                "CurrentValue": rp
             })
-        else:
-            # mark certain policies as weak
-            if rp_val == "no-referrer-when-downgrade":
-                findings.append({
-                    "Header": "Referrer-Policy",
-                    "Status": "Present (weak)",
-                    "Severity": "Low",
-                    "Recommendation": "Consider 'strict-origin-when-cross-origin' or 'no-referrer' for stronger privacy.",
-                    "Detail": rp
-                })
-            else:
-                findings.append({
-                    "Header": "Referrer-Policy",
-                    "Status": "Present",
-                    "Severity": "Low",
-                    "Recommendation": "Referrer-Policy looks acceptable.",
-                    "Detail": rp
-                })
+
+    # --- Content-Type ---
+    ct = hdr("Content-Type")
+    if not ct:
+        findings.append({
+            "Header": "Content-Type",
+            "Status": "Missing",
+            "Recommendation": "Content-Type: text/html; charset=UTF-8"
+        })
+    else:
+        # Check for proper configuration - must match best practice exactly
+        ct_lower = ct.lower().replace(" ", "")  # normalize spacing
+        best_practice = "text/html;charset=utf-8"
+        
+        # Check if it matches best practice (allowing for spacing variations)
+        if best_practice not in ct_lower:
+            findings.append({
+                "Header": "Content-Type",
+                "Status": "Misconfigured",
+                "Recommendation": "Content-Type: text/html; charset=UTF-8",
+                "CurrentValue": ct
+            })
+
+    # --- Cross-Origin-Opener-Policy ---
+    coop = hdr("Cross-Origin-Opener-Policy")
+    if not coop:
+        findings.append({
+            "Header": "Cross-Origin-Opener-Policy",
+            "Status": "Missing",
+            "Recommendation": "Cross-Origin-Opener-Policy: same-origin"
+        })
+    else:
+        coop_val = coop.strip().lower()
+        # Best practice is same-origin
+        if coop_val != "same-origin":
+            findings.append({
+                "Header": "Cross-Origin-Opener-Policy",
+                "Status": "Misconfigured",
+                "Recommendation": "Cross-Origin-Opener-Policy: same-origin",
+                "CurrentValue": coop
+            })
+
+    # --- Cross-Origin-Embedder-Policy ---
+    coep = hdr("Cross-Origin-Embedder-Policy")
+    if not coep:
+        findings.append({
+            "Header": "Cross-Origin-Embedder-Policy",
+            "Status": "Missing",
+            "Recommendation": "Cross-Origin-Embedder-Policy: require-corp"
+        })
+    else:
+        coep_val = coep.strip().lower()
+        # Best practice is require-corp
+        if coep_val != "require-corp":
+            findings.append({
+                "Header": "Cross-Origin-Embedder-Policy",
+                "Status": "Misconfigured",
+                "Recommendation": "Cross-Origin-Embedder-Policy: require-corp",
+                "CurrentValue": coep
+            })
+
+    # --- Cross-Origin-Resource-Policy ---
+    corp = hdr("Cross-Origin-Resource-Policy")
+    if not corp:
+        findings.append({
+            "Header": "Cross-Origin-Resource-Policy",
+            "Status": "Missing",
+            "Recommendation": "Cross-Origin-Resource-Policy: same-site"
+        })
+    else:
+        corp_val = corp.strip().lower()
+        # Best practice is same-site
+        if corp_val != "same-site":
+            findings.append({
+                "Header": "Cross-Origin-Resource-Policy",
+                "Status": "Misconfigured",
+                "Recommendation": "Cross-Origin-Resource-Policy: same-site",
+                "CurrentValue": corp
+            })
 
     # --- Permissions-Policy (formerly Feature-Policy) ---
     pp = hdr("Permissions-Policy") or hdr("Feature-Policy")
@@ -247,148 +275,65 @@ def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
         findings.append({
             "Header": "Permissions-Policy",
             "Status": "Missing",
-            "Severity": "Low",
             "Recommendation": "Add Permissions-Policy to control access to powerful features (camera, microphone, geolocation)."
-        })
-    else:
-        findings.append({
-            "Header": "Permissions-Policy",
-            "Status": "Present",
-            "Severity": "Low",
-            "Recommendation": "Review Permissions-Policy to ensure only required features are allowed.",
-            "Detail": pp
-        })
-
-    # --- COEP / COOP / CORP ---
-    coep = hdr("Cross-Origin-Embedder-Policy")
-    coop = hdr("Cross-Origin-Opener-Policy")
-    corp = hdr("Cross-Origin-Resource-Policy")
-
-    if not coep:
-        findings.append({
-            "Header": "Cross-Origin-Embedder-Policy",
-            "Status": "Missing",
-            "Severity": "Low",
-            "Recommendation": "Consider adding Cross-Origin-Embedder-Policy (e.g., 'require-corp') if using cross-origin isolation."
-        })
-    else:
-        findings.append({
-            "Header": "Cross-Origin-Embedder-Policy",
-            "Status": "Present",
-            "Severity": "Low",
-            "Recommendation": "Verify COEP value (e.g., 'require-corp').",
-            "Detail": coep
-        })
-
-    if not coop:
-        findings.append({
-            "Header": "Cross-Origin-Opener-Policy",
-            "Status": "Missing",
-            "Severity": "Low",
-            "Recommendation": "Consider adding Cross-Origin-Opener-Policy: same-origin to improve isolation against side-channel attacks."
-        })
-    else:
-        findings.append({
-            "Header": "Cross-Origin-Opener-Policy",
-            "Status": "Present",
-            "Severity": "Low",
-            "Recommendation": "Verify COOP value (e.g., 'same-origin' or 'same-origin-allow-popups').",
-            "Detail": coop
-        })
-
-    if not corp:
-        findings.append({
-            "Header": "Cross-Origin-Resource-Policy",
-            "Status": "Missing",
-            "Severity": "Low",
-            "Recommendation": "Consider Cross-Origin-Resource-Policy to restrict which origins can load resources."
-        })
-    else:
-        findings.append({
-            "Header": "Cross-Origin-Resource-Policy",
-            "Status": "Present",
-            "Severity": "Low",
-            "Recommendation": "Verify CORP value (e.g., 'same-origin' or 'same-site').",
-            "Detail": corp
-        })
-
-    # --- Server Information Disclosure ---
-    server = hdr("Server")
-    if server:
-        # lightweight parse to extract product/version (useful for fingerprinting reporting)
-        m = re.search(r'^\s*([^/\s]+)(?:/([\d\.]+))?', server)
-        parsed = {"raw": server}
-        if m:
-            parsed["product"] = m.group(1)
-            parsed["version"] = m.group(2)
-        findings.append({
-            "Header": "Server",
-            "Status": "Misconfigured",
-            "Severity": "Medium",
-            "Recommendation": "Avoid exposing the Server header to reduce fingerprinting and information disclosure.",
-            "Detail": parsed
-        })
-
-    # --- Allow Header Disclosure ---
-    allow = hdr("Allow")
-    if allow:
-        # parse and normalize methods
-        methods = [m.strip().upper() for m in allow.split(",") if m.strip()]
-        findings.append({
-            "Header": "Allow",
-            "Status": "Misconfigured",
-            "Severity": "Medium",
-            "Recommendation": "Avoid exposing the 'Allow' header as it reveals supported HTTP methods. Review allowed methods.",
-            "Detail": methods
         })
 
     return findings
 
 
-def print_findings(findings: List[Dict[str, Any]]) -> None:
+def print_findings(findings: List[Dict[str, Any]], raw_headers: Dict[str, str]) -> None:
     """
-    Nicely print the findings produced by analyze_security_headers.
+    Print the findings in the desired format with raw headers display.
+    
+    - findings: list of finding dictionaries from analyze_security_headers()
+    - raw_headers: the original response headers dict to display
     """
-    missing = [f for f in findings if f["Status"].lower() == "missing"]
-    misconfigured = [f for f in findings if f["Status"].lower() == "misconfigured"]
-    # include "present (weak)" or other statuses as misconfigured-ish if needed
-    present_weak = [f for f in findings if "weak" in f.get("Status", "").lower()]
-
-    total_issues = len(missing) + len(misconfigured) + len(present_weak)
-
-    # Top framing
-    print("\n" + Fore.MAGENTA + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
-    print(Fore.CYAN + "🛡️ Security Header Analysis Results" + Style.RESET_ALL)
-    print("════════════════════════════════════════════════════════════════")
-    print(Fore.WHITE + f"Total Issues Detected: {Fore.YELLOW}{total_issues}{Style.RESET_ALL}")
-    print(Fore.WHITE + f"Missing Headers: {Fore.RED}{len(missing)}{Style.RESET_ALL} | Misconfigured: {Fore.YELLOW}{len(misconfigured)}\n")
-
-    def print_group(title: str, items: List[Dict[str, Any]], color: str) -> None:
-        if not items:
-            return
-        print(color + f"{title}:" + Style.RESET_ALL)
-        print(color + "────────────────────────" + Style.RESET_ALL)
-        for i, f in enumerate(items, 1):
-            severity_color = {
-                "High": Fore.RED,
-                "Medium": Fore.YELLOW,
-                "Low": Fore.GREEN
-            }.get(f.get("Severity", "Low"), Fore.WHITE)
-
-            print(f"{Fore.WHITE}{i}. {f['Header']}")
-            print(f"   {severity_color}Severity: {f.get('Severity', 'Low')}{Style.RESET_ALL}")
-            rec = f.get("Recommendation", "")
-            print(f"{Fore.CYAN}   Recommendation: {rec}{Style.RESET_ALL}")
-            if "Detail" in f:
-                print(f"   {Fore.WHITE}Detail: {f['Detail']}{Style.RESET_ALL}")
-            print()
-
-    # Print groups
-    print_group("🚫 Missing Headers", missing, Fore.RED)
-    print_group("⚠️ Misconfigured Headers", misconfigured + present_weak, Fore.YELLOW)
-
-    if not missing and not misconfigured and not present_weak:
-        print(Fore.GREEN + "\n✅ All security headers are properly configured!\n" + Style.RESET_ALL)
-
-    # bottom framing
-    print(Fore.MAGENTA + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    
+    # Filter to only show Missing or Misconfigured items
+    issues = [f for f in findings if f["Status"] in ["Missing", "Misconfigured"]]
+    
+    # Count by status
+    missing_count = len([f for f in issues if f["Status"] == "Missing"])
+    misconfigured_count = len([f for f in issues if f["Status"] == "Misconfigured"])
+    
+    # Print header
+    print(Fore.CYAN + "HTTP Security Header Analysis Results" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    
+    # Print raw response headers in asterisk box
+    print(Fore.WHITE + "GET Response:" + Style.RESET_ALL)
+    print(Fore.YELLOW + "*" * 60 + Style.RESET_ALL)
+    for key, value in raw_headers.items():
+        print(f"{key}: {value}")
+    print(Fore.YELLOW + "*" * 60 + Style.RESET_ALL)
+    
+    # Print summary
+    print(Fore.WHITE + f"\nTotal Issues Detected: {Fore.YELLOW}{len(issues)}{Style.RESET_ALL}")
+    print(Fore.WHITE + f"Missing Headers: {Fore.RED}{missing_count}{Style.RESET_ALL} | " + 
+          Fore.WHITE + f"Misconfigured: {Fore.YELLOW}{misconfigured_count}{Style.RESET_ALL}")
+    
+    # Print fixed Risk Rating
+    print(Fore.WHITE + "\nRisk Rating:" + Style.RESET_ALL)
+    print(Fore.WHITE + "Severity: Low" + Style.RESET_ALL)
+    print(Fore.WHITE + "CVSS: 3.1 (AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N)" + Style.RESET_ALL)
+    
+    # Print findings section with backticks separator
+    print(Fore.WHITE + "\nFindings:" + Style.RESET_ALL)
+    print(Fore.CYAN + "`" * 80 + Style.RESET_ALL)
+    
+    if not issues:
+        print(Fore.GREEN + "✅ All security headers are properly configured!\n" + Style.RESET_ALL)
+    else:
+        # Print each finding (no severity displayed)
+        for idx, finding in enumerate(issues, 1):
+            print(f"{Fore.WHITE}{idx}. {finding['Header']}{Style.RESET_ALL}")
+            print(f"   {Fore.WHITE}Issue: {finding['Status']}{Style.RESET_ALL}")
+            
+            # Show current value if misconfigured
+            if finding["Status"] == "Misconfigured" and "CurrentValue" in finding:
+                print(f"   {Fore.WHITE}Current Value: {finding['CurrentValue']}{Style.RESET_ALL}")
+            
+            print(f"   {Fore.WHITE}Recommendation: {finding['Recommendation']}{Style.RESET_ALL}\n")
+    
+    # Bottom border
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)

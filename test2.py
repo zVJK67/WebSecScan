@@ -1,344 +1,206 @@
-from typing import List, Dict, Any, Optional
-from urllib.parse import urlparse
+# http_method.py
+import re
+from typing import List, Union, Dict, Any, Optional
+from colorama import Fore, Style
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from colorama import Fore, Style, init
 
-# Initialize colorama for Windows compatibility
-init(autoreset=True)
+# Known risky HTTP methods and short explanation
+_METHOD_RISKS = {
+    "PUT": "This method allows uploading or overwriting files on the web server.",
+    "DELETE": "This method allows deleting resources on the web server.",
+    "TRACE": "Echoes back client input; can be abused for Cross-Site Tracing (XST).",
+    "CONNECT": "Can enable tunneling/proxying — rarely needed on public servers.",
+    "PATCH": "Partial updates — risky when not properly access-controlled.",
+    # WebDAV / others
+    "PROPFIND": "WebDAV method that can leak file system structure or metadata.",
+    "MKCOL": "WebDAV method to create collections (directories).",
+    "LOCK": "WebDAV locking method (can be abused).",
+    "UNLOCK": "WebDAV unlock method.",
+    "REPORT": "Repository/reporting method that may leak info.",
+    "COPY": "Can copy resources if misconfigured.",
+    "MOVE": "Can move/rename resources; risky if unintended.",
+}
 
-# --- Helpers ---
-def _normalize_url(url: str) -> str:
-    """Ensure URL has a scheme (http/https)"""
-    parsed = urlparse(url)
-    if not parsed.scheme:
-        return "http://" + url
-    return url
-
-def _get_session(retries: int = 2, backoff: float = 0.2) -> requests.Session:
-    """Create a session with retry logic and custom headers"""
-    s = requests.Session()
-    retry = Retry(
-        total=retries, 
-        backoff_factor=backoff,
-        status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=frozenset(["GET", "HEAD", "OPTIONS"])
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    s.mount("http://", adapter)
-    s.mount("https://", adapter)
-    s.headers.update({"User-Agent": "WebSecScan/1.0"})
-    return s
-
-def _hdr(resp: Optional[requests.Response], name: str) -> Optional[str]:
-    """Safely extract header from response"""
-    if resp is None:
-        return None
-    return resp.headers.get(name)
-
-def _print_banner(text: str, char: str = "=") -> None:
-    """Print a formatted banner"""
-    print(f"\n{Fore.CYAN}{text}")
-    print(f"{char * 70}{Style.RESET_ALL}")
-
-def _print_section_header(text: str) -> None:
-    """Print a section header"""
-    print(f"\n{Fore.WHITE}{'─' * 70}")
-    print(f"{text}")
-    print(f"{'─' * 70}{Style.RESET_ALL}")
-
-# --- Main function ---
-def analyze_cors(
-    url: str, 
-    fake_origin: str = "https://evil-attacker.com", 
-    timeout: int = 10
-) -> List[Dict[str, Any]]:
-    """
-    Perform comprehensive CORS security analysis.
-    
-    Tests:
-      1. Original GET and OPTIONS (no Origin header)
-      2. Probe GET with attacker Origin
-      3. Probe OPTIONS preflight with attacker Origin
-    
-    Returns:
-        List of findings with Category, Description, Severity, Context, and Recommendation
-    """
-    target = _normalize_url(url)
-    session = _get_session()
-    findings: List[Dict[str, Any]] = []
-
-    _print_banner("🔒 CORS Security Analysis", "=")
-    print(f"{Fore.WHITE}Target: {Fore.CYAN}{target}")
-    print(f"{Fore.WHITE}Test Origin: {Fore.YELLOW}{fake_origin}{Style.RESET_ALL}\n")
-
-    # --- Step 1: Original requests (no Origin) ---
-    print(f"{Fore.CYAN}[1/4] Sending original GET request...{Style.RESET_ALL}")
-    try:
-        orig_get = session.get(target, timeout=timeout)
-        print(f"{Fore.GREEN}✓ Status: {orig_get.status_code}{Style.RESET_ALL}")
-    except requests.RequestException as e:
-        print(f"{Fore.RED}✗ Failed: {e}{Style.RESET_ALL}")
-        orig_get = None
-
-    print(f"\n{Fore.CYAN}[2/4] Sending original OPTIONS request...{Style.RESET_ALL}")
-    try:
-        orig_options = session.options(target, timeout=timeout)
-        print(f"{Fore.GREEN}✓ Status: {orig_options.status_code}{Style.RESET_ALL}")
-    except requests.RequestException as e:
-        print(f"{Fore.YELLOW}✗ Failed: {e}{Style.RESET_ALL}")
-        orig_options = None
-
-    # --- Step 2: Probe with fake origin ---
-    print(f"\n{Fore.CYAN}[3/4] Probing GET with attacker Origin...{Style.RESET_ALL}")
-    probe_headers = {"Origin": fake_origin}
-    try:
-        probe_get = session.get(target, headers=probe_headers, timeout=timeout)
-        print(f"{Fore.GREEN}✓ Status: {probe_get.status_code}{Style.RESET_ALL}")
-    except requests.RequestException as e:
-        print(f"{Fore.YELLOW}✗ Failed: {e}{Style.RESET_ALL}")
-        probe_get = None
-
-    print(f"\n{Fore.CYAN}[4/4] Sending preflight OPTIONS with attacker Origin...{Style.RESET_ALL}")
-    preflight_headers = {
-        "Origin": fake_origin,
-        "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "X-Test-Header"
-    }
-    try:
-        probe_options = session.options(target, headers=preflight_headers, timeout=timeout)
-        print(f"{Fore.GREEN}✓ Status: {probe_options.status_code}{Style.RESET_ALL}")
-    except requests.RequestException as e:
-        print(f"{Fore.YELLOW}✗ Failed: {e}{Style.RESET_ALL}")
-        probe_options = None
-
-    # --- Extract CORS headers ---
-    def cors_subset(resp: Optional[requests.Response]) -> Dict[str, Optional[str]]:
-        """Extract relevant CORS headers from response"""
-        return {
-            "Access-Control-Allow-Origin": _hdr(resp, "Access-Control-Allow-Origin"),
-            "Access-Control-Allow-Credentials": _hdr(resp, "Access-Control-Allow-Credentials"),
-            "Access-Control-Allow-Methods": _hdr(resp, "Access-Control-Allow-Methods"),
-            "Access-Control-Allow-Headers": _hdr(resp, "Access-Control-Allow-Headers"),
-            "Access-Control-Max-Age": _hdr(resp, "Access-Control-Max-Age"),
-            "Vary": _hdr(resp, "Vary"),
-        }
-
-    orig_get_h = cors_subset(orig_get)
-    orig_options_h = cors_subset(orig_options)
-    probe_get_h = cors_subset(probe_get)
-    probe_options_h = cors_subset(probe_options)
-
-    # --- Display observed headers ---
-    _print_banner("📋 CORS Headers Observed", "=")
-    
-    def _print_headers_table(title: str, headers: Dict[str, Optional[str]]) -> None:
-        """Print headers in a clean table format"""
-        _print_section_header(title)
-        for k, v in headers.items():
-            value_color = Fore.GREEN if v else Fore.RED
-            display_value = v if v else "Not Present"
-            print(f"  {Fore.WHITE}{k:<40} {value_color}{display_value}{Style.RESET_ALL}")
-
-    _print_headers_table("Original GET (no Origin)", orig_get_h)
-    _print_headers_table("Original OPTIONS (no Origin)", orig_options_h)
-    _print_headers_table(f"Probe GET (Origin: {fake_origin})", probe_get_h)
-    _print_headers_table(f"Probe OPTIONS Preflight (Origin: {fake_origin})", probe_options_h)
-
-    # --- Security Analysis ---
-    _print_banner("🔍 Security Analysis", "=")
-
-    # Collect values from all responses
-    allow_origin = (
-        probe_options_h.get("Access-Control-Allow-Origin") or 
-        probe_get_h.get("Access-Control-Allow-Origin") or
-        orig_options_h.get("Access-Control-Allow-Origin") or 
-        orig_get_h.get("Access-Control-Allow-Origin")
-    )
-    
-    allow_credentials = (
-        probe_options_h.get("Access-Control-Allow-Credentials") or 
-        probe_get_h.get("Access-Control-Allow-Credentials") or
-        orig_options_h.get("Access-Control-Allow-Credentials") or 
-        orig_get_h.get("Access-Control-Allow-Credentials")
-    )
-    
-    allow_methods = (
-        probe_options_h.get("Access-Control-Allow-Methods") or 
-        orig_options_h.get("Access-Control-Allow-Methods")
-    )
-    
-    vary_val = (
-        probe_options_h.get("Vary") or 
-        probe_get_h.get("Vary") or 
-        orig_options_h.get("Vary") or 
-        orig_get_h.get("Vary")
-    )
-
-    allow_credentials_bool = bool(
-        allow_credentials and 
-        str(allow_credentials).strip().lower() == "true"
-    )
-
-    # --- Check 1: Wildcard + Credentials (CRITICAL) ---
-    wildcard_seen = allow_origin == "*"
-    
-    if wildcard_seen and allow_credentials_bool:
-        findings.append({
-            "Category": "CORS Misconfiguration",
-            "Description": "CRITICAL: Access-Control-Allow-Origin is '*' while credentials are enabled",
-            "Severity": "Critical",
-            "Context": "This is an invalid CORS configuration per spec",
-            "Recommendation": "Never use wildcard with credentials. Return explicit trusted origin(s)."
-        })
-        print(f"{Fore.RED}✗ CRITICAL: Wildcard origin (*) with credentials enabled!{Style.RESET_ALL}")
-
-    # --- Check 2: Origin Reflection (HIGH RISK) ---
-    if allow_origin and allow_origin != "*":
-        allowed = str(allow_origin).strip()
-        
-        if allowed == fake_origin:
-            findings.append({
-                "Category": "CORS Misconfiguration",
-                "Description": f"Server reflects arbitrary origin - returned {fake_origin}",
-                "Severity": "High",
-                "Context": "Attacker origin was echoed in Access-Control-Allow-Origin",
-                "Recommendation": "Implement strict origin whitelist. Never reflect user-supplied Origin."
-            })
-            print(f"{Fore.RED}✗ HIGH RISK: Server reflects attacker origin!{Style.RESET_ALL}")
-            
-        elif allowed == "null":
-            findings.append({
-                "Category": "CORS Configuration",
-                "Description": "Origin 'null' is allowed (opaque origin)",
-                "Severity": "Medium",
-                "Context": "Allows requests from data URLs, sandboxed iframes, etc.",
-                "Recommendation": "Avoid allowing 'null' origin unless specifically required."
-            })
-            print(f"{Fore.YELLOW}⚠ Warning: 'null' origin is allowed{Style.RESET_ALL}")
-        else:
-            print(f"{Fore.GREEN}✓ Origin appears controlled: {allowed}{Style.RESET_ALL}")
-    
-    elif wildcard_seen and not allow_credentials_bool:
-        findings.append({
-            "Category": "CORS Configuration",
-            "Description": "Wildcard origin (*) without credentials",
-            "Severity": "Low",
-            "Context": "Public API - allows all origins to read responses",
-            "Recommendation": "Consider if this is intentional for a public API."
-        })
-        print(f"{Fore.YELLOW}⚠ Info: Wildcard origin without credentials (may be intentional){Style.RESET_ALL}")
-    
-    elif not allow_origin:
-        print(f"{Fore.YELLOW}⚠ No CORS headers present{Style.RESET_ALL}")
-        findings.append({
-            "Category": "CORS Configuration",
-            "Description": "No Access-Control-Allow-Origin header present",
-            "Severity": "Info",
-            "Context": "CORS is not enabled or not configured",
-            "Recommendation": "If cross-origin access is needed, configure CORS properly."
-        })
-
-    # --- Check 3: Vary Header ---
-    if allow_origin and allow_origin not in ("*", "null"):
-        if not vary_val or "origin" not in vary_val.lower():
-            findings.append({
-                "Category": "CORS Configuration",
-                "Description": "Missing 'Vary: Origin' header with dynamic origin",
-                "Severity": "Medium",
-                "Context": "Can cause caching issues with CDNs and proxies",
-                "Recommendation": "Add 'Vary: Origin' to prevent cache poisoning."
-            })
-            print(f"{Fore.YELLOW}⚠ Missing 'Vary: Origin' header{Style.RESET_ALL}")
-
-    # --- Check 4: Unsafe Methods Exposed ---
-    if allow_methods:
-        methods_list = [m.strip().upper() for m in str(allow_methods).split(",") if m.strip()]
-        methods_set = set(methods_list)
-        unsafe_methods = {"PUT", "DELETE", "PATCH"}
-        exposed = methods_set.intersection(unsafe_methods)
-        
-        if exposed:
-            findings.append({
-                "Category": "CORS Configuration",
-                "Description": f"Unsafe HTTP methods exposed: {', '.join(sorted(exposed))}",
-                "Severity": "Medium",
-                "Context": f"Methods allowed: {', '.join(methods_list)}",
-                "Recommendation": "Restrict dangerous methods or require strong authentication."
-            })
-            print(f"{Fore.YELLOW}⚠ Unsafe methods exposed: {', '.join(sorted(exposed))}{Style.RESET_ALL}")
-
-    # --- Check 5: Credentials Without Explicit Origin ---
-    if allow_credentials_bool and (not allow_origin or allow_origin in ("", "null")):
-        findings.append({
-            "Category": "CORS Misconfiguration",
-            "Description": "Credentials enabled without explicit allowed origin",
-            "Severity": "Medium",
-            "Context": "Access-Control-Allow-Credentials is true",
-            "Recommendation": "Always specify explicit trusted origin when credentials are enabled."
-        })
-        print(f"{Fore.YELLOW}⚠ Credentials enabled without explicit origin{Style.RESET_ALL}")
-
-    # --- Summary Report ---
-    _print_banner("📊 Summary Report", "=")
-    
-    total = len(findings)
-    severity_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0, "Info": 0}
-    
-    for f in findings:
-        severity_counts[f["Severity"]] = severity_counts.get(f["Severity"], 0) + 1
-    
-    print(f"\n{Fore.WHITE}Total Findings: {Fore.CYAN}{total}{Style.RESET_ALL}")
-    if severity_counts["Critical"]:
-        print(f"{Fore.RED}  Critical: {severity_counts['Critical']}{Style.RESET_ALL}")
-    if severity_counts["High"]:
-        print(f"{Fore.RED}  High: {severity_counts['High']}{Style.RESET_ALL}")
-    if severity_counts["Medium"]:
-        print(f"{Fore.YELLOW}  Medium: {severity_counts['Medium']}{Style.RESET_ALL}")
-    if severity_counts["Low"]:
-        print(f"{Fore.GREEN}  Low: {severity_counts['Low']}{Style.RESET_ALL}")
-    if severity_counts["Info"]:
-        print(f"{Fore.CYAN}  Info: {severity_counts['Info']}{Style.RESET_ALL}")
-
-    if total == 0:
-        print(f"\n{Fore.GREEN}✅ No CORS security issues detected!{Style.RESET_ALL}\n")
+def _normalize_methods_input(methods: Union[List[str], str, None]) -> List[str]:
+    """Return uppercased, deduplicated list of HTTP methods."""
+    if not methods:
+        return []
+    if isinstance(methods, str):
+        parts = [m.strip().upper() for m in re.split(r'\s*,\s*', methods) if m.strip()]
     else:
-        print(f"\n{Fore.WHITE}{'─' * 70}{Style.RESET_ALL}")
-        
-        for i, f in enumerate(findings, 1):
-            severity_colors = {
-                "Critical": Fore.RED,
-                "High": Fore.RED,
-                "Medium": Fore.YELLOW,
-                "Low": Fore.GREEN,
-                "Info": Fore.CYAN
-            }
-            sev_color = severity_colors.get(f["Severity"], Fore.WHITE)
-            
-            print(f"\n{Fore.WHITE}[{i}] {f['Category']}{Style.RESET_ALL}")
-            print(f"    {Fore.WHITE}Issue: {f['Description']}{Style.RESET_ALL}")
-            print(f"    {Fore.WHITE}Severity: {sev_color}{f['Severity']}{Style.RESET_ALL}")
-            print(f"    {Fore.WHITE}Context: {Fore.CYAN}{f['Context']}{Style.RESET_ALL}")
-            print(f"    {Fore.WHITE}Fix: {Fore.GREEN}{f['Recommendation']}{Style.RESET_ALL}")
+        parts = [str(m).strip().upper() for m in methods if str(m).strip()]
+    # deduplicate preserving order
+    seen = set()
+    out = []
+    for p in parts:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
 
-    print(f"\n{Fore.CYAN}{'=' * 70}")
-    print("CORS analysis completed successfully!")
-    print(f"{'=' * 70}{Style.RESET_ALL}\n")
-    
+def analyze_http_methods_from_list(methods_list: List[str]) -> List[Dict[str, Any]]:
+    """
+    Return findings list for provided normalized methods_list.
+    Each finding for unsafe methods will include header, status and recommendation.
+    """
+    findings = []
+    if not methods_list:
+        return [{
+            "Header": "HTTP Methods",
+            "Status": "Unknown",
+            "Severity": "Medium",
+            "Recommendation": "Server did not advertise allowed methods. Try an OPTIONS request or manual testing.",
+            "Methods": []
+        }]
+
+    risky = [m for m in methods_list if m in _METHOD_RISKS]
+    if risky:
+        for m in risky:
+            findings.append({
+                "Header": f"HTTP Method: {m}",
+                "Status": "Unsafe",
+                "Severity": "High",
+                "Recommendation": f"Disable or restrict '{m}' — {_METHOD_RISKS[m]}",
+                "Method": m,
+                "Methods": methods_list
+            })
+    else:
+        findings.append({
+            "Header": "HTTP Methods",
+            "Status": "Safe",
+            "Severity": "Low",
+            "Recommendation": "No commonly unsafe HTTP methods detected. Typical safe methods: GET, POST, HEAD, OPTIONS.",
+            "Methods": methods_list
+        })
     return findings
 
+def _print_raw_options_response(resp: Optional[requests.Response]) -> None:
+    """Print a compact raw OPTIONS response block (status + headers), matching the desired sample."""
+    print(Fore.CYAN + "OPTIONS Response:" + Style.RESET_ALL)
+    print(Fore.CYAN + "**********************************************************" + Style.RESET_ALL)
+    if resp is None:
+        print(Fore.WHITE + "(No Allow header advertised / OPTIONS response not available)" + Style.RESET_ALL)
+        print(Fore.CYAN + "***********************************************************" + Style.RESET_ALL)
+        return
 
-# Example usage
-if __name__ == "__main__":
-    import sys
-    
-    if len(sys.argv) < 2:
-        print(f"{Fore.YELLOW}Usage: python cors_checker.py <url> [fake_origin]{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}Example: python cors_checker.py https://api.example.com{Style.RESET_ALL}")
-        sys.exit(1)
-    
-    target_url = sys.argv[1]
-    test_origin = sys.argv[2] if len(sys.argv) > 2 else "https://evil-attacker.com"
-    
-    analyze_cors(target_url, fake_origin=test_origin)
+    # Print status line (simulate as requests doesn't directly expose HTTP-version easily)
+    status_line = f"HTTP/1.1 {resp.status_code} {resp.reason}"
+    print(Fore.WHITE + status_line)
+
+    # Print common headers in a predictable order (so output stable)
+    # We'll iterate over resp.headers (case-insensitive dict)
+    # But print some typical lines first if present
+    common_order = ["Date", "Content-Type", "Content-Length", "Connection", "Server"]
+    for h in common_order:
+        if h in resp.headers:
+            print(Fore.WHITE + f"{h}: {resp.headers[h]}")
+    # Print Allow / Access-Control-Allow-Methods if present
+    if "Allow" in resp.headers:
+        print(Fore.WHITE + f"Allow: {resp.headers['Allow']}")
+    if "Access-Control-Allow-Origin" in resp.headers:
+        print(Fore.WHITE + f"Access-Control-Allow-Origin: {resp.headers['Access-Control-Allow-Origin']}")
+    if "Access-Control-Allow-Credentials" in resp.headers:
+        print(Fore.WHITE + f"Access-Control-Allow-Credentials: {resp.headers['Access-Control-Allow-Credentials']}")
+    if "Access-Control-Allow-Methods" in resp.headers:
+        print(Fore.WHITE + f"Access-Control-Allow-Methods: {resp.headers['Access-Control-Allow-Methods']}")
+    # Print any remaining headers that weren't printed
+    for k, v in resp.headers.items():
+        if k in common_order or k in {"Allow", "Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Credentials"}:
+            continue
+        print(Fore.WHITE + f"{k}: {v}")
+    print(Fore.CYAN + "***********************************************************" + Style.RESET_ALL)
+
+def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, Any]]:
+    """
+    Do an OPTIONS request to `url`, print raw response, parse Allow (or AC-Allow-Methods),
+    analyze for unsafe methods, and print findings (matching your desired format).
+    Returns the findings list (so main.py can still collect them).
+    """
+    resp = None
+    try:
+        # Send OPTIONS request
+        resp = requests.options(url, timeout=timeout, allow_redirects=True)
+    except Exception as e:
+        # network error or similar -> still continue to print placeholder and return unknown finding
+        resp = None
+
+    # 1) Print raw OPTIONS response first
+    _print_raw_options_response(resp)
+
+    # 2) Extract methods from headers (Allow preferred, then AC-Allow-Methods)
+    methods_hdr_value = None
+    if resp is not None:
+        # requests makes headers case-insensitive; use get
+        methods_hdr_value = resp.headers.get("Allow")
+        if not methods_hdr_value:
+            methods_hdr_value = resp.headers.get("Access-Control-Allow-Methods")
+
+    # 3) Parse header value using regex if present
+    methods_list = []
+    if methods_hdr_value:
+        # Use regex split to be tolerant to whitespace
+        methods_list = [m.strip().upper() for m in re.split(r'\s*,\s*', methods_hdr_value) if m.strip()]
+    else:
+        methods_list = []
+
+    # 4) Analyze methods
+    findings = analyze_http_methods_from_list(methods_list)
+
+    # 5) Print findings in desired format
+    # Count unsafe
+    unsafe_findings = [f for f in findings if f.get("Status", "").lower() == "unsafe"]
+    unsafe_count = len(unsafe_findings)
+
+    # If header is not present, inform user (match sample)
+    if not methods_list:
+        print()
+        print(Fore.RED + "[!]The 'Allow' header is not shown in the response." + Style.RESET_ALL)
+        print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.GREEN}0{Style.RESET_ALL}")
+        print(Fore.WHITE + "Findings:")
+        print("``````````````````````````````````````````````````````````````")
+        print(Fore.GREEN + "✓ No unsafe HTTP methods detected." + Style.RESET_ALL)
+        print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
+        print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+        return findings
+
+    # If we do have methods, compute overall severity per your requested rules:
+    # - If there are unsafe methods => Medium / CVSS 5.3
+    # - If only OPTIONS present => Low / CVSS 3.7
+    print()
+    if unsafe_count > 0:
+        print(Fore.RED + "[!]'Allow' header is shown in OPTIONS response." + Style.RESET_ALL)
+        print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.RED}{unsafe_count}{Style.RESET_ALL}")
+        print(Fore.WHITE + "Risk Rating:")
+        print(f"{Fore.YELLOW}Severity: Medium{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}CVSS: 5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N){Style.RESET_ALL}\n")
+
+        print("Findings:")
+        print("`````````````````````````````````````````````````````````````````")
+        for i, f in enumerate(unsafe_findings, start=1):
+            header_title = f.get('Header', '').replace("HTTP Method: ", "")
+            print(f"{i}. {header_title}")
+            print(f"   ->{f.get('Recommendation')}")
+        print("[Remediation]")
+        print("Disable all unsafe methods.")
+    else:
+        # No unsafe methods
+        # Special-case: if the only method is OPTIONS -> severity Low
+        if methods_list == ["OPTIONS"]:
+            print(Fore.WHITE + f"[!]The 'Allow' header is shown in the response." + Style.RESET_ALL)
+            print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.GREEN}0{Style.RESET_ALL}")
+            print(Fore.WHITE + "Findings:")
+            print("``````````````````````````````````````````````````````````````")
+            print(Fore.GREEN + "✓ No unsafe HTTP methods detected." + Style.RESET_ALL)
+            print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
+            print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+        else:
+            # Methods exist and none are flagged unsafe
+            print(Fore.WHITE + f"[!]'Allow' header is shown in OPTIONS response." + Style.RESET_ALL)
+            print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.GREEN}0{Style.RESET_ALL}")
+            print(Fore.WHITE + "Findings:")
+            print("``````````````````````````````````````````````````````````````")
+            print(Fore.GREEN + "✓ No unsafe HTTP methods detected." + Style.RESET_ALL)
+            print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
+            print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+
+    return findings
