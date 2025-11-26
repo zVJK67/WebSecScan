@@ -4,7 +4,7 @@ from get_header import get_request, parse_headers, print_headers, print_options_
 from http_header import analyze_security_headers, print_findings
 from http_method import check_and_print_http_methods
 from cookie_checker import analyze_cookies
-from cors_checker import analyze_cors
+from test import analyze_cors
 from ssl_tls import run_ssl_check, check_ssl_tls
 from server_info import get_server_info, print_server_info
 from findings_summary import print_summary_table, print_detailed_findings, generate_summary, export_summary_csv, normalize_findings
@@ -147,24 +147,6 @@ def main():
     # Tag header findings with proper category
     header_findings = _tag_findings_with_category(header_findings, "Security Headers")
 
-    '''
-    # === Step 2: HTTP Method Check ===
-    print(Fore.CYAN + "\n[2/8] Checking HTTP methods..." + Style.RESET_ALL)
-    t0 = time.time()
-    try:
-        methods = get_allowed_methods(url)
-        method_findings = analyze_http_methods(methods)
-        print_http_method_findings(method_findings, methods)
-        if verbose:
-            if input("\nSee OPTIONS raw response? (y/n): ").strip().lower() == 'y':
-                print_options_response(url)
-    except Exception as e:
-        print(Fore.RED + f"[ERROR] HTTP method check failed: {e}" + Style.RESET_ALL)
-    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
-
-    # Tag method findings with proper category
-    method_findings = _tag_findings_with_category(method_findings, "HTTP Methods")
-'''
     # === Step 2: HTTP Method Check ===
     print(Fore.CYAN + "\n[2/8] Checking HTTP methods..." + Style.RESET_ALL)
     t0 = time.time()
@@ -180,7 +162,7 @@ def main():
         method_findings = []
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
-        # === Step 3: Server Info Check (ENHANCED) ===
+    # === Step 3: Server Info Check (ENHANCED) ===
     # Replaced to match requested output format while keeping server_info.py unchanged.
     print(Fore.CYAN + "\n[3/8] Checking for exposed server details..." + Style.RESET_ALL)
     # Add the visual spacing the sample output shows
@@ -203,34 +185,30 @@ def main():
     server_findings = _tag_findings_with_category(server_findings, "Server Information")
 
     # === Step 4: Cookie Security Analysis ===
-    print(Fore.CYAN + "\n[4/8] Performing Cookie Security Analysis..." + Style.RESET_ALL)
+    # Selenium-based JS cookie capture is required for this system (always enabled).
     t0 = time.time()
     try:
-        capture_js = input("Capture JS-created cookies via Selenium? (y/n): ").strip().lower() == "y" if verbose else False
+        # Always capture JS-created cookies using Selenium (no prompt).
+        capture_js = True
+
+        # Call the cookie analyzer (it prints its own formatted output).
         cookie_findings = analyze_cookies(url, include_js_cookies=capture_js)
+
     except Exception as e:
         print(Fore.RED + f"[ERROR] Cookie check failed: {e}" + Style.RESET_ALL)
+        cookie_findings = []
+    # Print elapsed time for consistency with other steps
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
-    # Tag cookie findings with proper category
+    # Tag cookie findings with proper category for aggregation later
     cookie_findings = _tag_findings_with_category(cookie_findings, "Cookie Security")
 
-    # === Step 5: CORS Security Analysis (IMPROVED) ===
+    # === Step 5: CORS Security Analysis (UPDATED) ===
     print(Fore.CYAN + "\n[5/8] Checking Cross-Origin Resource Sharing (CORS) configuration..." + Style.RESET_ALL)
-    print(Fore.YELLOW + "   → Testing origin reflection, credentials handling, and preflight responses..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        # Option to customize test origin in verbose mode
-        if verbose:
-            custom_origin = input(Fore.YELLOW + "\nUse custom test origin? (press Enter for default 'https://evil-attacker.com'): " + Style.RESET_ALL).strip()
-            test_origin = custom_origin if custom_origin else "https://evil-attacker.com"
-        else:
-            test_origin = "https://evil-attacker.com"
-        
-        cors_findings = analyze_cors(url, fake_origin=test_origin)
-        
-        # The improved cors_checker.py already prints detailed output
-        # No need for additional printing here
+        # Pass verbose flag to analyze_cors
+        cors_findings = analyze_cors(url, fake_origin="https://evil-attacker.com", verbose=verbose)
         
     except Exception as e:
         print(Fore.RED + f"[ERROR] CORS check failed: {e}" + Style.RESET_ALL)
@@ -241,8 +219,7 @@ def main():
     
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
-    # CORS findings already have Category set by the improved analyzer
-    # But let's ensure consistency
+    # CORS findings already have Category set by the analyzer
     cors_findings = _tag_findings_with_category(cors_findings, "CORS Security")
 
     # === Step 6: Directory & File Exposure  ===

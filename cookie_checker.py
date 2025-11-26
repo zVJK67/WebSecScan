@@ -1,5 +1,6 @@
+# cookie_checker.py
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
 import requests
@@ -23,40 +24,63 @@ def _get_session(retries: int = 2, backoff: float = 0.2) -> requests.Session:
     return s
 
 # Regex to split combined Set-Cookie header safely.
-# It splits on commas that are followed by optional whitespace and then a token that looks like "Name="
-# This avoids splitting cookie attribute values which may contain commas.
 _SET_COOKIE_SPLIT_RE = re.compile(r',(?=\s*[A-Za-z0-9!#$%&\'*+\-.^_`|~]+=)')
 
 def _extract_set_cookie_headers(response: requests.Response) -> List[str]:
     """
-    Return a list of raw Set-Cookie header lines. Handles:
-      - response.raw.headers.get_all('Set-Cookie') if available (best)
-      - otherwise, fall back to response.headers.get('Set-Cookie') and split safely via regex
+    Return a list of raw Set-Cookie header lines found in the response or any intermediate redirects.
+    Handles:
+      - responses where .raw.headers.get_all("Set-Cookie") is available
+      - combined single Set-Cookie header strings (splits safely)
+      - cookies set on redirect responses (response.history)
     """
-    # 1) Try to use raw headers from urllib3 if available (preserves multiple headers)
-    try:
-        raw_headers = getattr(response, "raw", None)
-        if raw_headers is not None and hasattr(raw_headers, "headers"):
-            get_all = getattr(raw_headers.headers, "get_all", None)
-            if callable(get_all):
-                sc = get_all("Set-Cookie")
-                if sc:
-                    return list(sc)
-    except Exception:
-        pass
+    headers_list: List[str] = []
 
-    # 2) Fallback: use response.headers (may be folded). Safely split using regex.
-    sc_header = response.headers.get("Set-Cookie")
-    if not sc_header:
+    if response is None:
         return []
 
-    parts = _SET_COOKIE_SPLIT_RE.split(sc_header)
-    return [p.strip() for p in parts if p.strip()]
+    # Collect final response and any redirect hops (history may be empty)
+    candidates = list(getattr(response, "history", []) or []) + [response]
+
+    for resp in candidates:
+        try:
+            raw_headers = getattr(resp, "raw", None)
+            if raw_headers is not None and hasattr(raw_headers, "headers"):
+                get_all = getattr(raw_headers.headers, "get_all", None)
+                if callable(get_all):
+                    scs = get_all("Set-Cookie")
+                    if scs:
+                        for sc in scs:
+                            if sc and sc.strip():
+                                headers_list.append(sc.strip())
+                        # continue to next candidate (we already extracted from raw)
+                        continue
+        except Exception:
+            # ignore and fallback to header dict
+            pass
+
+        # Fallback: look at resp.headers (CaseInsensitiveDict). May contain a single combined Set-Cookie.
+        sc_header = resp.headers.get("Set-Cookie")
+        if sc_header:
+            # Split safely on commas that start a cookie (regex handles attributes containing commas)
+            parts = _SET_COOKIE_SPLIT_RE.split(sc_header)
+            for p in parts:
+                p = p.strip()
+                if p:
+                    headers_list.append(p)
+
+    # Deduplicate while preserving order (some servers may repeat same Set-Cookie in multiple hops)
+    seen = set()
+    out = []
+    for h in headers_list:
+        if h not in seen:
+            seen.add(h)
+            out.append(h)
+    return out
 
 def _parse_set_cookie_header(raw_sc: str) -> Dict[str, Any]:
     """
     Parse a single Set-Cookie header string into attributes.
-    Returns a dict with keys: Name, Value, Domain, Path, Secure (bool), HttpOnly (bool), SameSite
     """
     result: Dict[str, Any] = {
         "Name": None,
@@ -66,10 +90,11 @@ def _parse_set_cookie_header(raw_sc: str) -> Dict[str, Any]:
         "Secure": False,
         "HttpOnly": False,
         "SameSite": "N/A",
+        "Expires": "N/A",
+        "MaxAge": "N/A",
         "Raw": raw_sc
     }
 
-    # SimpleCookie helps with name/value parsing (it ignores attributes)
     c = SimpleCookie()
     try:
         c.load(raw_sc)
@@ -85,8 +110,8 @@ def _parse_set_cookie_header(raw_sc: str) -> Dict[str, Any]:
             result["Name"] = cookie_key
             result["Value"] = morsel.value
 
-    # Now manually extract attributes (case-insensitive)
-    attr_re = re.compile(r'(?i)(?:;\s*|^)(?P<attr>Secure|HttpOnly|SameSite|Domain|Path)(?:=(?P<val>[^;]+))?')
+    # Extract attributes (case-insensitive)
+    attr_re = re.compile(r'(?i)(?:;\s*|^)(?P<attr>Secure|HttpOnly|SameSite|Domain|Path|Expires|Max-Age)(?:=(?P<val>[^;]+))?')
     for m in attr_re.finditer(raw_sc):
         attr = m.group("attr").lower()
         val = m.group("val")
@@ -100,19 +125,175 @@ def _parse_set_cookie_header(raw_sc: str) -> Dict[str, Any]:
             result["Domain"] = val.strip()
         elif attr == "path" and val:
             result["Path"] = val.strip()
+        elif attr == "expires" and val:
+            result["Expires"] = val.strip()
+        elif attr == "max-age" and val:
+            result["MaxAge"] = val.strip()
 
     return result
 
-def analyze_cookies(url: str, include_js_cookies: bool = False) -> List[Dict[str, Any]]:
+def _is_session_like_cookie(name: str, value: str) -> bool:
     """
-    Analyze cookies set by the server and optionally capture JS-created cookies using Selenium.
+    Heuristic to detect if a cookie is likely a session cookie.
+    """
+    session_patterns = [
+        r'session',
+        r'sess',
+        r'token',
+        r'auth',
+        r'login',
+        r'user',
+        r'jwt',
+        r'access',
+        r'csrf'
+    ]
+    
+    name_lower = (name or "").lower()
+    for pattern in session_patterns:
+        if re.search(pattern, name_lower):
+            return True
+    
+    # Check if value looks like a random token (long alphanumeric string)
+    if value and len(value) >= 16 and re.match(r'^[a-zA-Z0-9+/=_-]+$', value):
+        return True
+    
+    return False
+
+def _check_weak_session_id(value: str) -> bool:
+    """
+    Check if session ID appears weak (too short or predictable).
+    Threshold: < 16 bytes (128 bits) is considered weak.
+    """
+    if not value:
+        return False
+    if len(value) < 16:
+        return True
+    
+    # Check if only numeric (predictable)
+    if value.isdigit():
+        return True
+    
+    # Check for very simple patterns
+    if re.match(r'^(.)\1+$', value):  # All same character
+        return True
+    
+    return False
+
+def _parse_expiry_days(expires_str: str, max_age_str: str) -> Optional[int]:
+    """
+    Parse expiry time and return days until expiration.
+    Returns None if cannot parse or if session cookie (no expiry).
+    """
+    if max_age_str != "N/A":
+        try:
+            seconds = int(max_age_str)
+            return seconds // 86400  # Convert to days
+        except:
+            pass
+    
+    if expires_str != "N/A":
+        try:
+            # Try to parse common date formats
+            from email.utils import parsedate_to_datetime
+            expiry_date = parsedate_to_datetime(expires_str)
+            now = datetime.now(expiry_date.tzinfo)
+            delta = expiry_date - now
+            return delta.days
+        except:
+            pass
+    
+    return None
+
+def _analyze_cookie_list(cookies: List[Dict[str, Any]], is_server_side: bool = True) -> List[Dict[str, Any]]:
+    """
+    Analyze a list of cookies and return issues found.
+    Enhanced detection logic based on server-side vs client-side context.
+    """
+    issues = []
+    for c in cookies:
+        issue_types = []
+        
+        # Check if this looks like a session/auth cookie
+        is_session = _is_session_like_cookie(c.get("Name", ""), c.get("Value", ""))
+        
+        # HttpOnly check (critical for session cookies)
+        if not c.get("HttpOnly"):
+            issue_types.append("HttpOnly")
+        
+        # Secure check
+        if not c.get("Secure"):
+            issue_types.append("Secure")
+        
+        # SameSite check
+        ss = c.get("SameSite", "N/A")
+        if ss in ("N/A", None, ""):
+            issue_types.append("SameSite")
+        
+        # Path check - flag if path is too broad (/ or N/A)
+        path = c.get("Path", "N/A")
+        if path == "/" or path == "N/A":
+            issue_types.append("Path")
+        
+        # Expires/Max-Age check
+        expires = c.get("Expires", "N/A")
+        max_age = c.get("MaxAge", "N/A")
+        
+        if is_server_side:
+            # Server-side: Flag if NO expiry is set (session cookies should have explicit lifetime)
+            if expires == "N/A" and max_age == "N/A":
+                issue_types.append("Expires/Max-Age")
+        else:
+            # Client-side: Flag if expiry is TOO LONG (> 30 days)
+            expiry_days = _parse_expiry_days(expires, max_age)
+            if expiry_days is not None and expiry_days > 30:
+                issue_types.append("Excessive Lifetime")
+        
+        # Weak Session ID check (only for session-like cookies)
+        if is_session:
+            value = c.get("Value", "")
+            if _check_weak_session_id(value):
+                issue_types.append("Weak Session ID")
+        
+        # Domain scope check - flag if domain starts with '.' (wildcard subdomain)
+        domain = c.get("Domain", "N/A")
+        if domain and isinstance(domain, str) and domain.startswith("."):
+            issue_types.append("Domain")
+
+        if issue_types:
+            issues.append({
+                "Name": c.get("Name"),
+                "IssueTypes": issue_types,
+                "IsSession": is_session
+            })
+    
+    return issues
+
+def _dedupe_issues(issues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Remove duplicate issue entries while preserving order.
+    Two entries are considered the same if they have same Name and same set of IssueTypes.
+    """
+    seen = set()
+    out: List[Dict[str, Any]] = []
+    for it in issues:
+        name = it.get("Name")
+        types = tuple(sorted(it.get("IssueTypes", [])))
+        key = (name, types)
+        if key not in seen:
+            seen.add(key)
+            out.append(it)
+    return out
+
+def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str, Any]]:
+    """
+    Analyze cookies set by the server and capture JS-created cookies using Selenium.
     Returns a summary list (cookie_findings) suitable for integration with the rest of the scanner.
     """
-    print(Fore.CYAN + "\n🍪 Cookie Security Analysis" + Style.RESET_ALL)
-    print(Fore.CYAN + "=" * 36 + Style.RESET_ALL)
-
+    print(Fore.CYAN + "\n[4/8] Checking cookie security..." + Style.RESET_ALL)
+    
     session = _get_session()
-    all_cookies: List[Dict[str, Any]] = []
+    server_cookies: List[Dict[str, Any]] = []
+    client_cookies: List[Dict[str, Any]] = []
 
     # === 1. Fetch cookies from HTTP response ===
     try:
@@ -121,18 +302,16 @@ def analyze_cookies(url: str, include_js_cookies: bool = False) -> List[Dict[str
         print(Fore.RED + f"[ERROR] Failed to fetch cookies from {url}: {e}" + Style.RESET_ALL)
         return []
 
-    # Extract Set-Cookie headers robustly (handles multiple headers folded into one)
+    # Extract Set-Cookie headers (includes redirect hops)
     raw_set_cookies = _extract_set_cookie_headers(resp)
     if raw_set_cookies:
-        print(Fore.GREEN + f"\n[+] Server-side cookies detected: {len(raw_set_cookies)}" + Style.RESET_ALL)
         for raw in raw_set_cookies:
             parsed = _parse_set_cookie_header(raw)
-            all_cookies.append(parsed)
+            server_cookies.append(parsed)
     else:
-        # Even if no Set-Cookie header, check response.cookies CookieJar for cookies (name/value)
+        # Check CookieJar
         jar = resp.cookies
         if jar:
-            print(Fore.GREEN + f"\n[+] Server-side cookies detected via CookieJar: {len(jar)}" + Style.RESET_ALL)
             for cookie in jar:
                 parsed = {
                     "Name": cookie.name,
@@ -142,15 +321,14 @@ def analyze_cookies(url: str, include_js_cookies: bool = False) -> List[Dict[str
                     "Secure": bool(cookie.secure),
                     "HttpOnly": bool(getattr(cookie, "rest", {}).get("HttpOnly", False)) or False,
                     "SameSite": getattr(cookie, "sameSite", "N/A") or "N/A",
+                    "Expires": "N/A",
+                    "MaxAge": "N/A",
                     "Raw": None
                 }
-                all_cookies.append(parsed)
-        else:
-            print(Fore.YELLOW + "\n[!] No cookies found in server response." + Style.RESET_ALL)
+                server_cookies.append(parsed)
 
-    # === 2. Optionally fetch client-side JS cookies using Selenium ===
+    # === 2. Fetch client-side JS cookies using Selenium ===
     if include_js_cookies:
-        print(Fore.CYAN + "\n🌐 Capturing client-side (JavaScript) cookies via Selenium..." + Style.RESET_ALL)
         try:
             from selenium import webdriver
             from selenium.webdriver.chrome.options import Options
@@ -159,6 +337,7 @@ def analyze_cookies(url: str, include_js_cookies: bool = False) -> List[Dict[str
             chrome_options.add_argument("--headless")
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
             driver = webdriver.Chrome(options=chrome_options)
             driver.get(url)
             js_cookies = driver.get_cookies()
@@ -173,62 +352,181 @@ def analyze_cookies(url: str, include_js_cookies: bool = False) -> List[Dict[str
                     "Secure": bool(c.get("secure")),
                     "HttpOnly": bool(c.get("httpOnly")),
                     "SameSite": c.get("sameSite") or "N/A",
+                    "Expires": str(c.get("expiry", "N/A")) if c.get("expiry") else "N/A",
+                    "MaxAge": "N/A",
                     "Raw": None
                 }
-                all_cookies.append(parsed)
+                client_cookies.append(parsed)
 
-            print(Fore.GREEN + f"[+] {len(js_cookies)} JavaScript cookies captured." + Style.RESET_ALL)
-        except Exception as e:
-            print(Fore.YELLOW + f"[!] Selenium JS cookie capture skipped: {e}" + Style.RESET_ALL)
+        except Exception:
+            # Silently skip if Selenium not available or fails
+            pass
 
-    # === 3. Analyze cookie flags ===
-    issues: List[Dict[str, Any]] = []
-    for c in all_cookies:
-        missing = []
-        if not c.get("Secure"):
-            missing.append("Secure")
-        if not c.get("HttpOnly"):
-            missing.append("HttpOnly")
-        ss = c.get("SameSite", "N/A")
-        if ss in ("N/A", None, ""):
-            missing.append("SameSite")
-        c["MissingFlags"] = ", ".join(missing) if missing else "None"
-        if missing:
-            issues.append(c)
+    # === 3. Analyze cookies and detect issues ===
+    server_issues = _analyze_cookie_list(server_cookies, is_server_side=True)
+    client_issues = _analyze_cookie_list(client_cookies, is_server_side=False)
 
-    # === 4. Print formatted table report ===
-    if all_cookies:
-        print(Fore.WHITE + "\n📋 Cookie Report:" + Style.RESET_ALL)
-        headers = ["Name", "Domain", "Secure", "HttpOnly", "SameSite", "MissingFlags"]
-        table = [[
-            c.get("Name"),
-            c.get("Domain"),
-            "✅" if c.get("Secure") else "❌",
-            "✅" if c.get("HttpOnly") else "❌",
-            c.get("SameSite"),
-            c.get("MissingFlags")
-        ] for c in all_cookies]
-        print(tabulate(table, headers=headers, tablefmt="grid"))
+    # Deduplicate issues to avoid repeated printing
+    server_issues = _dedupe_issues(server_issues)
+    client_issues = _dedupe_issues(client_issues)
+
+    # Determine severity based on ALL detected issue types
+    all_issue_types = set()
+    for issues in [server_issues, client_issues]:
+        for cookie_issue in issues:
+            all_issue_types.update(cookie_issue.get("IssueTypes", []))
+
+    # If ONLY HttpOnly and/or Secure are missing (nothing else), Low severity
+    if all_issue_types and all_issue_types <= {"HttpOnly", "Secure"}:
+        severity = "Low"
+        cvss = "3.7 (AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N)"
+    elif all_issue_types:
+        # Any other issue detected = High severity
+        severity = "High"
+        cvss = "7.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N)"
     else:
-        print(Fore.YELLOW + "\nNo cookies detected for analysis." + Style.RESET_ALL)
+        severity = "Info"
+        cvss = "N/A"
 
-    # === 5. Return issue summary for main program ===
-    cookie_findings: List[Dict[str, Any]] = []
-    for c in issues:
-        mf = c.get("MissingFlags", "")
-        if "Secure" in mf and "HttpOnly" in mf:
-            sev = "High"
-        elif "Secure" in mf:
-            sev = "High"
-        elif "HttpOnly" in mf:
-            sev = "Medium"
+    # === 4. Print formatted output ===
+    print(Fore.RED + "\nImproper Cookie & Session Security Configuration" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    print(Fore.WHITE + "Risk Rating:" + Style.RESET_ALL)
+    print(f"Severity: {severity}")
+    print(f"CVSS: {cvss}")
+
+    # [a] Server-Side Findings
+    print(Fore.CYAN + "\n[a]Server-Side Findings" + Style.RESET_ALL)
+    print(Fore.WHITE + "*" * 60 + Style.RESET_ALL)
+    if server_cookies:
+        # print raw Set-Cookie lines we collected (if any)
+        if raw_set_cookies:
+            for raw in raw_set_cookies:
+                print(f"Set-Cookie: {raw}")
         else:
-            sev = "Low"
+            # From CookieJar
+            for c in server_cookies:
+                print(f"Cookie: {c['Name']}={c['Value']}")
+    else:
+        print("[!] No cookies found in server response.")
+    print(Fore.WHITE + "*" * 60 + Style.RESET_ALL)
+    
+    print("\nFindings:")
+    print(Fore.WHITE + "`" * 80 + Style.RESET_ALL)
+    if server_issues:
+        _print_issues(server_issues, is_server_side=True)
+    elif server_cookies:
+        print(Fore.GREEN + "\n[✓] Server-side cookies detected — no issues found.\n" + Style.RESET_ALL)
+    else:
+        print(Fore.YELLOW + "\n[!] No cookies found in server response.\n" + Style.RESET_ALL)
+
+    print(Fore.WHITE + "~" * 80 + Style.RESET_ALL)
+
+    # [b] Client-Side Findings
+    print(Fore.CYAN + "\n[b]Client-Side Findings" + Style.RESET_ALL)
+    print(Fore.WHITE + "*" * 60 + Style.RESET_ALL)
+    if client_cookies:
+        for c in client_cookies:
+            # Build ordered attributes list for clear, consistent printing
+            attrs = []
+            if c.get("Secure"):
+                attrs.append("Secure")
+            if c.get("HttpOnly"):
+                attrs.append("HttpOnly")
+            if c.get("SameSite") not in ["N/A", None, ""]:
+                attrs.append(f"SameSite={c.get('SameSite')}")
+            if c.get("Path") and c.get("Path") != "N/A":
+                attrs.append(f"Path={c.get('Path')}")
+            if c.get("Domain") and c.get("Domain") != "N/A":
+                attrs.append(f"Domain={c.get('Domain')}")
+            if c.get("Expires") and c.get("Expires") != "N/A":
+                attrs.append(f"Expires={c.get('Expires')}")
+            attrs_str = "; ".join(attrs) if attrs else "(no attributes)"
+
+            # Prefer to show raw if available (some cookies will have Raw=None)
+            if c.get("Raw"):
+                # Raw string could be like "name=value; Path=/; ..." — include it as Set-Cookie-like output
+                print(f"document.cookie (raw): {c.get('Raw')}")
+            else:
+                # Show a clean, JS-style representation so it's clear it's from the browser store
+                print(f"document.cookie: {c.get('Name')}={c.get('Value')}; {attrs_str}")
+    else:
+        print("[!] No client-side cookies detected.")
+    print(Fore.WHITE + "*" * 60 + Style.RESET_ALL)
+
+    print("\nFindings:")
+    print(Fore.WHITE + "`" * 80 + Style.RESET_ALL)
+    if client_issues:
+        _print_issues(client_issues, is_server_side=False)
+    elif client_cookies:
+        print(Fore.GREEN + "\n[✓] Client-side cookies detected — no issues found.\n" + Style.RESET_ALL)
+    else:
+        print(Fore.YELLOW + "\n[!] No client-side cookies detected.\n" + Style.RESET_ALL)
+
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+
+    # === 5. Return findings for summary (all use category-level severity) ===
+    cookie_findings: List[Dict[str, Any]] = []
+    for issue in server_issues + client_issues:
         cookie_findings.append({
-            "Category": "Cookie",
-            "Name": c.get("Name"),
-            "Severity": sev,
-            "Description": f"Missing flags: {mf}"
+            "Category": "Cookie Security",
+            "Name": issue.get("Name"),
+            "Severity": severity,  # Use category-level severity
+            "Description": f"Missing flags: {', '.join(issue.get('IssueTypes', []))}"
         })
 
     return cookie_findings
+
+def _print_issues(issues: List[Dict[str, Any]], is_server_side: bool = True):
+    """Print detected issues in numbered format."""
+    
+    # Define issue mappings for server-side
+    server_issue_map = {
+        "HttpOnly": ("Missing HttpOnly Attribute", 
+                     "Set the HttpOnly flag in all session cookies (e.g. `Set-Cookie: sessionid=...; HttpOnly`)."),
+        "Secure": ("Missing Secure Attribute", 
+                   "Add the Secure flag to ensure cookies are only delivered via HTTPS (e.g. `Set-Cookie: sessionid=...; Secure`)."),
+        "SameSite": ("Missing SameSite Attribute", 
+                     "Set SameSite=Lax or SameSite=Strict for session cookies to mitigate CSRF attacks."),
+        "Path": ("Missing Specific Path Attribute", 
+                 "Restrict Path to required endpoints (e.g. `Set-Cookie: sessionid=...; Path=/admin`)."),
+        "Expires/Max-Age": ("Missing Expires/Max-Age Attribute", 
+                            "Set a Max-Age or Expires attribute with an appropriate session lifetime."),
+        "Weak Session ID": ("Weak Session ID", 
+                           "Use long, cryptographically secure random session identifiers (>=128 bits, e.g. `sessionid=63b7c9f9f0a56edbcf9f1a31e9e1561c`)."),
+        "Domain": ("Cookie Scope Misconfiguration - Domain Attribute", 
+                   "Restrict the Domain attribute to the minimal required scope (e.g. `auth.example.com`).")
+    }
+
+    # Define issue mappings for client-side
+    client_issue_map = {
+        "Secure": ("Missing Secure Flag",
+                   "Enable the Secure flag so that cookies are only sent over HTTPS."),
+        "HttpOnly": ("Missing HttpOnly Attribute",
+                     "Mark the cookie as HttpOnly to prevent JavaScript access."),
+        "SameSite": ("Missing SameSite Attribute",
+                     "Set SameSite=Lax or SameSite=Strict. If using SameSite=None, ensure Secure is also set."),
+        "Excessive Lifetime": ("Excessive Cookie Lifetime",
+                               "Limit long-term cookies to less than 1 year; session cookies should expire when the browser closes."),
+        "Path": ("Overly Broad Path Attribute",
+                 "Restrict Path to only required endpoints (e.g., Path=/admin)."),
+        "Domain": ("Overly Broad Domain Attribute",
+                   "Restrict the Domain attribute to the specific subdomain that requires the cookie."),
+        "Weak Session ID": ("Weak Session ID",
+                           "Use long, cryptographically secure random session identifiers (>=128 bits).")
+    }
+
+    issue_map = server_issue_map if is_server_side else client_issue_map
+
+    # Collect all unique issue types in order they appear
+    all_types = []
+    for issue in issues:
+        for it in issue.get("IssueTypes", []):
+            if it not in all_types:
+                all_types.append(it)
+
+    # Print numbered findings
+    for idx, issue_type in enumerate(all_types, 1):
+        title, recommendation = issue_map.get(issue_type, (issue_type, "Review cookie configuration."))
+        print(f"{idx}. {title}")
+        print(f"   Recommendation: {recommendation}\n")

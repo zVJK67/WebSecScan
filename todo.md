@@ -208,6 +208,6 @@ http://localhost:8000 — if you run a local server (quick to spin up and fully 
 docker run --rm -p 4000:3000 bkimminich/juice-shop
 http://127.0.0.1:4000
 
-wcliauixuogsctzy
 
-XS39M-HBE2B-T3VNF-E64P7-LLKUD
+websecscan.report@gmail.com
+xids ggpt ugbz ecli

@@ -398,8 +398,8 @@ def print_server_info(info: Dict[str, Any], findings: List[Dict[str, Any]]) -> N
     """
     Print server information and findings in the new format.
     """
-    print(Fore.CYAN + "\nServer Information Leak" + Style.RESET_ALL)
-    print(Fore.CYAN + "═" * 64 + Style.RESET_ALL)
+    print(Fore.CYAN + "Server Information Leak" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
     
     # Target information with asterisk borders
     print(Fore.YELLOW + "*" * 64 + Style.RESET_ALL)
@@ -435,4 +435,4 @@ def print_server_info(info: Dict[str, Any], findings: List[Dict[str, Any]]) -> N
     else:
         print(Fore.GREEN + "\nFindings: None - No server information exposure detected." + Style.RESET_ALL)
     
-    print(Fore.CYAN + "═" * 64 + Style.RESET_ALL)
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)

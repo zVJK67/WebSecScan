@@ -106,7 +106,7 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
     """
     # Print section header
     print(Fore.CYAN + "HTTP Method Security Check" + Style.RESET_ALL)
-    print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
     
     resp = None
     response_received = False
@@ -148,7 +148,7 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
         print("``````````````````````````````````````````````````````````````````````````````````")
         print(Fore.GREEN + "✓ No unsafe HTTP methods detected." + Style.RESET_ALL)
         print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
-        print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+        print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
         return []
     
     # Scenario 2: Response received but no Allow header
@@ -159,7 +159,7 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
         print("``````````````````````````````````````````````````````````````````````````````````")
         print(Fore.GREEN + "✓ No unsafe HTTP methods detected." + Style.RESET_ALL)
         print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
-        print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+        print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
         return []
 
     # Scenario 3: Methods detected
@@ -203,6 +203,6 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
         print(Fore.GREEN + "✓ No unsafe HTTP methods detected." + Style.RESET_ALL)
         print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
     
-    print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
     
     return findings
