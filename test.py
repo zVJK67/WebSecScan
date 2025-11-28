@@ -69,6 +69,7 @@ def analyze_cors(
         if custom_input:
             fake_origin = custom_input
 
+        print("**********************************************************")
         print("Target URL: " + target)
         print(f"Test Origin: {fake_origin}")
 
@@ -143,7 +144,7 @@ def analyze_cors(
 
     # --- Display observed headers (verbose mode only) ---
     if verbose:
-        print("**********************************************************")
+        print("\n**********************************************************")
         print("CORS Headers Observed")
         
         def _print_headers_table(title: str, headers: Dict[str, Optional[str]]) -> None:
@@ -334,6 +335,6 @@ def analyze_cors(
     else:
         print("✓ No findings.")
     
-    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "\n═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
     return findings

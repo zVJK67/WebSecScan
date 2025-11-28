@@ -1,208 +1,219 @@
-# http_method.py
-import re
-from typing import List, Union, Dict, Any, Optional
-from colorama import Fore, Style
-import requests
+"""
+Directory & File Exposure Scanner (safe checks)
 
-# Known risky HTTP methods and short explanation
-_METHOD_RISKS = {
-    "OPTIONS": "This method is a diagnostic method mainly used for debugging purposes, but it can unintentionally help attackers by revealing supported server methods.",
-    "PUT": "This method allows a client to upload new files on the web server.",
-    "DELETE": "This method allows a client to delete a file on the web server.",
-    "TRACE": "This method simply echoes back to the client whatever string has been sent to the server, and is used mainly for debugging purposes.",
-    "CONNECT": "This method could allow a client to use the web server as a proxy.",
-    "PATCH": "Partial updates — risky when not properly access-controlled.",
-    # WebDAV / others
-    "PROPFIND": "WebDAV method that can leak file system structure or metadata.",
-    "MKCOL": "WebDAV method to create collections (directories).",
-    "LOCK": "WebDAV locking method (can be abused).",
-    "UNLOCK": "WebDAV unlock method.",
-    "REPORT": "Repository/reporting method that may leak info.",
-    "COPY": "Can copy resources if misconfigured.",
-    "MOVE": "Can move/rename resources; risky if unintended.",
+Usage:
+    from dir_scan import scan_common_paths, print_dir_scan_results
+    findings = scan_common_paths("https://example.com")
+    print_dir_scan_results(findings)
+"""
+
+from typing import List, Dict
+from urllib.parse import urljoin, urlparse
+import requests
+from colorama import Fore, Style
+
+# Common paths to probe (safe, read-only)
+COMMON_PATHS = [
+    "/", "/robots.txt", "/sitemap.xml", "/.git/", "/.env", "/.htaccess",
+    "/config.php", "/config.php.bak", "/config.bak", "/backup.zip",
+    "/wp-config.php", "/admin/", "/admin/index.php", "/phpinfo.php",
+    "/server-status", "/.well-known/security.txt", "/.well-known/change-password",
+    "/.git/config", "/.DS_Store", "/.gitignore", "/logs/", "/error_log",
+    "/.htpasswd", "/README", "/readme.html", "/readme.txt", "/backup.tar.gz"
+]
+
+# "Interesting" responses to surface (presence, forbidden, auth required, server error)
+INTERESTING_STATUS = {200, 401, 403, 500}
+
+_SEV_ORDER = {"High": 0, "Medium": 1, "Low": 2}
+
+# Risk explanations for different file types
+RISK_EXPLANATIONS = {
+    ".env": "Environment variables and secrets exposed",
+    "config": "Configuration files may reveal sensitive settings",
+    "backup": "Backup files may contain sensitive data or source code",
+    ".git": "Git repository data exposes source code and history",
+    "phpinfo": "PHP configuration disclosure reveals server details",
+    ".htaccess": "Apache configuration may reveal security rules",
+    ".htpasswd": "Password file may expose authentication credentials",
+    "admin": "Administrative interface accessible to potential attackers",
+    ".DS_Store": "macOS metadata may reveal directory structure",
+    "logs": "Log files may contain sensitive information",
+    "error_log": "Error logs may reveal system paths and vulnerabilities",
+    "readme": "Documentation may reveal version information",
+    "sitemap": "Site structure disclosure aids reconnaissance",
+    "robots.txt": "Reveals paths that should be hidden from crawlers",
 }
 
-def _normalize_methods_input(methods: Union[List[str], str, None]) -> List[str]:
-    """Return uppercased, deduplicated list of HTTP methods."""
-    if not methods:
-        return []
-    if isinstance(methods, str):
-        parts = [m.strip().upper() for m in re.split(r'\s*,\s*', methods) if m.strip()]
-    else:
-        parts = [str(m).strip().upper() for m in methods if str(m).strip()]
-    # deduplicate preserving order
-    seen = set()
-    out = []
-    for p in parts:
-        if p not in seen:
-            seen.add(p)
-            out.append(p)
-    return out
 
-def analyze_http_methods_from_list(methods_list: List[str]) -> List[Dict[str, Any]]:
+def _normalize_url(base: str) -> str:
+    parsed = urlparse(base)
+    if not parsed.scheme:
+        base = "http://" + base
+    return base
+
+
+def _severity_for(path: str, status: int) -> str:
     """
-    Return findings list for provided normalized methods_list.
-    Each finding for unsafe methods will include header, status and recommendation.
+    Simple heuristic. Publicly reachable sensitive files => High,
+    admin or directory hits => Medium, other interesting codes => Low/Medium.
     """
-    findings = []
-    if not methods_list:
-        return []
+    p = path.lower()
+    if status == 200:
+        if any(x in p for x in [".env", "config", "backup", "phpinfo", ".git", ".htpasswd", "key", "passwd"]):
+            return "High"
+        if p.endswith("/") or "admin" in p:
+            return "Medium"
+        return "Medium"
+    if status == 401:
+        return "Medium"   # auth gate exists (interesting)
+    if status == 403:
+        return "Low"      # blocked (good), but still noteworthy
+    if status >= 500:
+        return "Low"      # server error while probing
+    return "Low"
 
-    risky = [m for m in methods_list if m in _METHOD_RISKS]
-    if risky:
-        for m in risky:
-            findings.append({
-                "Header": f"HTTP Method: {m}",
-                "Status": "Unsafe",
-                "Severity": "High",
-                "Recommendation": _METHOD_RISKS[m],
-                "Method": m,
-                "Methods": methods_list
-            })
+
+def _get_risk_explanation(path: str) -> str:
+    """Get risk explanation based on file/path type"""
+    p = path.lower()
     
-    return findings
-
-def _print_raw_options_response(resp: Optional[requests.Response]) -> None:
-    """Print a compact raw OPTIONS response block (status + headers), matching the desired sample."""
-    print(Fore.CYAN + "OPTIONS Response:" + Style.RESET_ALL)
-    print(Fore.CYAN + "**********************************************************" + Style.RESET_ALL)
-    if resp is None:
-        print(Fore.WHITE + "(No response received)" + Style.RESET_ALL)
-        print(Fore.CYAN + "**********************************************************" + Style.RESET_ALL)
-        return
-
-    # Print status line
-    status_line = f"HTTP/1.1 {resp.status_code} {resp.reason}"
-    print(Fore.WHITE + status_line)
-
-    # Print common headers in a predictable order
-    common_order = ["Date", "Content-Type", "Content-Length", "Connection", "Server"]
-    for h in common_order:
-        if h in resp.headers:
-            print(Fore.WHITE + f"{h}: {resp.headers[h]}")
+    # Check for specific matches
+    for key, explanation in RISK_EXPLANATIONS.items():
+        if key in p:
+            return explanation
     
-    # Print Allow / Access-Control-Allow-Methods if present
-    if "Allow" in resp.headers:
-        print(Fore.WHITE + f"Allow: {resp.headers['Allow']}")
-    if "Access-Control-Allow-Origin" in resp.headers:
-        print(Fore.WHITE + f"Access-Control-Allow-Origin: {resp.headers['Access-Control-Allow-Origin']}")
-    if "Access-Control-Allow-Credentials" in resp.headers:
-        print(Fore.WHITE + f"Access-Control-Allow-Credentials: {resp.headers['Access-Control-Allow-Credentials']}")
-    if "Access-Control-Allow-Methods" in resp.headers:
-        print(Fore.WHITE + f"Access-Control-Allow-Methods: {resp.headers['Access-Control-Allow-Methods']}")
-    
-    # Print any remaining headers that weren't printed
-    for k, v in resp.headers.items():
-        if k in common_order or k in {"Allow", "Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Credentials"}:
+    # Default explanation
+    return "Sensitive file or directory accessible to unauthorized users"
+
+
+def scan_common_paths(base_url: str, timeout: int = 6, max_results: int = 50) -> List[Dict]:
+    """
+    Scan a list of common files/directories (non-destructive).
+    Returns a list of findings with:
+      Category, Severity, Description, RelPath, URL, Status
+    """
+    base = _normalize_url(base_url)
+    session = requests.Session()
+    session.headers.update({"User-Agent": "WebSecScan/DirScanner/1.0"})
+
+    findings: List[Dict] = []
+    scanned = 0
+
+    for rel in COMMON_PATHS:
+        if scanned >= max_results:
+            break
+        scanned += 1
+
+        full = urljoin(base if base.endswith("/") else base + "/", rel.lstrip("/"))
+        try:
+            resp = session.get(full, timeout=timeout, allow_redirects=True)
+            status = resp.status_code
+
+            if status in INTERESTING_STATUS:
+                sev = _severity_for(rel, status)
+                risk_explanation = _get_risk_explanation(rel)
+                
+                findings.append({
+                    "Category": "Directory/File Exposure",
+                    "Severity": sev,
+                    "Description": f"Path {rel} returned HTTP {status}.",
+                    "RelPath": rel,
+                    "URL": full,
+                    "Status": status,
+                    "Risk": risk_explanation,
+                })
+        except requests.RequestException:
+            # ignore transient network errors
             continue
-        print(Fore.WHITE + f"{k}: {v}")
-    print(Fore.CYAN + "**********************************************************" + Style.RESET_ALL)
 
-def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, Any]]:
-    """
-    Do an OPTIONS request to `url`, print raw response, parse Allow (or AC-Allow-Methods),
-    analyze for unsafe methods, and print findings (matching your desired format).
-    Returns the findings list (so main.py can still collect them).
-    """
-    # Print section header
-    print(Fore.CYAN + "HTTP Method Security Check" + Style.RESET_ALL)
-    print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
-    
-    resp = None
-    response_received = False
-    
-    try:
-        # Send OPTIONS request
-        resp = requests.options(url, timeout=timeout, allow_redirects=True)
-        response_received = True
-    except Exception as e:
-        # network error or similar
-        response_received = False
-
-    # 1) Print raw OPTIONS response first
-    _print_raw_options_response(resp)
-
-    # 2) Extract methods from headers (ONLY check 'Allow' header)
-    methods_hdr_value = None
-    if resp is not None:
-        methods_hdr_value = resp.headers.get("Allow")
-
-    # 3) Parse header value using regex if present
-    methods_list = []
-    if methods_hdr_value:
-        methods_list = [m.strip().upper() for m in re.split(r'\s*,\s*', methods_hdr_value) if m.strip()]
-    else:
-        methods_list = []
-
-    # 4) Analyze methods
-    findings = analyze_http_methods_from_list(methods_list)
-
-    # 5) Print findings in desired format
-    print()
-    
-    # Scenario 1: No response received at all
-    if not response_received:
-        print(Fore.RED + "[!] Failed to retrieve OPTIONS response from server." + Style.RESET_ALL)
-        print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.GREEN}0{Style.RESET_ALL}")
-        print(Fore.WHITE + "Findings:")
-        print("``````````````````````````````````````````````````````````````````````````````````")
-        print(Fore.GREEN + "✓ No unsafe HTTP methods detected." + Style.RESET_ALL)
-        print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
-        print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
-        return []
-    
-    # Scenario 2: Response received but no Allow header
-    if not methods_list:
-        print(Fore.RED + "[!] The 'Allow' header is not shown in the response." + Style.RESET_ALL)
-        print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.GREEN}0{Style.RESET_ALL}")
-        print(Fore.WHITE + "Findings:")
-        print("``````````````````````````````````````````````````````````````````````````````````")
-        print(Fore.GREEN + "✓ No unsafe HTTP methods detected." + Style.RESET_ALL)
-        print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
-        print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
-        return []
-
-    # Scenario 3: Methods detected
-    unsafe_findings = [f for f in findings if f.get("Status", "").lower() == "unsafe"]
-    unsafe_count = len(unsafe_findings)
-    
-    # Determine if only OPTIONS (or OPTIONS among safe methods like GET, HEAD, POST)
-    safe_methods = {"GET", "HEAD", "POST"}
-    non_safe_methods = [m for m in methods_list if m not in safe_methods]
-    
-    # Check if only OPTIONS is the risky one among all methods
-    only_options_risky = (non_safe_methods == ["OPTIONS"])
-    
-    print(Fore.RED + "[!] 'Allow' header is shown in OPTIONS response." + Style.RESET_ALL)
-    print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.RED if unsafe_count > 0 else Fore.GREEN}{unsafe_count}{Style.RESET_ALL}")
-    
-    if unsafe_count > 0:
-        print(Fore.WHITE + "Risk Rating:")
-        if only_options_risky:
-            # Low severity if only OPTIONS is risky
-            print(f"{Fore.YELLOW}Severity: Low{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}CVSS: 3.7 (AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N){Style.RESET_ALL}\n")
-        else:
-            # Medium severity if other unsafe methods present
-            print(f"{Fore.YELLOW}Severity: Medium{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}CVSS: 5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N){Style.RESET_ALL}\n")
-        
-        print("Findings:")
-        print("``````````````````````````````````````````````````````````````````````````````````")
-        for i, f in enumerate(unsafe_findings, start=1):
-            method_name = f.get('Method', '')
-            print(f"{i}. {method_name}")
-            print(f"   -> {f.get('Recommendation')}")
-        
-        print("[Remediation]")
-        print("Disable all unsafe methods.")
-    else:
-        # No unsafe methods detected
-        print(Fore.WHITE + "Findings:")
-        print("``````````````````````````````````````````````````````````````````````````````````")
-        print(Fore.GREEN + "✓ No unsafe HTTP methods detected." + Style.RESET_ALL)
-        print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
-    
-    print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
-    
     return findings
+
+
+def print_dir_scan_results(findings: List[Dict], show_counts: bool = False) -> None:
+    """
+    Print directory scan results in the requested format with enhanced details.
+    """
+    
+    # Filter out "/" home directory as it's not a vulnerability
+    filtered_findings = [f for f in findings if f.get("RelPath") != "/"]
+    
+    # Print section header
+    print(Fore.CYAN + "\nDirectory & File Exposure" + Style.RESET_ALL)
+    print("=" * 64)
+    
+    if not filtered_findings:
+        # No findings case
+        print(Fore.GREEN + "✓ No sensitive files or directories exposed" + Style.RESET_ALL)
+        print("=" * 64)
+        return
+    
+    # Calculate overall risk rating (fixed values)
+    print("Risk Rating:")
+    print(f"Severity: {Fore.YELLOW}Medium{Style.RESET_ALL}")
+    print("CVSS: 5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)")
+    
+    print("\nFindings:")
+    print("─" * 80)
+    
+    # Print findings without severity grouping
+    for idx, f in enumerate(filtered_findings, 1):
+        rel = f.get("RelPath") or "-"
+        url = f.get("URL") or "-"
+        status = f.get("Status")
+        risk = f.get("Risk") or "Sensitive resource accessible"
+        
+        print(f"{idx}. {rel}")
+        print(f"   URL: {url}")
+        
+        # Show status code with readable format
+        if status is not None:
+            status_text = {
+                200: "200 OK",
+                401: "401 Unauthorized",
+                403: "403 Forbidden",
+                500: "500 Internal Server Error"
+            }.get(status, f"{status}")
+            print(f"   Status: {status_text}")
+        
+        print(f"   Risk: {risk}")
+        print()
+    
+    # Recommendations section
+    print(f"{Fore.RED}[!] Recommendations{Style.RESET_ALL}")
+    print("─" * 64)
+    
+    # Check what types of findings exist to provide targeted recommendations
+    has_git = any(".git" in f.get("RelPath", "").lower() for f in filtered_findings)
+    has_env = any(".env" in f.get("RelPath", "").lower() for f in filtered_findings)
+    has_backup = any("backup" in f.get("RelPath", "").lower() or ".bak" in f.get("RelPath", "").lower() for f in filtered_findings)
+    has_config = any("config" in f.get("RelPath", "").lower() for f in filtered_findings)
+    has_admin = any("admin" in f.get("RelPath", "").lower() for f in filtered_findings)
+    
+    # Build targeted recommendations list
+    recommendations = []
+    
+    if has_env:
+        recommendations.append("Remove .env files from webroot immediately and rotate all secrets")
+    if has_git:
+        recommendations.append("Block .git/ directory at web server level (nginx/Apache config)")
+    if has_config:
+        recommendations.append("Remove or restrict access to configuration files")
+    if has_backup:
+        recommendations.append("Delete all backup files from publicly accessible directories")
+    if has_admin:
+        recommendations.append("Restrict admin interfaces with authentication and IP allowlisting")
+    
+    # Add general recommendations
+    recommendations.extend([
+        "Disable directory listing in web server configuration",
+        "Use .htaccess or nginx rules to deny access to dotfiles",
+        "Implement strict file permissions (644 for files, 755 for dirs)",
+        "Remove sensitive files and folders from the webroot",
+        "Review for exposed secrets and rotate if necessary"
+    ])
+    
+    for rec in recommendations:
+        print(f"   • {rec}")
+    
+    print("=" * 64)

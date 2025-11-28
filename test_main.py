@@ -4,7 +4,7 @@ from get_header import get_request, parse_headers, print_headers, print_options_
 from http_header import analyze_security_headers, print_findings
 from http_method import check_and_print_http_methods
 from cookie_checker import analyze_cookies
-from test import analyze_cors
+from cors_checker import analyze_cors
 from ssl_tls import run_ssl_check, check_ssl_tls
 from server_info import get_server_info, print_server_info
 from findings_summary import print_summary_table, print_detailed_findings, generate_summary, export_summary_csv, normalize_findings
