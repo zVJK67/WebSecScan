@@ -21,7 +21,10 @@ def _get_session(retries: int = 2, backoff: float = 0.2) -> requests.Session:
     s.mount("http://", adapter)
     s.mount("https://", adapter)
     s.headers.update({"User-Agent": "WebSecScan/1.0"})
+    # IMPORTANT: scanner design — skip certificate verification for HTTP-level checks
+    s.verify = False
     return s
+
 
 # Regex to split combined Set-Cookie header safely.
 _SET_COOKIE_SPLIT_RE = re.compile(r',(?=\s*[A-Za-z0-9!#$%&\'*+\-.^_`|~]+=)')
@@ -296,10 +299,23 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
     client_cookies: List[Dict[str, Any]] = []
 
     # === 1. Fetch cookies from HTTP response ===
+        # === 1. Fetch cookies from HTTP response ===
     try:
+        # Use the session (which has verify=False)
         resp = session.get(url, timeout=10)
+    except requests.exceptions.SSLError as e:
+        # Very unlikely here because session.verify=False, but handle gracefully
+        print(Fore.YELLOW + f"⚠️ TLS verification failed while fetching cookies for {url}: {e}" + Style.RESET_ALL)
+        print(Fore.YELLOW + "   Retrying without certificate verification to continue the scan..." + Style.RESET_ALL)
+        try:
+            resp = session.get(url, timeout=10, verify=False)
+        except requests.RequestException as e2:
+            print(Fore.RED + f"[ERROR] Could not fetch cookies from {url}: {e2}" + Style.RESET_ALL)
+            return []
     except requests.RequestException as e:
-        print(Fore.RED + f"[ERROR] Failed to fetch cookies from {url}: {e}" + Style.RESET_ALL)
+        # Friendly, short message for the user
+        print(Fore.RED + f"[ERROR] Could not fetch cookies from {url}: {e}" + Style.RESET_ALL)
+        print(Fore.YELLOW + "   The scanner will continue; no server-side cookies were collected." + Style.RESET_ALL)
         return []
 
     # Extract Set-Cookie headers (includes redirect hops)

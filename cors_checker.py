@@ -1,9 +1,17 @@
+# cors_checker.py
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from colorama import Fore, Style, init
+import urllib3
+
+# initialize colorama (if not already in main)
+init(autoreset=True)
+
+# Suppress urllib3 InsecureRequestWarning since we intentionally skip cert verification
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- Helpers ---
 def _normalize_url(url: str) -> str:
@@ -26,13 +34,18 @@ def _get_session(retries: int = 2, backoff: float = 0.2) -> requests.Session:
     s.mount("http://", adapter)
     s.mount("https://", adapter)
     s.headers.update({"User-Agent": "WebSecScan/1.0"})
+    # scanner design: skip TLS verification for HTTP-level checks
+    s.verify = False
     return s
 
 def _hdr(resp: Optional[requests.Response], name: str) -> Optional[str]:
     """Safely extract header from response"""
     if resp is None:
         return None
-    return resp.headers.get(name)
+    try:
+        return resp.headers.get(name)
+    except Exception:
+        return None
 
 def _print_section_header(text: str) -> None:
     """Print a section header"""
@@ -49,68 +62,60 @@ def analyze_cors(
 ) -> List[Dict[str, Any]]:
     """
     Perform comprehensive CORS security analysis.
-    
+
     Tests:
       1. Original GET and OPTIONS (no Origin header)
       2. Probe GET with attacker Origin
       3. Probe OPTIONS preflight with attacker Origin
-    
+
     Returns:
-        List of findings with Category, Description, and Recommendation
+        List of findings with Category, Type, Detail, and Recommendation
     """
     target = _normalize_url(url)
     session = _get_session()
     findings: List[Dict[str, Any]] = []
 
-    # Only show detailed output in verbose mode
+    # Use the fake_origin argument — do not prompt inside this module.
     if verbose:
-        print(f"\n{Fore.CYAN}Use custom test origin? (press Enter for default '{fake_origin}'):{Style.RESET_ALL}")
-        custom_input = input().strip()
-        if custom_input:
-            fake_origin = custom_input
-
         print("**********************************************************")
         print("Target URL: " + target)
         print(f"Test Origin: {fake_origin}")
 
-        print(f"\n{Fore.CYAN}[1/4] Sending original GET request...{Style.RESET_ALL}")
-    
     # --- Step 1: Original requests (no Origin) ---
+    orig_get = None
+    orig_options = None
+    probe_get = None
+    probe_options = None
+
     try:
         orig_get = session.get(target, timeout=timeout)
         if verbose:
-            print(f"{Fore.GREEN}✓ Status: {orig_get.status_code}{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}Original GET: {getattr(orig_get, 'status_code', 'N/A')}{Style.RESET_ALL}")
     except requests.RequestException as e:
         if verbose:
-            print(f"{Fore.RED}✗ Failed: {e}{Style.RESET_ALL}")
+            print(f"{Fore.RED}Original GET failed: {e}{Style.RESET_ALL}")
         orig_get = None
 
-    if verbose:
-        print(f"\n{Fore.CYAN}[2/4] Sending original OPTIONS request...{Style.RESET_ALL}")
     try:
         orig_options = session.options(target, timeout=timeout)
         if verbose:
-            print(f"{Fore.GREEN}✓ Status: {orig_options.status_code}{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}Original OPTIONS: {getattr(orig_options, 'status_code', 'N/A')}{Style.RESET_ALL}")
     except requests.RequestException as e:
         if verbose:
-            print(f"{Fore.YELLOW}✗ Failed: {e}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Original OPTIONS failed: {e}{Style.RESET_ALL}")
         orig_options = None
 
     # --- Step 2: Probe with fake origin ---
-    if verbose:
-        print(f"\n{Fore.CYAN}[3/4] Probing GET with attacker Origin...{Style.RESET_ALL}")
     probe_headers = {"Origin": fake_origin}
     try:
         probe_get = session.get(target, headers=probe_headers, timeout=timeout)
         if verbose:
-            print(f"{Fore.GREEN}✓ Status: {probe_get.status_code}{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}Probe GET (Origin): {getattr(probe_get, 'status_code', 'N/A')}{Style.RESET_ALL}")
     except requests.RequestException as e:
         if verbose:
-            print(f"{Fore.YELLOW}✗ Failed: {e}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Probe GET failed: {e}{Style.RESET_ALL}")
         probe_get = None
 
-    if verbose:
-        print(f"\n{Fore.CYAN}[4/4] Sending preflight OPTIONS with attacker Origin...{Style.RESET_ALL}")
     preflight_headers = {
         "Origin": fake_origin,
         "Access-Control-Request-Method": "POST",
@@ -119,10 +124,10 @@ def analyze_cors(
     try:
         probe_options = session.options(target, headers=preflight_headers, timeout=timeout)
         if verbose:
-            print(f"{Fore.GREEN}✓ Status: {probe_options.status_code}{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}Probe OPTIONS (Preflight): {getattr(probe_options, 'status_code', 'N/A')}{Style.RESET_ALL}")
     except requests.RequestException as e:
         if verbose:
-            print(f"{Fore.YELLOW}✗ Failed: {e}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Probe OPTIONS failed: {e}{Style.RESET_ALL}")
         probe_options = None
 
     # --- Extract CORS headers ---
@@ -146,7 +151,7 @@ def analyze_cors(
     if verbose:
         print("\n**********************************************************")
         print("CORS Headers Observed")
-        
+
         def _print_headers_table(title: str, headers: Dict[str, Optional[str]]) -> None:
             """Print headers in a clean table format"""
             _print_section_header(title)
@@ -162,38 +167,36 @@ def analyze_cors(
         print(f"{Fore.WHITE}{'─' * 60}{Style.RESET_ALL}")
 
     # --- Security Analysis ---
-    print("**********************************************************")
-
-    # Collect values from all responses
+    # Collect values from all responses (probe responses preferred)
     allow_origin = (
         probe_options_h.get("Access-Control-Allow-Origin") or 
         probe_get_h.get("Access-Control-Allow-Origin") or
         orig_options_h.get("Access-Control-Allow-Origin") or 
         orig_get_h.get("Access-Control-Allow-Origin")
     )
-    
+
     allow_credentials = (
         probe_options_h.get("Access-Control-Allow-Credentials") or 
         probe_get_h.get("Access-Control-Allow-Credentials") or
         orig_options_h.get("Access-Control-Allow-Credentials") or 
         orig_get_h.get("Access-Control-Allow-Credentials")
     )
-    
+
     allow_methods = (
         probe_options_h.get("Access-Control-Allow-Methods") or 
         orig_options_h.get("Access-Control-Allow-Methods")
     )
-    
+
     allow_headers = (
         probe_options_h.get("Access-Control-Allow-Headers") or
         orig_options_h.get("Access-Control-Allow-Headers")
     )
-    
+
     max_age = (
         probe_options_h.get("Access-Control-Max-Age") or
         orig_options_h.get("Access-Control-Max-Age")
     )
-    
+
     vary_val = (
         probe_options_h.get("Vary") or 
         probe_get_h.get("Vary") or 
@@ -209,7 +212,7 @@ def analyze_cors(
     wildcard_seen = allow_origin == "*"
 
     # --- Build findings list (will be numbered sequentially when printed) ---
-    
+
     # Finding type 1: Wildcard Origin (*) Allowed
     if wildcard_seen:
         findings.append({
@@ -245,7 +248,7 @@ def analyze_cors(
         methods_set = set(methods_list)
         unsafe_methods = {"PUT", "DELETE", "PATCH"}
         exposed = methods_set.intersection(unsafe_methods)
-        
+
         if exposed or len(methods_list) > 3:
             findings.append({
                 "Category": "CORS Security",
@@ -321,7 +324,7 @@ def analyze_cors(
     # --- Print findings in the desired format ---
     print("\nCORS Security Analysis")
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
-    
+
     if findings:
         print("Risk Rating:")
         print("Severity: High")
@@ -334,7 +337,7 @@ def analyze_cors(
             print(f"   Recommendation: {f['Recommendation']}")
     else:
         print("✓ No findings.")
-    
+
     print(Fore.MAGENTA + "\n═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
     return findings

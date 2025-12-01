@@ -1,340 +1,492 @@
-from typing import List, Dict, Any, Optional
-from urllib.parse import urlparse
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+"""
+Security Findings Summary Generator
+
+This module aggregates findings from multiple security scanners and generates
+a summary table ordered by severity.
+
+Usage:
+    from findings_summary import generate_summary, print_summary_table
+    
+    # Collect findings from all scanners
+    all_findings = []
+    all_findings.extend(dir_scan_findings)
+    all_findings.extend(cors_findings)
+    all_findings.extend(ssl_findings)
+    
+    # Generate and print summary
+    summary = generate_summary(all_findings)
+    cvss_overrides = compute_cvss_overrides_from_findings(all_findings)
+    print_summary_table(summary, cvss_overrides=cvss_overrides)
+"""
+
+from typing import List, Dict, Any
+from collections import defaultdict
 from colorama import Fore, Style, init
 
-# --- Helpers ---
-def _normalize_url(url: str) -> str:
-    """Ensure URL has a scheme (http/https)"""
-    parsed = urlparse(url)
-    if not parsed.scheme:
-        return "http://" + url
-    return url
+# Initialize colorama
+init(autoreset=True)
 
-def _get_session(retries: int = 2, backoff: float = 0.2) -> requests.Session:
-    """Create a session with retry logic and custom headers"""
-    s = requests.Session()
-    retry = Retry(
-        total=retries, 
-        backoff_factor=backoff,
-        status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=frozenset(["GET", "HEAD", "OPTIONS"])
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    s.mount("http://", adapter)
-    s.mount("https://", adapter)
-    s.headers.update({"User-Agent": "WebSecScan/1.0"})
-    return s
 
-def _hdr(resp: Optional[requests.Response], name: str) -> Optional[str]:
-    """Safely extract header from response"""
-    if resp is None:
-        return None
-    return resp.headers.get(name)
-
-def _print_section_header(text: str) -> None:
-    """Print a section header"""
-    print(f"\n{Fore.WHITE}{'─' * 60}")
-    print(f"{text}")
-    print(f"{'─' * 60}{Style.RESET_ALL}")
-
-# --- Main function ---
-def analyze_cors(
-    url: str, 
-    fake_origin: str = "https://evil-attacker.com", 
-    timeout: int = 10,
-    verbose: bool = False
-) -> List[Dict[str, Any]]:
-    """
-    Perform comprehensive CORS security analysis.
-    
-    Tests:
-      1. Original GET and OPTIONS (no Origin header)
-      2. Probe GET with attacker Origin
-      3. Probe OPTIONS preflight with attacker Origin
-    
-    Returns:
-        List of findings with Category, Description, and Recommendation
-    """
-    target = _normalize_url(url)
-    session = _get_session()
-    findings: List[Dict[str, Any]] = []
-
-    # Only show detailed output in verbose mode
-    if verbose:
-        print(f"\n{Fore.CYAN}Use custom test origin? (press Enter for default '{fake_origin}'):{Style.RESET_ALL}")
-        custom_input = input().strip()
-        if custom_input:
-            fake_origin = custom_input
-
-        print("**********************************************************")
-        print("Target URL: " + target)
-        print(f"Test Origin: {fake_origin}")
-
-        print(f"\n{Fore.CYAN}[1/4] Sending original GET request...{Style.RESET_ALL}")
-    
-    # --- Step 1: Original requests (no Origin) ---
-    try:
-        orig_get = session.get(target, timeout=timeout)
-        if verbose:
-            print(f"{Fore.GREEN}✓ Status: {orig_get.status_code}{Style.RESET_ALL}")
-    except requests.RequestException as e:
-        if verbose:
-            print(f"{Fore.RED}✗ Failed: {e}{Style.RESET_ALL}")
-        orig_get = None
-
-    if verbose:
-        print(f"\n{Fore.CYAN}[2/4] Sending original OPTIONS request...{Style.RESET_ALL}")
-    try:
-        orig_options = session.options(target, timeout=timeout)
-        if verbose:
-            print(f"{Fore.GREEN}✓ Status: {orig_options.status_code}{Style.RESET_ALL}")
-    except requests.RequestException as e:
-        if verbose:
-            print(f"{Fore.YELLOW}✗ Failed: {e}{Style.RESET_ALL}")
-        orig_options = None
-
-    # --- Step 2: Probe with fake origin ---
-    if verbose:
-        print(f"\n{Fore.CYAN}[3/4] Probing GET with attacker Origin...{Style.RESET_ALL}")
-    probe_headers = {"Origin": fake_origin}
-    try:
-        probe_get = session.get(target, headers=probe_headers, timeout=timeout)
-        if verbose:
-            print(f"{Fore.GREEN}✓ Status: {probe_get.status_code}{Style.RESET_ALL}")
-    except requests.RequestException as e:
-        if verbose:
-            print(f"{Fore.YELLOW}✗ Failed: {e}{Style.RESET_ALL}")
-        probe_get = None
-
-    if verbose:
-        print(f"\n{Fore.CYAN}[4/4] Sending preflight OPTIONS with attacker Origin...{Style.RESET_ALL}")
-    preflight_headers = {
-        "Origin": fake_origin,
-        "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "X-Test-Header"
+# Predefined CVSS mapping for each category
+CATEGORY_CVSS_MAP = {
+    "Security Headers": {
+        "severity": "Low",
+        "cvss": "3.1",
+        "cvss_vector": "AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N"
+    },
+    "HTTP Method": {
+        "severity": "Medium",  # Default, can be overridden
+        "cvss": "5.3",  # Default, can be overridden
+        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+    },
+    "Server Information": {
+        "severity": "Low",
+        "cvss": "3.1",
+        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+    },
+    "Cookie Security": {
+        "severity": "High",
+        "cvss": "7.8",
+        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
+    },
+    "CORS Security": {
+        "severity": "High",
+        "cvss": "8.3",
+        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:L/A:N"
+    },
+    "Directory Exposure": {
+        "severity": "Medium",
+        "cvss": "5.3",
+        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+    },
+    "Path Traversal": {
+        "severity": "High",
+        "cvss": "7.5",
+        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
+    },
+    "SSL/TLS": {
+        "severity": "Medium",  # Default, can be overridden
+        "cvss": "5.3",  # Default, can be overridden
+        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
     }
-    try:
-        probe_options = session.options(target, headers=preflight_headers, timeout=timeout)
-        if verbose:
-            print(f"{Fore.GREEN}✓ Status: {probe_options.status_code}{Style.RESET_ALL}")
-    except requests.RequestException as e:
-        if verbose:
-            print(f"{Fore.YELLOW}✗ Failed: {e}{Style.RESET_ALL}")
-        probe_options = None
+}
 
-    # --- Extract CORS headers ---
-    def cors_subset(resp: Optional[requests.Response]) -> Dict[str, Optional[str]]:
-        """Extract relevant CORS headers from response"""
-        return {
-            "Access-Control-Allow-Origin": _hdr(resp, "Access-Control-Allow-Origin"),
-            "Access-Control-Allow-Credentials": _hdr(resp, "Access-Control-Allow-Credentials"),
-            "Access-Control-Allow-Methods": _hdr(resp, "Access-Control-Allow-Methods"),
-            "Access-Control-Allow-Headers": _hdr(resp, "Access-Control-Allow-Headers"),
-            "Access-Control-Max-Age": _hdr(resp, "Access-Control-Max-Age"),
-            "Vary": _hdr(resp, "Vary"),
-        }
 
-    orig_get_h = cors_subset(orig_get)
-    orig_options_h = cors_subset(orig_options)
-    probe_get_h = cors_subset(probe_get)
-    probe_options_h = cors_subset(probe_options)
-
-    # --- Display observed headers (verbose mode only) ---
-    if verbose:
-        print("\n**********************************************************")
-        print("CORS Headers Observed")
+def normalize_findings(findings: List[Dict[str, Any]], force_category: str = None, exclude_safe: bool = True) -> List[Dict[str, Any]]:
+    """
+    Normalize findings to ensure they all have Category, Severity, and Description.
+    If force_category is provided, it will override any existing Category.
+    
+    Args:
+        findings: List of finding dictionaries
+        force_category: Optional category name to force on all findings
+        exclude_safe: If True, exclude findings that are informational/non-issues only
         
-        def _print_headers_table(title: str, headers: Dict[str, Optional[str]]) -> None:
-            """Print headers in a clean table format"""
-            _print_section_header(title)
-            for k, v in headers.items():
-                value_color = Fore.GREEN if v else Fore.RED
-                display_value = v if v else "Not Present"
-                print(f"  {Fore.WHITE}{k:<40} {value_color}{display_value}{Style.RESET_ALL}")
-
-        _print_headers_table("Original GET (no Origin)", orig_get_h)
-        _print_headers_table("Original OPTIONS (no Origin)", orig_options_h)
-        _print_headers_table(f"Probe GET (Origin: {fake_origin})", probe_get_h)
-        _print_headers_table(f"Probe OPTIONS Preflight (Origin: {fake_origin})", probe_options_h)
-        print(f"{Fore.WHITE}{'─' * 60}{Style.RESET_ALL}")
-
-    # --- Security Analysis ---
-    print("**********************************************************")
-
-    # Collect values from all responses
-    allow_origin = (
-        probe_options_h.get("Access-Control-Allow-Origin") or 
-        probe_get_h.get("Access-Control-Allow-Origin") or
-        orig_options_h.get("Access-Control-Allow-Origin") or 
-        orig_get_h.get("Access-Control-Allow-Origin")
-    )
+    Returns:
+        Normalized list of findings
+    """
+    normalized = []
     
-    allow_credentials = (
-        probe_options_h.get("Access-Control-Allow-Credentials") or 
-        probe_get_h.get("Access-Control-Allow-Credentials") or
-        orig_options_h.get("Access-Control-Allow-Credentials") or 
-        orig_get_h.get("Access-Control-Allow-Credentials")
-    )
-    
-    allow_methods = (
-        probe_options_h.get("Access-Control-Allow-Methods") or 
-        orig_options_h.get("Access-Control-Allow-Methods")
-    )
-    
-    allow_headers = (
-        probe_options_h.get("Access-Control-Allow-Headers") or
-        orig_options_h.get("Access-Control-Allow-Headers")
-    )
-    
-    max_age = (
-        probe_options_h.get("Access-Control-Max-Age") or
-        orig_options_h.get("Access-Control-Max-Age")
-    )
-    
-    vary_val = (
-        probe_options_h.get("Vary") or 
-        probe_get_h.get("Vary") or 
-        orig_options_h.get("Vary") or 
-        orig_get_h.get("Vary")
-    )
-
-    allow_credentials_bool = bool(
-        allow_credentials and 
-        str(allow_credentials).strip().lower() == "true"
-    )
-
-    wildcard_seen = allow_origin == "*"
-
-    # --- Build findings list (will be numbered sequentially when printed) ---
-    
-    # Finding type 1: Wildcard Origin (*) Allowed
-    if wildcard_seen:
-        findings.append({
-            "Category": "CORS Security",
-            "Type": "Wildcard Origin (*) Allowed",
-            "Detail": f"Access-Control-Allow-Origin: {allow_origin}",
-            "Recommendation": "Specify only trusted, legitimate domains instead of using a wildcard *."
-        })
-
-    # Finding type 2: Credentials Allowed for All Origins (wildcard + credentials)
-    if wildcard_seen and allow_credentials_bool:
-        findings.append({
-            "Category": "CORS Security",
-            "Type": "Credentials Allowed for All Origins",
-            "Detail": f"Access-Control-Allow-Credentials: true + Access-Control-Allow-Origin: *",
-            "Recommendation": "Only enable credentials for specific trusted domains. Ensure Allow-Credentials: true is never used with Allow-Origin: *."
-        })
-
-    # Finding type 3: Unsafe Origin Reflection
-    if allow_origin and allow_origin != "*":
-        allowed = str(allow_origin).strip()
-        if allowed == fake_origin:
-            findings.append({
-                "Category": "CORS Security",
-                "Type": "Unsafe Origin Reflection",
-                "Detail": f"Access-Control-Allow-Origin: {allowed}\n          -The server reflects whatever Origin the request sends, meaning it trusts unknown domains.",
-                "Recommendation": "Replace dynamic origin reflection with a fixed whitelist of allowed origins. Reject unexpected or untrusted origins."
-            })
-
-    # Finding type 4: Excessive Allowed Methods
-    if allow_methods:
-        methods_list = [m.strip().upper() for m in str(allow_methods).split(",") if m.strip()]
-        methods_set = set(methods_list)
-        unsafe_methods = {"PUT", "DELETE", "PATCH"}
-        exposed = methods_set.intersection(unsafe_methods)
+    for f in (findings or []):
+        # Create a copy to avoid mutating the original
+        finding = f.copy()
         
-        if exposed or len(methods_list) > 3:
-            findings.append({
-                "Category": "CORS Security",
-                "Type": "Excessive Allowed Methods",
-                "Detail": f"Access-Control-Allow-Methods: {allow_methods}\n          -The server allows more HTTP methods than necessary, increasing exposure.",
-                "Recommendation": "Restrict allowed methods to only the application requires (eg. GET, POST)."
-            })
+        # Skip "safe" findings if exclude_safe is True
+        if exclude_safe:
+            status = str(finding.get("Status", "")).lower()
+            
+            # IMPORTANT: Only exclude if it's CLEARLY a "good" status
+            # Be very specific to avoid false exclusions
+            truly_safe_statuses = [
+                "safe",                    # HTTP Methods: Status="Safe"
+                "not exposed",            # Server Info: Status="Not exposed"
+                "configured correctly",   # Headers: Status="Configured correctly"
+            ]
+            
+            # Check if status exactly matches or is a safe variant
+            is_safe = False
+            for safe_status in truly_safe_statuses:
+                if status == safe_status or status.startswith(safe_status):
+                    is_safe = True
+                    break
+            
+            # Additional check: if it explicitly says things are OK in the description/recommendation
+            if not is_safe:
+                desc = str(finding.get("Description", "")).lower()
+                rec = str(finding.get("Recommendation", "")).lower()
+                
+                # These phrases indicate informational/good findings
+                good_phrases = [
+                    "no issues detected",
+                    "properly configured",
+                    "looks acceptable",
+                    "set appropriately",
+                    "no unsafe",
+                    "no commonly unsafe",
+                ]
+                
+                if any(phrase in desc or phrase in rec for phrase in good_phrases):
+                    is_safe = True
+            
+            if is_safe:
+                continue
+        
+        # Force category if specified (this fixes the duplication issue)
+        if force_category:
+            finding["Category"] = force_category
+        elif not finding.get("Category"):
+            # Fallback to "Unknown" if no category at all
+            finding["Category"] = "Unknown"
+        
+        # Ensure Severity exists
+        if not finding.get("Severity"):
+            finding["Severity"] = "Low"
+        
+        # Ensure Description exists
+        if not finding.get("Description"):
+            finding["Description"] = (
+                finding.get("Recommendation") or
+                finding.get("Status") or
+                finding.get("Header") or
+                finding.get("Name") or
+                "No description available"
+            )
+        
+        normalized.append(finding)
+    
+    return normalized
 
-    # Finding type 5A/5B: Vary: Origin Header
-    if allow_origin and allow_origin not in ("*", "null"):
-        if not vary_val or "origin" not in vary_val.lower():
-            findings.append({
-                "Category": "CORS Security",
-                "Type": "Missing 'Vary: Origin' Header",
-                "Detail": "The server does not include the Vary: Origin header.",
-                "Recommendation": "Add Vary: Origin when the server returns different CORS responses depending on the request's Origin."
-            })
+
+def compute_cvss_overrides_from_findings(findings: List[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
+    """
+    Compute dynamic CVSS overrides for categories that have conditional severity/CVSS.
+    Currently handles:
+    - HTTP Method: Low (3.7) if only OPTIONS, Medium (5.3) otherwise
+    - SSL/TLS: High (9.8) if any High findings, Medium (5.3) otherwise
+    
+    Args:
+        findings: List of all findings
+        
+    Returns:
+        Dictionary mapping category names to {severity, cvss, cvss_vector}
+    """
+    overrides = {}
+    
+    # Group findings by category
+    by_category = defaultdict(list)
+    for f in findings:
+        cat = f.get("Category", "Unknown")
+        by_category[cat].append(f)
+    
+    # --- HTTP Method Dynamic Logic ---
+    if "HTTP Method" in by_category:
+        http_findings = by_category["HTTP Method"]
+        # Check if only OPTIONS method is unsafe
+        methods = []
+        for f in http_findings:
+            method = f.get("Method", "")
+            if method:
+                methods.append(method.upper())
+        
+        # If only OPTIONS is present, use Low severity
+        if set(methods) == {"OPTIONS"}:
+            overrides["HTTP Method"] = {
+                "severity": "Low",
+                "cvss": "3.7",
+                "cvss_vector": "AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N"
+            }
         else:
-            # Check if CORS policy is unsafe despite having Vary: Origin
-            if wildcard_seen or (allow_origin == fake_origin) or allow_credentials_bool:
-                findings.append({
-                    "Category": "CORS Security",
-                    "Type": "Unsafe 'Vary: Origin' Usage",
-                    "Detail": f"Vary: Origin\n          -The header is present, but the overall CORS policy (allowed origins, credentials, reflection) is unsafe, causing the unsafe configuration to be cached.",
-                    "Recommendation": "Fix the CORS policy first (proper whitelist, no wildcard with credentials). Only rely on Vary: Origin after the policy is secure."
-                })
+            # Default Medium severity
+            overrides["HTTP Method"] = {
+                "severity": "Medium",
+                "cvss": "5.3",
+                "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+            }
+    
+    # --- SSL/TLS Dynamic Logic ---
+    if "SSL/TLS" in by_category:
+        ssl_findings = by_category["SSL/TLS"]
+        severities = [f.get("Severity", "Low") for f in ssl_findings]
+        
+        if "High" in severities:
+            overrides["SSL/TLS"] = {
+                "severity": "High",
+                "cvss": "9.8",
+                "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+            }
+        else:
+            # Default Medium severity
+            overrides["SSL/TLS"] = {
+                "severity": "Medium",
+                "cvss": "5.3",
+                "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+            }
+    
+    return overrides
 
-    # Finding type 6A/6B: Access-Control-Max-Age
-    if not max_age:
-        findings.append({
-            "Category": "CORS Security",
-            "Type": "Missing Access-Control-Max-Age Header",
-            "Detail": "The server does not include the Access-Control-Max-Age header.",
-            "Recommendation": "Set a reasonable Access-Control-Max-Age (eg. 300–600 seconds) to help browsers reuse valid preflight results without adding performance overhead."
+
+def generate_summary(findings: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
+    """
+    Generate a summary of findings grouped by category with counts.
+    Note: This now just counts findings per category (no severity breakdown).
+    
+    Args:
+        findings: List of finding dictionaries with 'Category' keys
+        
+    Returns:
+        Dictionary mapping category names to finding counts
+        Example: {'CORS Security': {'count': 3}, 'Security Headers': {'count': 11}, ...}
+    """
+    summary = defaultdict(lambda: {"count": 0})
+    
+    for finding in findings:
+        category = finding.get("Category", "Unknown")
+        summary[category]["count"] += 1
+    
+    return dict(summary)
+
+
+def calculate_category_score(category: str, count: int, cvss_map: Dict[str, Dict[str, str]]) -> int:
+    """
+    Calculate a score for sorting categories by severity.
+    Higher score = more severe issues.
+    
+    Args:
+        category: Category name
+        count: Number of findings
+        cvss_map: CVSS mapping with severity info
+        
+    Returns:
+        Integer score (High=100, Medium=10, Low=1) * count
+    """
+    severity = cvss_map.get(category, {}).get("severity", "Low")
+    
+    severity_weights = {
+        "High": 100,
+        "Medium": 10,
+        "Low": 1
+    }
+    
+    weight = severity_weights.get(severity, 1)
+    return weight * count
+
+
+def print_summary_table(summary: Dict[str, Dict[str, int]], title: str = "Security Findings Summary", cvss_overrides: Dict[str, Dict[str, str]] = None):
+    """
+    Print a formatted summary table matching the new design:
+    Category | Severity | CVSS Score | Number of Findings | Status
+    
+    Args:
+        summary: Dictionary from generate_summary()
+        title: Optional title for the table
+        cvss_overrides: Optional dictionary of dynamic CVSS overrides from compute_cvss_overrides_from_findings()
+    """
+    if not summary:
+        print(Fore.GREEN + f"\n{title}")
+        print("=" * 120)
+        print("✅ No security findings detected.")
+        print("=" * 120 + "\n")
+        return
+    
+    # Merge predefined CVSS with overrides
+    cvss_map = CATEGORY_CVSS_MAP.copy()
+    if cvss_overrides:
+        for cat, override in cvss_overrides.items():
+            if cat in cvss_map:
+                cvss_map[cat].update(override)
+    
+    # Sort categories by severity score (highest first)
+    sorted_categories = sorted(
+        summary.items(),
+        key=lambda x: calculate_category_score(x[0], x[1]["count"], cvss_map),
+        reverse=True
+    )
+    
+    # Calculate totals
+    total_findings = sum(counts["count"] for _, counts in sorted_categories)
+    
+    # Print header
+    print(Fore.CYAN + f"\n{title}")
+    print("=" * 120)
+    print(Fore.WHITE + f"Total Findings: {total_findings}")
+    print("=" * 120 + "\n")
+    
+    # Table header
+    print(f"{Fore.WHITE}{'Category':<40} {'Severity':<12} {'CVSS Score':<20} {'Number of Findings':<22} {'Status':<20}")
+    print("-" * 120)
+    
+    # Print each category
+    for category, counts in sorted_categories:
+        finding_count = counts["count"]
+        
+        # Get CVSS info for this category
+        cvss_info = cvss_map.get(category, {
+            "severity": "Low",
+            "cvss": "N/A",
+            "cvss_vector": ""
         })
-    else:
-        try:
-            max_age_val = int(max_age)
-            if max_age_val > 86400:  # More than 24 hours
-                findings.append({
-                    "Category": "CORS Security",
-                    "Type": "Unsafe or Excessively Long Access-Control-Max-Age",
-                    "Detail": f"Access-Control-Max-Age: {max_age}\n          -The server caches CORS permissions for too long, causing outdated or incorrect policies to persist.",
-                    "Recommendation": "Avoid extremely long caching durations, use moderate values (eg. 300–600 seconds)."
-                })
-        except ValueError:
-            pass
-
-    # Finding type 7: CORS Enabled on Endpoints That Don't Need It
-    if allow_origin and not url.endswith(('/api', '/api/', '/graphql', '/v1', '/v2')):
-        # Only flag if it's not obviously an API endpoint
-        parsed = urlparse(url)
-        if parsed.path in ('/', '', '/index.html', '/home'):
-            findings.append({
-                "Category": "CORS Security",
-                "Type": "CORS Enabled on Endpoints That Don't Need It",
-                "Detail": "The server appears to return CORS headers even for endpoints that do not require cross-origin access.",
-                "Recommendation": "Only enable CORS for specific API endpoints that truly require cross-origin requests. Disable it for login pages or sensitive routes."
-            })
-
-    # Finding type 8: Preflight (OPTIONS) Accepts Untrusted Origins
-    if probe_options and allow_origin:
-        probe_allow_origin = probe_options_h.get("Access-Control-Allow-Origin")
-        if probe_allow_origin and (probe_allow_origin == "*" or probe_allow_origin == fake_origin):
-            if allow_credentials_bool or (allow_methods and len(allow_methods.split(',')) > 2):
-                findings.append({
-                    "Category": "CORS Security",
-                    "Type": "Preflight (OPTIONS) Accepts Untrusted Origins",
-                    "Detail": "When the scanner sends an OPTIONS request with an untrusted Origin, the server still responds with full permissions, including credentials and multiple allowed methods.",
-                    "Recommendation": "Update the preflight validation to reject unapproved origins before responding with CORS permissions."
-                })
-
-    # --- Print findings in the desired format ---
-    print("\nCORS Security Analysis")
-    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+        
+        severity = cvss_info.get("severity", "Low")
+        cvss = cvss_info.get("cvss", "N/A")
+        
+        # Determine status
+        status = "✗ Issues found" if finding_count > 0 else "✓ No issues"
+        
+        # Color code based on severity
+        if severity == "High":
+            severity_color = Fore.RED
+            category_color = Fore.RED
+        elif severity == "Medium":
+            severity_color = Fore.YELLOW
+            category_color = Fore.YELLOW
+        else:
+            severity_color = Fore.GREEN
+            category_color = Fore.GREEN
+        
+        # Status color
+        status_color = Fore.RED if finding_count > 0 else Fore.GREEN
+        
+        # Format finding count
+        finding_text = f"{finding_count} finding{'s' if finding_count != 1 else ''}"
+        
+        print(f"{category_color}{category:<40}{Style.RESET_ALL} "
+              f"{severity_color}{severity:<12}{Style.RESET_ALL} "
+              f"{Fore.WHITE}{cvss:<20}{Style.RESET_ALL} "
+              f"{Fore.WHITE}{finding_text:<22}{Style.RESET_ALL} "
+              f"{status_color}{status:<20}{Style.RESET_ALL}")
     
-    if findings:
-        print("Risk Rating:")
-        print("Severity: High")
-        print("CVSS: 8.3 (AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:L/A:N)")
-        print("\nFindings:")
-        print("`" * 60)
-        for idx, f in enumerate(findings, 1):
-            print(f"\n{idx}. {f['Type']}")
-            print(f"   Detail: {f['Detail']}")
-            print(f"   Recommendation: {f['Recommendation']}")
-    else:
-        print("✓ No findings.")
+    # Add "Overall" row
+    print("-" * 120)
     
-    print(Fore.MAGENTA + "\n═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    # Determine overall severity
+    has_high = any(cvss_map.get(cat, {}).get("severity") == "High" and summary.get(cat, {}).get("count", 0) > 0 
+                   for cat in summary.keys())
+    has_medium = any(cvss_map.get(cat, {}).get("severity") == "Medium" and summary.get(cat, {}).get("count", 0) > 0 
+                     for cat in summary.keys())
+    
+    if has_high:
+        overall_severity = "High"
+        overall_color = Fore.RED
+    elif has_medium:
+        overall_severity = "Medium"
+        overall_color = Fore.YELLOW
+    else:
+        overall_severity = "Low"
+        overall_color = Fore.GREEN
+    
+    overall_status = "⚠ Security weaknesses detected"
+    overall_status_color = Fore.YELLOW
+    
+    print(f"{Fore.CYAN}{'Overall':<40}{Style.RESET_ALL} "
+          f"{overall_color}{overall_severity:<12}{Style.RESET_ALL} "
+          f"{Fore.WHITE}{'—':<20}{Style.RESET_ALL} "
+          f"{Fore.WHITE}{'—':<22}{Style.RESET_ALL} "
+          f"{overall_status_color}{overall_status:<20}{Style.RESET_ALL}")
+    
+    print("=" * 120 + "\n")
 
-    return findings
+
+def print_detailed_findings(findings: List[Dict[str, Any]], category_filter: str = None):
+    """
+    Print detailed findings, optionally filtered by category.
+    
+    Args:
+        findings: List of finding dictionaries
+        category_filter: Optional category name to filter by
+    """
+    if category_filter:
+        findings = [f for f in findings if f.get("Category") == category_filter]
+        print(Fore.CYAN + f"\nDetailed Findings for: {category_filter}")
+    else:
+        print(Fore.CYAN + "\nDetailed Findings (All Categories)")
+    
+    print("=" * 80 + "\n")
+    
+    if not findings:
+        print(Fore.GREEN + "No findings to display.\n")
+        return
+    
+    # Sort by severity
+    severity_order = {"High": 0, "Medium": 1, "Low": 2}
+    sorted_findings = sorted(
+        findings,
+        key=lambda f: (severity_order.get(f.get("Severity", "Low"), 3), f.get("Category", ""))
+    )
+    
+    for idx, finding in enumerate(sorted_findings, 1):
+        severity = finding.get("Severity", "Low")
+        category = finding.get("Category", "Unknown")
+        description = finding.get("Description", "No description")
+        
+        # Color based on severity
+        sev_color = {"High": Fore.RED, "Medium": Fore.YELLOW, "Low": Fore.GREEN}.get(severity, Fore.WHITE)
+        
+        print(f"{Fore.WHITE}{idx}. [{category}]{Style.RESET_ALL}")
+        print(f"   Severity: {sev_color}{severity}{Style.RESET_ALL}")
+        print(f"   {description}")
+        
+        # Print additional context if available
+        if "URL" in finding and finding["URL"]:
+            print(f"   URL: {finding['URL']}")
+        if "Context" in finding and finding["Context"]:
+            print(f"   Context: {finding['Context']}")
+        if "Recommendation" in finding and finding["Recommendation"]:
+            print(f"   {Fore.CYAN}→ {finding['Recommendation']}{Style.RESET_ALL}")
+        
+        print()
+
+
+def export_summary_csv(summary: Dict[str, Dict[str, int]], filename: str = "security_findings_summary.csv", cvss_overrides: Dict[str, Dict[str, str]] = None):
+    """
+    Export the summary table to a CSV file.
+    
+    Args:
+        summary: Dictionary from generate_summary()
+        filename: Output CSV filename
+        cvss_overrides: Optional dictionary of dynamic CVSS overrides
+    """
+    import csv
+    
+    # Merge predefined CVSS with overrides
+    cvss_map = CATEGORY_CVSS_MAP.copy()
+    if cvss_overrides:
+        for cat, override in cvss_overrides.items():
+            if cat in cvss_map:
+                cvss_map[cat].update(override)
+    
+    # Sort categories by severity
+    sorted_categories = sorted(
+        summary.items(),
+        key=lambda x: calculate_category_score(x[0], x[1]["count"], cvss_map),
+        reverse=True
+    )
+    
+    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['Category', 'Severity', 'CVSS Score', 'Number of Findings', 'Status'])
+        
+        for category, counts in sorted_categories:
+            finding_count = counts["count"]
+            cvss_info = cvss_map.get(category, {"severity": "Low", "cvss": "N/A"})
+            severity = cvss_info.get("severity", "Low")
+            cvss = cvss_info.get("cvss", "N/A")
+            status = "Issues found" if finding_count > 0 else "No issues"
+            
+            writer.writerow([category, severity, cvss, finding_count, status])
+        
+        # Overall row
+        has_high = any(cvss_map.get(cat, {}).get("severity") == "High" and summary.get(cat, {}).get("count", 0) > 0 
+                       for cat in summary.keys())
+        has_medium = any(cvss_map.get(cat, {}).get("severity") == "Medium" and summary.get(cat, {}).get("count", 0) > 0 
+                         for cat in summary.keys())
+        
+        if has_high:
+            overall_severity = "High"
+        elif has_medium:
+            overall_severity = "Medium"
+        else:
+            overall_severity = "Low"
+        
+        writer.writerow(['Overall', overall_severity, '—', '—', 'Security weaknesses detected'])
+    
+    print(Fore.GREEN + f"✅ Summary exported to {filename}\n" + Style.RESET_ALL)

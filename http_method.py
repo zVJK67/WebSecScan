@@ -112,12 +112,15 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
     response_received = False
     
     try:
-        # Send OPTIONS request
-        resp = requests.options(url, timeout=timeout, allow_redirects=True)
-        response_received = True
-    except Exception as e:
-        # network error or similar
+        # Send OPTIONS request (verification disabled so bad certs don't block the scan)
+        resp = requests.options(url, timeout=timeout, allow_redirects=True, verify=False)
+        response_received = True if resp is not None else False
+    except requests.exceptions.RequestException as e:
+        # Friendly short message for the user
+        print(Fore.YELLOW + f"⚠️ Could not fetch OPTIONS response from {url}: {e}" + Style.RESET_ALL)
+        print(Fore.YELLOW + "   The scanner will continue; HTTP method checks may be incomplete." + Style.RESET_ALL)
         response_received = False
+        resp = None
 
     # 1) Print raw OPTIONS response first
     _print_raw_options_response(resp)
@@ -146,7 +149,7 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
         print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.GREEN}0{Style.RESET_ALL}")
         print(Fore.WHITE + "Findings:")
         print("``````````````````````````````````````````````````````````````````````````````````")
-        print(Fore.GREEN + "✓ No unsafe HTTP methods detected." + Style.RESET_ALL)
+        print(Fore.GREEN + "✓ No unsafe HTTP methods detected (no OPTIONS response received)." + Style.RESET_ALL)
         print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
         print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
         return []

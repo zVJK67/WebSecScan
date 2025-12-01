@@ -1,11 +1,12 @@
-#get_header.py
+# get_header.py
 import re
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from urllib.parse import urlparse
+from colorama import Fore, Style 
 
-# --- Session with retries ---
+# --- Session with retries (kept for options printing if desired) ---
 def get_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(429, 500, 502, 503, 504)):
     session = requests.Session()
     retry = Retry(
@@ -36,48 +37,6 @@ def _normalize_url(url: str) -> str:
     return url
 
 
-def get_request(url, method="GET", headers=None, timeout=10, allow_redirects=True, session=None, verify=True):
-    """
-    Send an HTTP request to the given URL using a session with retries.
-    - method: GET, HEAD, OPTIONS, etc.
-    - headers: optional dict to override/add headers
-    - timeout: seconds
-    - allow_redirects: follow redirects for GET by default
-    - session: optional requests.Session (if not provided, use internal session)
-    - verify: SSL verification (True/False or path to CA bundle)
-    Returns: response object or None if error
-    """
-    session = session or _SESSION
-    url = _normalize_url(url)
-    method = method.upper()
-
-    if headers:
-        # merge headers into session headers for this request only
-        req_headers = session.headers.copy()
-        req_headers.update(headers)
-    else:
-        req_headers = None
-
-    try:
-        if method == "GET":
-            response = session.get(url, headers=req_headers, timeout=timeout, allow_redirects=allow_redirects, verify=verify)
-        elif method == "HEAD":
-            response = session.head(url, headers=req_headers, timeout=timeout, allow_redirects=False, verify=verify)
-        elif method == "OPTIONS":
-            response = session.options(url, headers=req_headers, timeout=timeout, allow_redirects=False, verify=verify)
-        elif method in {"POST", "PUT", "DELETE", "PATCH"}:
-            # for these methods caller should supply data/json if needed
-            response = session.request(method, url, headers=req_headers, timeout=timeout, allow_redirects=allow_redirects, verify=verify)
-        else:
-            raise ValueError(f"Unsupported HTTP method: {method}")
-
-        return response
-
-    except requests.exceptions.RequestException as e:
-        print(f"[ERROR] Request failed for {url}: {e}")
-        return None
-
-
 def parse_headers(response):
     """
     Parse headers from a requests response object.
@@ -97,20 +56,20 @@ def print_headers(headers_dict):
         print(f"{k}: {v}")
 
 
-def print_options_response(url, timeout=10, session=None, verify=True):
+def print_options_response(url, timeout=10, session=None):
     """
     Sends an OPTIONS request and displays the full response like 'curl -i -X OPTIONS'.
     Returns the response or None.
+    Uses verify=False to avoid blocking on bad certificates.
     """
     url = _normalize_url(url)
     print(f"\n{url} — OPTIONS Response:\n" + "=" * 50)
     session = session or _SESSION
     try:
-        response = session.options(url, timeout=timeout, allow_redirects=False, verify=verify)
+        response = session.options(url, timeout=timeout, allow_redirects=False, verify=False)
         # Construct readable HTTP/version line if possible
         http_version = "HTTP/?"
         try:
-            # response.raw.version is an integer (10 for HTTP/1.0, 11 for HTTP/1.1, 20 for HTTP/2)
             raw_version = getattr(response.raw, "version", None)
             if raw_version is not None:
                 if raw_version >= 20:
@@ -132,14 +91,18 @@ def print_options_response(url, timeout=10, session=None, verify=True):
         return None
 
 
-def get_allowed_methods(url, timeout=10, session=None, verify=True):
+def get_allowed_methods(url, timeout=10, session=None):
     """
     Check which HTTP methods are allowed by the server.
     Uses OPTIONS request and parses Allow header if present.
     Returns list of upper-case method names (e.g. ['GET','POST']).
     """
     session = session or _SESSION
-    response = get_request(url, method="OPTIONS", timeout=timeout, session=session, verify=verify)
+    try:
+        response = session.options(url, timeout=timeout, allow_redirects=False, verify=False)
+    except requests.exceptions.RequestException:
+        return []
+
     if response is None:
         return []
 

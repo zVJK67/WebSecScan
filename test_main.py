@@ -1,14 +1,14 @@
 # main.py
 from banner import print_banner
-from get_header import get_request, parse_headers, print_headers, print_options_response, get_allowed_methods
+from get_header import parse_headers, print_headers, print_options_response, get_allowed_methods
 from http_header import analyze_security_headers, print_findings
 from http_method import check_and_print_http_methods
 from cookie_checker import analyze_cookies
 from cors_checker import analyze_cors
 from ssl_tls import run_ssl_check, check_ssl_tls
 from server_info import get_server_info, print_server_info
-from findings_summary import print_summary_table, print_detailed_findings, generate_summary, export_summary_csv, normalize_findings
-from path_traversal import test_path_traversal
+from test import normalize_findings, generate_summary, print_summary_table, compute_cvss_overrides_from_findings
+from path_traversal import test_path_traversal, print_path_traversal_results
 from directory_scan import scan_common_paths, print_dir_scan_results
 from export_findings import generate_interactive_html_report, export_to_json
 
@@ -20,6 +20,9 @@ import webbrowser
 import os
 from datetime import datetime
 import signal
+import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # initialize colorama
@@ -109,13 +112,27 @@ def main():
     # Verbosity toggle (controls noisy prints like raw header/OPTIONS dumps)
     verbose = input("Verbose output (raw headers / OPTIONS details)? (y/n): ").strip().lower() == 'y'
 
+    # NOTE: removed interactive "Verify SSL certificates?" prompt per request.
+    # All HTTP requests use verify=False so scans continue even with bad certs.
+
+    # Use raw requests for initial probes (verify disabled so expired/untrusted certs don't block scan)
+    try:
+        response = requests.get(url, timeout=10, allow_redirects=True, verify=False)
+    except Exception:
+        response = None
+
+    try:
+        head_resp = requests.head(url, timeout=10, allow_redirects=True, verify=False)
+    except Exception:
+        head_resp = None
+
     # Show initial status early to explain behavior on non-200 pages (e.g., 404 paths)
     try:
-        head_resp = get_request(url, method="HEAD")
+        head_resp = requests.head(url, timeout=6, allow_redirects=True, verify=False)
         if head_resp is None or getattr(head_resp, "status_code", 0) in (405, 501):
-            head_resp = get_request(url, method="GET")
+            head_resp = requests.get(url, timeout=6, allow_redirects=True, verify=False)
         if head_resp is not None:
-            print(Fore.WHITE + f"Initial HTTP Status: {head_resp.status_code} {head_resp.reason}" + Style.RESET_ALL)
+            print(Fore.WHITE + f"Initial HTTP Status: {head_resp.status_code} {getattr(head_resp, 'reason', '')}" + Style.RESET_ALL)
     except Exception:
         pass
 
@@ -133,13 +150,17 @@ def main():
     print(Fore.CYAN + "\n[1/8] Checking HTTP headers..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        response = get_request(url)
+        try:
+            response = requests.get(url, timeout=10, allow_redirects=True, verify=False)
+        except Exception:
+            response = None
+
         headers = parse_headers(response)
         if not headers:
             print(Fore.RED + "\n[!] Failed to retrieve headers or empty response.\n" + Style.RESET_ALL)
         else:
             header_findings = analyze_security_headers(headers)
-            print_findings(header_findings, headers)
+            print_findings(header_findings, headers, verbose=verbose)
     except Exception as e:
         print(Fore.RED + f"[ERROR] Header check failed: {e}" + Style.RESET_ALL)
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
@@ -238,16 +259,29 @@ def main():
 
     # === Step 7: Path Traversal ===
     print(Fore.CYAN + "\n[7/8] Checking for basic Path Traversal patterns..." + Style.RESET_ALL)
+    
+    # Ask for test count
+    test_count_input = input("How many test run? (press Enter for default run 300): ").strip()
+    if test_count_input:
+        try:
+            max_tests = int(test_count_input)
+        except ValueError:
+            print(Fore.YELLOW + "Invalid input, using default (300)" + Style.RESET_ALL)
+            max_tests = 300
+    else:
+        max_tests = 300
+    
     t0 = time.time()
     try:
+        
         pt_findings = test_path_traversal(
             base_url=url,
             timeout=10,
-            max_tests=300,     # adjust if needed
+            max_tests=max_tests,
             verbose=verbose
         )
         pt_findings = _tag_findings_with_category(pt_findings, "Path Traversal")
-        _print_path_traversal_findings(pt_findings)
+        print_path_traversal_results(pt_findings)
     except Exception as e:
         print(Fore.RED + f"[ERROR] Path Traversal check failed: {e}" + Style.RESET_ALL)
         pt_findings = []
@@ -257,7 +291,8 @@ def main():
     print(Fore.CYAN + "\n[8/8] Checking SSL/TLS configuration..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        run_ssl_check(url)  # prints details to console
+        run_ssl_check(url, verbose=verbose)  # Pass verbose parameter
+        # For summary table, still collect basic SSL findings
         try:
             ssl_data = check_ssl_tls(urllib.parse.urlparse(url).hostname)
             if ssl_data.get("error"):
@@ -268,23 +303,30 @@ def main():
                 ssl_findings = [{"Category": "SSL/TLS", "Severity": "High", "Description": "Invalid or expired TLS certificate detected."}]
             elif ssl_data.get("days_until_expiry") is not None and ssl_data.get("days_until_expiry") < 30:
                 ssl_findings = [{"Category": "SSL/TLS", "Severity": "Medium", "Description": f"TLS certificate will expire in {ssl_data.get('days_until_expiry')} days."}]
-        except Exception:
+            else:
+                ssl_findings = []
+        except Exception as e:
+            print(Fore.RED + f"[DEBUG] Error collecting SSL summary findings: {e}" + Style.RESET_ALL)
             ssl_findings = []
     except Exception as e:
         print(Fore.RED + f"[ERROR] SSL/TLS check failed: {e}" + Style.RESET_ALL)
+        import traceback
+        if verbose:
+            traceback.print_exc()
+        ssl_findings = []
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # Tag SSL findings
     ssl_findings = _tag_findings_with_category(ssl_findings, "SSL/TLS")
 
-    # ========================================================================
+        # ========================================================================
     # === FINDINGS SUMMARY: Aggregate all findings and display summary table
     # ========================================================================
     print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
     print(Fore.CYAN + "SCAN COMPLETED - GENERATING SUMMARY" + Style.RESET_ALL)
     print(Fore.CYAN + "=" * 80 + Style.RESET_ALL)
 
-    # Combine all findings into one list
+    # Combine all findings into one list (same as before)
     all_findings = []
     all_findings.extend(header_findings or [])
     all_findings.extend(method_findings or [])
@@ -295,34 +337,43 @@ def main():
     all_findings.extend(pt_findings or [])
     all_findings.extend(ssl_findings or [])
 
-    # Generate and print summary table
-    if all_findings:
-        summary = generate_summary(all_findings)
-        print_summary_table(summary, title="🔍 Security Scan Results Summary")
+    # Normalize findings (ensures Category/Severity/Description present and removes clear "safe" items)
+    normalized = normalize_findings(all_findings, exclude_safe=True)
 
+    # Generate summary
+    summary = generate_summary(normalized)
+
+    # Compute dynamic CVSS overrides
+    cvss_overrides = compute_cvss_overrides_from_findings(normalized)
+
+    # Print table with overrides
+    print_summary_table(summary, title="🔍 Security Scan Results Summary", cvss_overrides=cvss_overrides)
+
+    # If there are findings, keep the existing interactive / export flow.
+    if normalized:
         # === NEW: Ask if user wants to generate interactive HTML report ===
         print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
         generate_report = input(Fore.YELLOW + "\n📊 Generate interactive HTML report? (y/n): " + Style.RESET_ALL).strip().lower()
-        
+
         if generate_report == 'y':
             # Generate filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             html_filename = f"security_scan_report_{timestamp}.html"
-            
+
             print(Fore.CYAN + f"\n🔨 Generating interactive report..." + Style.RESET_ALL)
-            
+
             success = generate_interactive_html_report(
                 findings=all_findings,
                 summary=summary,
                 filename=html_filename,
                 target_url=url
             )
-            
+
             if success:
                 print(Fore.GREEN + f"\n✅ Report generated successfully!" + Style.RESET_ALL)
                 print(Fore.CYAN + f"   📁 File: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
                 print(Fore.CYAN + f"   🌐 Opening in browser..." + Style.RESET_ALL)
-                
+
                 # Automatically open in browser
                 try:
                     webbrowser.open('file://' + os.path.abspath(html_filename))
@@ -332,22 +383,22 @@ def main():
                     print(Fore.YELLOW + f"   Please open manually: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
             else:
                 print(Fore.RED + "\n✗ Failed to generate report" + Style.RESET_ALL)
-        
-        # === LEGACY: Option for direct CSV/JSON export (without interactive HTML) ===
+
         else:
+            # === LEGACY: Option for direct CSV/JSON export (without interactive HTML) ===
             export_legacy = input(Fore.YELLOW + "\nExport to CSV or JSON directly? (y/n): " + Style.RESET_ALL).strip().lower()
-            
+
             if export_legacy == 'y':
                 print(Fore.CYAN + "\nAvailable export formats:" + Style.RESET_ALL)
                 print("  1. JSON  – Structured data (for analysis or integration)")
                 print("  2. CSV   – Table summary (for spreadsheets)")
                 print("  3. Both  – Export both formats")
-                
+
                 fmt_choice = input(Fore.YELLOW + "\nEnter your choice: " + Style.RESET_ALL).strip().lower()
-                
+
                 export_json_flag = fmt_choice in ['1', '3', 'json', 'both']
                 export_csv_flag = fmt_choice in ['2', '3', 'csv', 'both']
-                
+
                 # --- JSON Export ---
                 if export_json_flag:
                     json_fname = input("Enter JSON filename (default: security_scan_report.json): ").strip()
@@ -359,7 +410,7 @@ def main():
                         export_to_json(all_findings, summary, filename=json_fname, target_url=url)
                     except Exception as e:
                         print(Fore.RED + f"[ERROR] export_to_json failed: {e}" + Style.RESET_ALL)
-                
+
                 # --- CSV Export ---
                 if export_csv_flag:
                     csv_fname = input("Enter CSV filename (default: security_findings_summary.csv): ").strip()

@@ -3,8 +3,7 @@
 Basic Path Traversal Tester (safe, non-destructive)
 
 - Groups multiple triggering payloads per endpoint into one finding.
-- Replaces noisy repeated 'Details' with a short human-friendly note:
-  e.g., "Response grew from ~11KB to ~75KB when traversal patterns used."
+- Categorizes behavior types for better understanding.
 - Better exception handling (timeouts, SSL, connection errors).
 - Uses requests.Session with Retry.
 """
@@ -15,6 +14,10 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from colorama import Fore, Style
+import urllib3
+
+# Suppress InsecureRequestWarning because HTTP-level probes intentionally skip cert verification
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Default payloads and probes (safe, non-exploitative)
 TRAVERSAL_PAYLOADS = [
@@ -54,6 +57,8 @@ def _build_session(retries: int = 2, backoff: float = 0.3) -> requests.Session:
     s.mount("http://", adapter)
     s.mount("https://", adapter)
     s.headers.update({"User-Agent": "WebSecScan/PathTraversal/1.1"})
+    # Scanner design: skip TLS verification for HTTP-level tests (TLS checked separately)
+    s.verify = False
     return s
 
 
@@ -102,6 +107,26 @@ def _endpoint_of(url: str) -> str:
         return "/"
 
 
+def _categorize_behavior(baseline_status: Optional[int], found_status: Optional[int], 
+                         baseline_len: int, found_len: int) -> str:
+    """Categorize the type of behavioral change detected."""
+    
+    # Status code changed
+    if baseline_status and found_status and baseline_status != found_status:
+        return "Endpoint returned a different HTTP status compared to normal request"
+    
+    # Significant size increase
+    if found_len > baseline_len and (found_len - baseline_len) > LENGTH_DELTA_THRESHOLD:
+        return "Response size increased significantly (possible file access attempt)"
+    
+    # Significant size decrease (might indicate different content)
+    if baseline_len > found_len and (baseline_len - found_len) > LENGTH_DELTA_THRESHOLD:
+        return "Server returned a smaller response than expected"
+    
+    # Default for any other behavioral change
+    return "Server behavior changed when traversal patterns were used"
+
+
 def test_path_traversal(
     base_url: str,
     payloads: Optional[List[str]] = None,
@@ -139,27 +164,28 @@ def test_path_traversal(
         resp = _probe_url(session, full, timeout=timeout, verbose=verbose)
         baseline[full] = {
             "status": getattr(resp, "status_code", None),
-            "length": len(resp.text) if resp and resp.text is not None else 0,
+            "length": len(resp.text) if resp and getattr(resp, "text", None) is not None else 0,
         }
         tests_run += 1
 
-    # Helper to record a length delta signal for an endpoint
-    def _record_length_delta(endpoint: str, baseline_len: int, found_len: int, payload: str):
-        node = grouped.setdefault(endpoint, {
-            "Category": "Path Traversal",
-            "Severity": "Medium",
-            "Endpoint": endpoint,
-            "Payloads": [],
-            "Signals": [],     # keep internal signals but we’ll condense into friendly text
-            "BaselineLen": baseline_len,
-            "ExampleFoundLen": found_len,
-            "ExampleStatus": None,
-        })
-        node["Payloads"].append(payload)
-        node["Signals"].append((baseline_len, found_len))  # internal
-        # keep the most extreme found length as the example
-        if abs(found_len - baseline_len) > abs(node["ExampleFoundLen"] - baseline_len):
-            node["ExampleFoundLen"] = found_len
+    # Helper to record a behavioral change signal for an endpoint
+    def _record_behavior_change(endpoint: str, baseline_status: Optional[int], baseline_len: int, 
+                                found_status: int, found_len: int, payload: str):
+        if endpoint not in grouped:
+            behavior = _categorize_behavior(baseline_status, found_status, baseline_len, found_len)
+            grouped[endpoint] = {
+                "Category": "Path Traversal",
+                "Severity": "Medium",
+                "Endpoint": endpoint,
+                "Payloads": [],  # Keep in order discovered
+                "Behavior": behavior,
+                "BaselineStatus": baseline_status,
+                "BaselineLen": baseline_len,
+                "ExampleStatus": found_status,
+                "ExampleLen": found_len,
+            }
+        # Always append payload in discovery order (no deduplication here)
+        grouped[endpoint]["Payloads"].append(payload)
 
     # 1) append payloads to paths (path-based traversal)
     for p in paths:
@@ -168,6 +194,7 @@ def test_path_traversal(
         base_full = urljoin(base + "/", p.lstrip("/"))
         base_info = baseline.get(base_full, {})
         base_len = base_info.get("length", 0)
+        base_status = base_info.get("status")
         endpoint = _endpoint_of(base_full)
 
         for payload in payloads:
@@ -183,34 +210,40 @@ def test_path_traversal(
             text = resp.text or ""
             length = len(text)
 
-            # High-confidence indicators
-            if any(ind in text for ind in PASSWD_INDICATORS):
-                grouped[endpoint] = {
-                    "Category": "Path Traversal",
-                    "Severity": "High",
-                    "Endpoint": endpoint,
-                    "Payloads": [payload],
-                    "HighConfidence": "Linux /etc/passwd-like content detected.",
-                    "ExampleStatus": status,
-                }
-                # Once high is found for this endpoint, we don't need to keep adding heuristics
+            # High-confidence indicators (case-insensitive check)
+            lower_text = text.lower()
+            if any(ind.lower() in lower_text for ind in PASSWD_INDICATORS):
+                if endpoint not in grouped or grouped[endpoint].get("Severity") != "High":
+                    grouped[endpoint] = {
+                        "Category": "Path Traversal",
+                        "Severity": "High",
+                        "Endpoint": endpoint,
+                        "Payloads": [payload],
+                        "Behavior": "Direct evidence of sensitive file content (Linux /etc/passwd)",
+                        "ExampleStatus": status,
+                    }
+                else:
+                    grouped[endpoint]["Payloads"].append(payload)
                 continue
 
-            if any(ind in text for ind in WININI_INDICATORS):
-                grouped[endpoint] = {
-                    "Category": "Path Traversal",
-                    "Severity": "High",
-                    "Endpoint": endpoint,
-                    "Payloads": [payload],
-                    "HighConfidence": "Windows win.ini-like content detected.",
-                    "ExampleStatus": status,
-                }
+            if any(ind.lower() in lower_text for ind in WININI_INDICATORS):
+                if endpoint not in grouped or grouped[endpoint].get("Severity") != "High":
+                    grouped[endpoint] = {
+                        "Category": "Path Traversal",
+                        "Severity": "High",
+                        "Endpoint": endpoint,
+                        "Payloads": [payload],
+                        "Behavior": "Direct evidence of sensitive file content (Windows win.ini)",
+                        "ExampleStatus": status,
+                    }
+                else:
+                    grouped[endpoint]["Payloads"].append(payload)
                 continue
 
-            # Heuristic length delta
-            if base_len and abs(length - base_len) > LENGTH_DELTA_THRESHOLD:
-                _record_length_delta(endpoint, base_len, length, payload)
-                grouped[endpoint]["ExampleStatus"] = status
+            # Heuristic behavioral change
+            if base_len and (abs(length - base_len) > LENGTH_DELTA_THRESHOLD or 
+                           (base_status and status != base_status)):
+                _record_behavior_change(endpoint, base_status, base_len, status, length, payload)
 
     # 2) test via query parameters (param=payload)
     for p in paths:
@@ -219,6 +252,7 @@ def test_path_traversal(
         base_full = urljoin(base + "/", p.lstrip("/"))
         base_info = baseline.get(base_full, {})
         base_len = base_info.get("length", 0)
+        base_status = base_info.get("status")
         endpoint = _endpoint_of(base_full)
 
         for param in params:
@@ -238,71 +272,109 @@ def test_path_traversal(
                 text = resp.text or ""
                 length = len(text)
 
-                if any(ind in text for ind in PASSWD_INDICATORS):
-                    grouped[endpoint] = {
-                        "Category": "Path Traversal",
-                        "Severity": "High",
-                        "Endpoint": endpoint,
-                        "Payloads": [f"{param}={payload}"],
-                        "HighConfidence": "Linux /etc/passwd-like content detected (via parameter).",
-                        "ExampleStatus": status,
-                    }
+                # High-confidence indicators (case-insensitive)
+                lower_text = text.lower()
+                if any(ind.lower() in lower_text for ind in PASSWD_INDICATORS):
+                    payload_str = f"{param}={payload}"
+                    if endpoint not in grouped or grouped[endpoint].get("Severity") != "High":
+                        grouped[endpoint] = {
+                            "Category": "Path Traversal",
+                            "Severity": "High",
+                            "Endpoint": endpoint,
+                            "Payloads": [payload_str],
+                            "Behavior": "Direct evidence of sensitive file content via query parameter",
+                            "ExampleStatus": status,
+                        }
+                    else:
+                        grouped[endpoint]["Payloads"].append(payload_str)
                     continue
 
-                if base_len and abs(length - base_len) > LENGTH_DELTA_THRESHOLD:
-                    _record_length_delta(endpoint, base_len, length, f"{param}={payload}")
-                    grouped[endpoint]["ExampleStatus"] = status
+                if any(ind.lower() in lower_text for ind in WININI_INDICATORS):
+                    payload_str = f"{param}={payload}"
+                    if endpoint not in grouped or grouped[endpoint].get("Severity") != "High":
+                        grouped[endpoint] = {
+                            "Category": "Path Traversal",
+                            "Severity": "High",
+                            "Endpoint": endpoint,
+                            "Payloads": [payload_str],
+                            "Behavior": "Direct evidence of sensitive file content via query parameter",
+                            "ExampleStatus": status,
+                        }
+                    else:
+                        grouped[endpoint]["Payloads"].append(payload_str)
+                    continue
 
-    # Convert grouped map -> final friendly findings
+                # Heuristic behavioral change
+                if base_len and (abs(length - base_len) > LENGTH_DELTA_THRESHOLD or
+                               (base_status and status != base_status)):
+                    _record_behavior_change(endpoint, base_status, base_len, status, length, 
+                                          f"{param}={payload}")
+
+    # Convert grouped map -> final findings
     findings: List[Dict] = []
     for endpoint, data in grouped.items():
-        if data.get("Severity") == "High":
-            # High-confidence finding
-            desc = data.get("HighConfidence", "Sensitive file content detected.")
-            findings.append({
-                "Category": "Path Traversal",
-                "Severity": "High",
-                "Description": desc,
-                "Endpoint": endpoint,
-                "Payloads": data.get("Payloads", []),
-                "Status": data.get("ExampleStatus"),
-                "Details": "Direct evidence from response content.",
-            })
-            continue
-
-        # Medium heuristic finding (length delta)
-        base_len = data.get("BaselineLen", 0)
-        found_len = data.get("ExampleFoundLen", 0)
-        friendly = f"Response grew from ~{_human_size(base_len)} to ~{_human_size(found_len)} when traversal patterns were used."
         findings.append({
             "Category": "Path Traversal",
-            "Severity": "Medium",
+            "Severity": data.get("Severity", "Medium"),
             "Endpoint": endpoint,
-            "Payloads": sorted(set(data.get("Payloads", []))),
-            "Description": "Server response changed a lot when traversal sequences were included.",
-            "Behavior": "The response size changed significantly compared to the normal page.",
-            "Interpretation": (
-                "Medium confidence: the server behaved differently, which can happen when it tries to read files "
-                "or renders an internal error page. Manual verification is recommended."
-            ),
-            "Recommendation": (
-                "1) Validate and canonicalize incoming paths (resolve and enforce an allowlist).\n"
-                "2) Never use user-controlled input directly for file reads; use fixed base directories and safe APIs.\n"
-                "3) Log/monitor failed file-read attempts and return generic errors (avoid leaking file contents)."
-            ),
-            "Details": friendly,
+            "Payloads": data.get("Payloads", []),  # Keep in discovery order
+            "Behavior": data.get("Behavior", "Server behavior changed"),
             "Status": data.get("ExampleStatus"),
         })
 
-    # If nothing found, add a low-severity informational result
-    if not findings:
-        findings.append({
-            "Category": "Path Traversal",
-            "Severity": "Low",
-            "Description": "No obvious path traversal indicators found for tested payloads/paths. This scan is not exhaustive."
-        })
-
     if verbose:
-        print(Fore.CYAN + f"[done] tests run: {tests_run}, grouped findings: {len(findings)}" + Style.RESET_ALL)
+        print(Fore.CYAN + f"[done] tests run: {tests_run}" + Style.RESET_ALL)
 
     return findings
+
+
+def print_path_traversal_results(findings: List[Dict]) -> None:
+    """
+    Print path traversal results in the requested format.
+    """
+    
+    # Print section header
+    print(Fore.CYAN + "\nPath Traversal" + Style.RESET_ALL)
+    print("=" * 64)
+    
+    if not findings:
+        # No findings case
+        print(Fore.GREEN + "✓ No path traversal vulnerabilities detected" + Style.RESET_ALL)
+        print("=" * 64)
+        return
+    
+    # Fixed risk rating
+    print("Risk Rating:")
+    print(f"Severity: {Fore.RED}High{Style.RESET_ALL}")
+    print("CVSS: 7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)")
+    
+    print("\nFindings:")
+    print("`" * 80)
+    
+    for idx, f in enumerate(findings, 1):
+        endpoint = f.get("Endpoint", "/")
+        payloads = f.get("Payloads", [])
+        behavior = f.get("Behavior", "Server behavior changed")
+        
+        print(f"{idx}. Endpoint: {endpoint}")
+        print("   Payloads Triggering:")
+        for payload in payloads:
+            print(f"     - {payload}")
+        print(f"   Behavior: {behavior}")
+        
+        # Add separator between findings (but not after the last one)
+        if idx < len(findings):
+            print("─" * 64)
+    
+    print("`" * 80)
+    
+    # Recommendations section
+    print(f"\n{Fore.RED}[!] Recommendation{Style.RESET_ALL}")
+    print("─" * 64)
+    print("   • Validate and sanitize user-supplied paths. Normalize and resolve paths before use.")
+    print("   • Do not pass user input directly into file system functions.")
+    print("   • Restrict file access to a fixed, safe base directory (enforce an allowlist).")
+    print("   • Return generic error messages to avoid revealing internal directory structure.")
+    print("   • Monitor logs for repeated invalid path requests.")
+    
+    print("=" * 64)

@@ -41,6 +41,7 @@ CATEGORY_CVSS = {
 def _get_retry_session(retries: int = 2, backoff: float = 0.2) -> requests.Session:
     """
     Return a requests.Session with a Retry policy to reduce false negatives on transient network errors.
+    Session is configured to NOT verify TLS certificates (scanner design).
     """
     s = requests.Session()
     retry = Retry(total=retries, backoff_factor=backoff,
@@ -50,6 +51,8 @@ def _get_retry_session(retries: int = 2, backoff: float = 0.2) -> requests.Sessi
     s.mount("http://", adapter)
     s.mount("https://", adapter)
     s.headers.update({"User-Agent": "WebSecScan/1.0"})
+    # IMPORTANT: Prevent TLS verification from blocking HTTP-level probes
+    s.verify = False
     return s
 
 def _resolve_hostname(hostname: str) -> List[str]:
@@ -207,15 +210,33 @@ def _analyze_header_order(headers: requests.structures.CaseInsensitiveDict) -> D
 def _analyze_status_line(response: requests.Response) -> Dict[str, str]:
     """
     Analyze HTTP status line formatting for fingerprinting clues.
+    Returns a dict with http_version (friendly), status_code, reason_phrase.
     """
-    # Get raw response if available
-    raw = response.raw
+    # attempt to get a usable HTTP version string
+    http_version = "Unknown"
+    try:
+        raw = getattr(response, "raw", None)
+        ver = getattr(raw, "version", None)
+        # urllib3 may expose version as integers: 10,11,20 etc.
+        if isinstance(ver, int):
+            if ver >= 20:
+                http_version = "HTTP/2"
+            elif ver == 11:
+                http_version = "HTTP/1.1"
+            elif ver == 10:
+                http_version = "HTTP/1.0"
+            else:
+                http_version = f"HTTP/? ({ver})"
+        elif isinstance(ver, str):
+            http_version = ver
+    except Exception:
+        http_version = "Unknown"
+
     status_line_info = {
-        "http_version": f"HTTP/{response.raw.version / 10:.1f}" if hasattr(response.raw, 'version') else "Unknown",
+        "http_version": http_version,
         "status_code": response.status_code,
         "reason_phrase": response.reason
     }
-    
     return status_line_info
 
 # Regex to parse Server header into product/version/extra

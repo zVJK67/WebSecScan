@@ -2,7 +2,7 @@
 Directory & File Exposure Scanner (safe checks)
 
 Usage:
-    from dir_scan import scan_common_paths, print_dir_scan_results
+    from directory_scan import scan_common_paths, print_dir_scan_results
     findings = scan_common_paths("https://example.com")
     print_dir_scan_results(findings)
 """
@@ -11,6 +11,10 @@ from typing import List, Dict
 from urllib.parse import urljoin, urlparse
 import requests
 from colorama import Fore, Style
+import urllib3
+
+# Suppress urllib3 InsecureRequestWarning (we intentionally skip cert verification for HTTP-level tests)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Common paths to probe (safe, read-only)
 COMMON_PATHS = [
@@ -96,6 +100,8 @@ def scan_common_paths(base_url: str, timeout: int = 6, max_results: int = 50) ->
     base = _normalize_url(base_url)
     session = requests.Session()
     session.headers.update({"User-Agent": "WebSecScan/DirScanner/1.0"})
+    # IMPORTANT: scanner design — skip TLS verification for HTTP-level checks
+    session.verify = False
 
     findings: List[Dict] = []
     scanned = 0
@@ -107,8 +113,8 @@ def scan_common_paths(base_url: str, timeout: int = 6, max_results: int = 50) ->
 
         full = urljoin(base if base.endswith("/") else base + "/", rel.lstrip("/"))
         try:
-            resp = session.get(full, timeout=timeout, allow_redirects=True)
-            status = resp.status_code
+            resp = session.get(full, timeout=timeout, allow_redirects=True, verify=False)
+            status = resp.status_code if resp is not None else None
 
             if status in INTERESTING_STATUS:
                 sev = _severity_for(rel, status)
@@ -124,7 +130,7 @@ def scan_common_paths(base_url: str, timeout: int = 6, max_results: int = 50) ->
                     "Risk": risk_explanation,
                 })
         except requests.RequestException:
-            # ignore transient network errors
+            # ignore transient network errors and continue scanning
             continue
 
     return findings
