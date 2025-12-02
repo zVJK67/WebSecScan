@@ -64,11 +64,11 @@ def analyze_http_methods_from_list(methods_list: List[str]) -> List[Dict[str, An
 
 def _print_raw_options_response(resp: Optional[requests.Response]) -> None:
     """Print a compact raw OPTIONS response block (status + headers), matching the desired sample."""
-    print(Fore.CYAN + "OPTIONS Response:" + Style.RESET_ALL)
-    print(Fore.CYAN + "**********************************************************" + Style.RESET_ALL)
+    print(Fore.WHITE + "OPTIONS Response:" + Style.RESET_ALL)
+    print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
     if resp is None:
         print(Fore.WHITE + "(No response received)" + Style.RESET_ALL)
-        print(Fore.CYAN + "**********************************************************" + Style.RESET_ALL)
+        print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
         return
 
     # Print status line
@@ -105,7 +105,7 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
     Returns the findings list (so main.py can still collect them).
     """
     # Print section header
-    print(Fore.CYAN + "HTTP Method Security Check" + Style.RESET_ALL)
+    print(Fore.CYAN + "\nHTTP Method Security Check" + Style.RESET_ALL)
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
     
     resp = None
@@ -147,9 +147,9 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
     if not response_received:
         print(Fore.RED + "[!] Failed to retrieve OPTIONS response from server." + Style.RESET_ALL)
         print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.GREEN}0{Style.RESET_ALL}")
-        print(Fore.WHITE + "Findings:")
+        print(Fore.WHITE + "\nFindings:")
         print("``````````````````````````````````````````````````````````````````````````````````")
-        print(Fore.GREEN + "✓ No unsafe HTTP methods detected (no OPTIONS response received)." + Style.RESET_ALL)
+        print(Fore.GREEN + "[!] No unsafe HTTP methods detected as no OPTIONS response received." + Style.RESET_ALL)
         print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
         print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
         return []
@@ -158,9 +158,9 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
     if not methods_list:
         print(Fore.RED + "[!] The 'Allow' header is not shown in the response." + Style.RESET_ALL)
         print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.GREEN}0{Style.RESET_ALL}")
-        print(Fore.WHITE + "Findings:")
+        print(Fore.WHITE + "\nFindings:")
         print("``````````````````````````````````````````````````````````````````````````````````")
-        print(Fore.GREEN + "✓ No unsafe HTTP methods detected." + Style.RESET_ALL)
+        print(Fore.GREEN + "✓ No unsafe HTTP methods detected as 'Allow' header is not present." + Style.RESET_ALL)
         print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
         print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
         return []
@@ -190,7 +190,7 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
             print(f"{Fore.YELLOW}Severity: Medium{Style.RESET_ALL}")
             print(f"{Fore.YELLOW}CVSS: 5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N){Style.RESET_ALL}\n")
         
-        print("Findings:")
+        print("\nFindings:")
         print("``````````````````````````````````````````````````````````````````````````````````")
         for i, f in enumerate(unsafe_findings, start=1):
             method_name = f.get('Method', '')
@@ -201,7 +201,7 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
         print("Disable all unsafe methods.")
     else:
         # No unsafe methods detected
-        print(Fore.WHITE + "Findings:")
+        print(Fore.WHITE + "\nFindings:")
         print("``````````````````````````````````````````````````````````````````````````````````")
         print(Fore.GREEN + "✓ No unsafe HTTP methods detected." + Style.RESET_ALL)
         print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")

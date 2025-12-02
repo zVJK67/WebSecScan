@@ -317,10 +317,10 @@ def run_ssl_check(target_url, verbose=False):
         return []
 
     # Header (show host:port)
-    print(Fore.CYAN + "\n🔒 SSL/TLS Security Analysis" + Style.RESET_ALL)
-    print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    print(Fore.CYAN + "\nSSL/TLS Security Analysis" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
     print(Fore.WHITE + f"Target Host: {host}:{port}" + Style.RESET_ALL)
-    print(Fore.WHITE + "-" * 64 + Style.RESET_ALL)
+    print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
 
     # Keep evidence strings
     verification_error = None
@@ -378,7 +378,7 @@ def run_ssl_check(target_url, verbose=False):
         print(Fore.YELLOW + "This usually means the server is serving plain HTTP (or another protocol) at this address/port," + Style.RESET_ALL)
         print(Fore.YELLOW + "so certificate, protocol and cipher details cannot be collected." + Style.RESET_ALL)
         print(Fore.YELLOW + f"Detected error: {evidence}" + Style.RESET_ALL)
-        print(Fore.WHITE + "-" * 64 + Style.RESET_ALL)
+        print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
 
         # Build finding (order: Current Value, Evidence, Recommendation)
         finding = {
@@ -392,18 +392,19 @@ def run_ssl_check(target_url, verbose=False):
         findings.append(finding)
 
         # Print risk rating block (High + CVSS 9.8 as requested)
-        print(Fore.RED + "RISK RATING: Issues Detected" + Style.RESET_ALL)
+        print(Fore.WHITE + "\nRisk Rating:" + Style.RESET_ALL)
         print(Fore.WHITE + f"Severity: High" + Style.RESET_ALL)
         print(Fore.WHITE + f"CVSS: 9.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)" + Style.RESET_ALL)
-        print(Fore.YELLOW + "\nFindings:" + Style.RESET_ALL)
+        print(Fore.WHITE + "\nFindings:" + Style.RESET_ALL)
+        print(Fore.CYAN + f"``````````````````````````````````````````````````````````````````````````````````" + Style.RESET_ALL)
 
         # Format the single finding exactly as requested
         print(Fore.WHITE + "1. HTTPS Not Supported" + Style.RESET_ALL)
         print(Fore.WHITE + f"   Current Value: {finding['Current Value']}" + Style.RESET_ALL)
         print(Fore.WHITE + f"   Evidence: {finding['Evidence']}" + Style.RESET_ALL)
-        print(Fore.WHITE + f"   Recommendation: {finding['Recommendation']}" + Style.RESET_ALL)
+        print(Fore.WHITE + f"   Recommendation: {finding['Recommendation']}\n" + Style.RESET_ALL)
 
-        print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+        print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
         return findings
 
     # ---------------------------
@@ -595,7 +596,7 @@ def run_ssl_check(target_url, verbose=False):
     else:
         print(Fore.WHITE + "  HSTS: Unknown" + Style.RESET_ALL)
 
-    print(Fore.CYAN + "-" * 64 + Style.RESET_ALL)
+    Fore.YELLOW + "**********************************************************" + Style.RESET_ALL
 
     # Final risk rating block (only print if there are findings)
     if findings:
@@ -611,11 +612,12 @@ def run_ssl_check(target_url, verbose=False):
             overall_cvss = None
 
         if overall:
-            print(Fore.RED + "RISK RATING: Issues Detected" + Style.RESET_ALL)
+            print(Fore.WHITE + "\nRisk Rating" + Style.RESET_ALL)
             print(Fore.WHITE + f"Severity: {overall}" + Style.RESET_ALL)
             if overall_cvss:
                 print(Fore.WHITE + f"CVSS: {overall_cvss}" + Style.RESET_ALL)
             print(Fore.YELLOW + "\nFindings:" + Style.RESET_ALL)
+            print(Fore.CYAN + f"``````````````````````````````````````````````````````````````````````````````````" + Style.RESET_ALL)
 
             for i, f in enumerate(findings, start=1):
                 # Print description line as numbered item
@@ -629,13 +631,13 @@ def run_ssl_check(target_url, verbose=False):
                         ev = ev[:400] + " ... (truncated)"
                     print(Fore.WHITE + f"   Evidence: {ev}" + Style.RESET_ALL)
                 if f.get("Recommendation"):
-                    print(Fore.WHITE + f"   Recommendation: {f.get('Recommendation')}" + Style.RESET_ALL)
+                    print(Fore.WHITE + f"   Recommendation: {f.get('Recommendation')}\n" + Style.RESET_ALL)
                 if i < len(findings):
                     print()
     else:
-        print(Fore.GREEN + "✓ No findings — SSL/TLS configuration appears secure" + Style.RESET_ALL)
+        print(Fore.GREEN + "✓ SSL/TLS configuration appears secure" + Style.RESET_ALL)
 
-    print(Fore.CYAN + "════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
     return findings
 
 

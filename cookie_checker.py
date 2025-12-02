@@ -405,15 +405,15 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
         cvss = "N/A"
 
     # === 4. Print formatted output ===
-    print(Fore.RED + "\nImproper Cookie & Session Security Configuration" + Style.RESET_ALL)
+    print(Fore.CYAN + "\nCookie & Session Security Configuration" + Style.RESET_ALL)
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
     print(Fore.WHITE + "Risk Rating:" + Style.RESET_ALL)
     print(f"Severity: {severity}")
     print(f"CVSS: {cvss}")
 
     # [a] Server-Side Findings
-    print(Fore.CYAN + "\n[a]Server-Side Findings" + Style.RESET_ALL)
-    print(Fore.WHITE + "*" * 60 + Style.RESET_ALL)
+    print(Fore.MAGENTA + "\n[a]Server-Side Findings" + Style.RESET_ALL)
+    print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
     if server_cookies:
         # print raw Set-Cookie lines we collected (if any)
         if raw_set_cookies:
@@ -424,23 +424,23 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
             for c in server_cookies:
                 print(f"Cookie: {c['Name']}={c['Value']}")
     else:
-        print("[!] No cookies found in server response.")
-    print(Fore.WHITE + "*" * 60 + Style.RESET_ALL)
+        print("[!] No server-side cookies detected.")
+        print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
     
     print("\nFindings:")
-    print(Fore.WHITE + "`" * 80 + Style.RESET_ALL)
+    print(Fore.CYAN + f"``````````````````````````````````````````````````````````````````````````````````" + Style.RESET_ALL)
     if server_issues:
         _print_issues(server_issues, is_server_side=True)
     elif server_cookies:
-        print(Fore.GREEN + "\n[✓] Server-side cookies detected — no issues found.\n" + Style.RESET_ALL)
+        print(Fore.GREEN + "✓ No issues found.\n" + Style.RESET_ALL)
     else:
-        print(Fore.YELLOW + "\n[!] No cookies found in server response.\n" + Style.RESET_ALL)
+        print(Fore.YELLOW + "[!] No findings as no server-side cookies found in server response.\n" + Style.RESET_ALL)
 
-    print(Fore.WHITE + "~" * 80 + Style.RESET_ALL)
+    print(Fore.MAGENTA + "~" * 80 + Style.RESET_ALL)
 
     # [b] Client-Side Findings
-    print(Fore.CYAN + "\n[b]Client-Side Findings" + Style.RESET_ALL)
-    print(Fore.WHITE + "*" * 60 + Style.RESET_ALL)
+    print(Fore.MAGENTA + "\n[b]Client-Side Findings" + Style.RESET_ALL)
+    print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
     if client_cookies:
         for c in client_cookies:
             # Build ordered attributes list for clear, consistent printing
@@ -468,16 +468,16 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
                 print(f"document.cookie: {c.get('Name')}={c.get('Value')}; {attrs_str}")
     else:
         print("[!] No client-side cookies detected.")
-    print(Fore.WHITE + "*" * 60 + Style.RESET_ALL)
+    print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
 
     print("\nFindings:")
-    print(Fore.WHITE + "`" * 80 + Style.RESET_ALL)
+    print(Fore.CYAN + f"``````````````````````````````````````````````````````````````````````````````````" + Style.RESET_ALL)
     if client_issues:
         _print_issues(client_issues, is_server_side=False)
     elif client_cookies:
-        print(Fore.GREEN + "\n[✓] Client-side cookies detected — no issues found.\n" + Style.RESET_ALL)
+        print(Fore.GREEN + "✓ No issues found.\n" + Style.RESET_ALL)
     else:
-        print(Fore.YELLOW + "\n[!] No client-side cookies detected.\n" + Style.RESET_ALL)
+        print(Fore.YELLOW + "[!] No client-side cookies detected.\n" + Style.RESET_ALL)
 
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 

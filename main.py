@@ -1,14 +1,14 @@
 # main.py
 from banner import print_banner
-from get_header import get_request, parse_headers, print_headers, print_options_response, get_allowed_methods
+from get_header import parse_headers, print_headers, print_options_response, get_allowed_methods
 from http_header import analyze_security_headers, print_findings
-from http_method import analyze_http_methods, print_http_method_findings
+from http_method import check_and_print_http_methods
 from cookie_checker import analyze_cookies
 from cors_checker import analyze_cors
 from ssl_tls import run_ssl_check, check_ssl_tls
 from server_info import get_server_info, print_server_info
-from findings_summary import print_summary_table, print_detailed_findings, generate_summary, export_summary_csv, normalize_findings
-from path_traversal import test_path_traversal
+from findings_summary import normalize_findings, generate_summary, print_summary_table, compute_cvss_overrides_from_findings
+from path_traversal import test_path_traversal, print_path_traversal_results
 from directory_scan import scan_common_paths, print_dir_scan_results
 from export_findings import generate_interactive_html_report, export_to_json
 
@@ -20,6 +20,9 @@ import webbrowser
 import os
 from datetime import datetime
 import signal
+import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # initialize colorama
@@ -109,13 +112,27 @@ def main():
     # Verbosity toggle (controls noisy prints like raw header/OPTIONS dumps)
     verbose = input("Verbose output (raw headers / OPTIONS details)? (y/n): ").strip().lower() == 'y'
 
+    # NOTE: removed interactive "Verify SSL certificates?" prompt per request.
+    # All HTTP requests use verify=False so scans continue even with bad certs.
+
+    # Use raw requests for initial probes (verify disabled so expired/untrusted certs don't block scan)
+    try:
+        response = requests.get(url, timeout=10, allow_redirects=True, verify=False)
+    except Exception:
+        response = None
+
+    try:
+        head_resp = requests.head(url, timeout=10, allow_redirects=True, verify=False)
+    except Exception:
+        head_resp = None
+
     # Show initial status early to explain behavior on non-200 pages (e.g., 404 paths)
     try:
-        head_resp = get_request(url, method="HEAD")
+        head_resp = requests.head(url, timeout=6, allow_redirects=True, verify=False)
         if head_resp is None or getattr(head_resp, "status_code", 0) in (405, 501):
-            head_resp = get_request(url, method="GET")
+            head_resp = requests.get(url, timeout=6, allow_redirects=True, verify=False)
         if head_resp is not None:
-            print(Fore.WHITE + f"Initial HTTP Status: {head_resp.status_code} {head_resp.reason}" + Style.RESET_ALL)
+            print(Fore.WHITE + f"Initial HTTP Status: {head_resp.status_code} {getattr(head_resp, 'reason', '')}" + Style.RESET_ALL)
     except Exception:
         pass
 
@@ -123,27 +140,27 @@ def main():
     header_findings = []
     method_findings = []
     server_findings = []
-    dir_findings = []      # Directory scan findings
+    dir_findings = []      
     cookie_findings = []
     cors_findings = []
     ssl_findings = []
-    pt_findings = []       # Path Traversal
+    pt_findings = []       
 
     # === Step 1: Header Check ===
     print(Fore.CYAN + "\n[1/8] Checking HTTP headers..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        response = get_request(url)
+        try:
+            response = requests.get(url, timeout=10, allow_redirects=True, verify=False)
+        except Exception:
+            response = None
+
         headers = parse_headers(response)
         if not headers:
             print(Fore.RED + "\n[!] Failed to retrieve headers or empty response.\n" + Style.RESET_ALL)
         else:
             header_findings = analyze_security_headers(headers)
-            print_findings(header_findings)
-            if verbose:
-                if input("\nSee raw GET headers? (y/n): ").strip().lower() == 'y':
-                    print_headers(headers)
-            print(Fore.WHITE + "Note: Headers shown are from the scanned path; CDNs/proxies may alter them." + Style.RESET_ALL)
+            print_findings(header_findings, headers, verbose=verbose)
     except Exception as e:
         print(Fore.RED + f"[ERROR] Header check failed: {e}" + Style.RESET_ALL)
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
@@ -155,58 +172,28 @@ def main():
     print(Fore.CYAN + "\n[2/8] Checking HTTP methods..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        methods = get_allowed_methods(url)
-        method_findings = analyze_http_methods(methods)
-        print_http_method_findings(method_findings, methods)
-        if verbose:
-            if input("\nSee OPTIONS raw response? (y/n): ").strip().lower() == 'y':
-                print_options_response(url)
+        # This function will:
+        #  - perform an OPTIONS request and print the raw OPTIONS response,
+        #  - parse the Allow (or AC-Allow-Methods) header,
+        #  - detect unsafe methods and print the findings.
+        method_findings = check_and_print_http_methods(url, timeout=6)
+        # method_findings is a list, tag appropriately below
     except Exception as e:
         print(Fore.RED + f"[ERROR] HTTP method check failed: {e}" + Style.RESET_ALL)
+        method_findings = []
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
-    # Tag method findings with proper category
-    method_findings = _tag_findings_with_category(method_findings, "HTTP Methods")
-
     # === Step 3: Server Info Check (ENHANCED) ===
-    print(Fore.CYAN + "\n[3/8] Checking server information & exposures..." + Style.RESET_ALL)
-    print(Fore.YELLOW + "   → Analyzing headers, error pages, and fingerprinting patterns..." + Style.RESET_ALL)
+    # Replaced to match requested output format while keeping server_info.py unchanged.
+    print(Fore.CYAN + "\n[3/8] Checking for exposed server details..." + Style.RESET_ALL)
+
     t0 = time.time()
     try:
+        # call the existing function (no change to server_info.py)
         info, server_findings = get_server_info(url, timeout=10)
+        # print the server info using the module's printer (it already formats the block)
         print_server_info(info, server_findings)
-        
-        # Optional: Show additional technical details in verbose mode
-        if verbose:
-            show_details = input(Fore.YELLOW + "\nShow detailed server fingerprinting analysis? (y/n): " + Style.RESET_ALL).strip().lower()
-            if show_details == 'y':
-                # Display header order analysis
-                header_order = info.get("header_order_analysis", {})
-                if header_order.get("potential_matches"):
-                    print(Fore.CYAN + "\n📊 Server Fingerprint Matches:" + Style.RESET_ALL)
-                    for server_type, match_info in header_order["potential_matches"].items():
-                        print(f"  • {server_type}: {match_info['confidence']:.0%} confidence")
-                        print(f"    Matching headers: {', '.join(match_info['matching_headers'])}")
-                
-                # Display error response details
-                error_responses = info.get("error_responses", [])
-                if error_responses:
-                    print(Fore.CYAN + f"\n🔍 Error Page Analysis ({len(error_responses)} tests):" + Style.RESET_ALL)
-                    for err in error_responses:
-                        print(f"\n  Test: {err['test']}")
-                        print(f"  Status: {err['status_code']}")
-                        if err.get('server_header'):
-                            print(f"  Server Header: {err['server_header']}")
-                        if err.get('mentions_in_body'):
-                            print(f"  Body Mentions: {', '.join(err['mentions_in_body'])}")
-                
-                # Display status line info
-                status_line = info.get("status_line", {})
-                if status_line:
-                    print(Fore.CYAN + "\n📋 HTTP Status Line Details:" + Style.RESET_ALL)
-                    print(f"  HTTP Version: {status_line.get('http_version')}")
-                    print(f"  Status Code: {status_line.get('status_code')}")
-                    print(f"  Reason Phrase: {status_line.get('reason_phrase')}")
+
     except Exception as e:
         print(Fore.RED + f"[ERROR] Server info check failed: {e}" + Style.RESET_ALL)
         import traceback
@@ -218,34 +205,30 @@ def main():
     server_findings = _tag_findings_with_category(server_findings, "Server Information")
 
     # === Step 4: Cookie Security Analysis ===
-    print(Fore.CYAN + "\n[4/8] Performing Cookie Security Analysis..." + Style.RESET_ALL)
+    # Selenium-based JS cookie capture is required for this system (always enabled).
     t0 = time.time()
     try:
-        capture_js = input("Capture JS-created cookies via Selenium? (y/n): ").strip().lower() == "y" if verbose else False
+        # Always capture JS-created cookies using Selenium (no prompt).
+        capture_js = True
+
+        # Call the cookie analyzer (it prints its own formatted output).
         cookie_findings = analyze_cookies(url, include_js_cookies=capture_js)
+
     except Exception as e:
         print(Fore.RED + f"[ERROR] Cookie check failed: {e}" + Style.RESET_ALL)
+        cookie_findings = []
+    # Print elapsed time for consistency with other steps
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
-    # Tag cookie findings with proper category
+    # Tag cookie findings with proper category for aggregation later
     cookie_findings = _tag_findings_with_category(cookie_findings, "Cookie Security")
 
-    # === Step 5: CORS Security Analysis (IMPROVED) ===
+    # === Step 5: CORS Security Analysis (UPDATED) ===
     print(Fore.CYAN + "\n[5/8] Checking Cross-Origin Resource Sharing (CORS) configuration..." + Style.RESET_ALL)
-    print(Fore.YELLOW + "   → Testing origin reflection, credentials handling, and preflight responses..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        # Option to customize test origin in verbose mode
-        if verbose:
-            custom_origin = input(Fore.YELLOW + "\nUse custom test origin? (press Enter for default 'https://evil-attacker.com'): " + Style.RESET_ALL).strip()
-            test_origin = custom_origin if custom_origin else "https://evil-attacker.com"
-        else:
-            test_origin = "https://evil-attacker.com"
-        
-        cors_findings = analyze_cors(url, fake_origin=test_origin)
-        
-        # The improved cors_checker.py already prints detailed output
-        # No need for additional printing here
+        # Pass verbose flag to analyze_cors
+        cors_findings = analyze_cors(url, fake_origin="https://evil-attacker.com", verbose=verbose)
         
     except Exception as e:
         print(Fore.RED + f"[ERROR] CORS check failed: {e}" + Style.RESET_ALL)
@@ -256,8 +239,7 @@ def main():
     
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
-    # CORS findings already have Category set by the improved analyzer
-    # But let's ensure consistency
+    # CORS findings already have Category set by the analyzer
     cors_findings = _tag_findings_with_category(cors_findings, "CORS Security")
 
     # === Step 6: Directory & File Exposure  ===
@@ -276,16 +258,29 @@ def main():
 
     # === Step 7: Path Traversal ===
     print(Fore.CYAN + "\n[7/8] Checking for basic Path Traversal patterns..." + Style.RESET_ALL)
+    
+    # Ask for test count
+    test_count_input = input("\nHow many test run? (press Enter for default run 300): ").strip()
+    if test_count_input:
+        try:
+            max_tests = int(test_count_input)
+        except ValueError:
+            print(Fore.YELLOW + "Invalid input, using default (300)" + Style.RESET_ALL)
+            max_tests = 300
+    else:
+        max_tests = 300
+    
     t0 = time.time()
     try:
+        
         pt_findings = test_path_traversal(
             base_url=url,
             timeout=10,
-            max_tests=300,     # adjust if needed
+            max_tests=max_tests,
             verbose=verbose
         )
         pt_findings = _tag_findings_with_category(pt_findings, "Path Traversal")
-        _print_path_traversal_findings(pt_findings)
+        print_path_traversal_results(pt_findings)
     except Exception as e:
         print(Fore.RED + f"[ERROR] Path Traversal check failed: {e}" + Style.RESET_ALL)
         pt_findings = []
@@ -295,7 +290,8 @@ def main():
     print(Fore.CYAN + "\n[8/8] Checking SSL/TLS configuration..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        run_ssl_check(url)  # prints details to console
+        run_ssl_check(url, verbose=verbose)  # Pass verbose parameter
+        # For summary table, still collect basic SSL findings
         try:
             ssl_data = check_ssl_tls(urllib.parse.urlparse(url).hostname)
             if ssl_data.get("error"):
@@ -306,10 +302,17 @@ def main():
                 ssl_findings = [{"Category": "SSL/TLS", "Severity": "High", "Description": "Invalid or expired TLS certificate detected."}]
             elif ssl_data.get("days_until_expiry") is not None and ssl_data.get("days_until_expiry") < 30:
                 ssl_findings = [{"Category": "SSL/TLS", "Severity": "Medium", "Description": f"TLS certificate will expire in {ssl_data.get('days_until_expiry')} days."}]
-        except Exception:
+            else:
+                ssl_findings = []
+        except Exception as e:
+            print(Fore.RED + f"[DEBUG] Error collecting SSL summary findings: {e}" + Style.RESET_ALL)
             ssl_findings = []
     except Exception as e:
         print(Fore.RED + f"[ERROR] SSL/TLS check failed: {e}" + Style.RESET_ALL)
+        import traceback
+        if verbose:
+            traceback.print_exc()
+        ssl_findings = []
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # Tag SSL findings
@@ -318,11 +321,11 @@ def main():
     # ========================================================================
     # === FINDINGS SUMMARY: Aggregate all findings and display summary table
     # ========================================================================
-    print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
-    print(Fore.CYAN + "SCAN COMPLETED - GENERATING SUMMARY" + Style.RESET_ALL)
-    print(Fore.CYAN + "=" * 80 + Style.RESET_ALL)
+    print(Fore.GREEN + "\n═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    print(Fore.GREEN + "                      SCAN COMPLETED ! GENERATING SUMMARY..." + Style.RESET_ALL)
+    print(Fore.GREEN + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
-    # Combine all findings into one list
+    # Combine all findings into one list (same as before)
     all_findings = []
     all_findings.extend(header_findings or [])
     all_findings.extend(method_findings or [])
@@ -333,34 +336,43 @@ def main():
     all_findings.extend(pt_findings or [])
     all_findings.extend(ssl_findings or [])
 
-    # Generate and print summary table
-    if all_findings:
-        summary = generate_summary(all_findings)
-        print_summary_table(summary, title="🔍 Security Scan Results Summary")
+    # Normalize findings (ensures Category/Severity/Description present and removes clear "safe" items)
+    normalized = normalize_findings(all_findings, exclude_safe=True)
 
+    # Generate summary
+    summary = generate_summary(normalized)
+
+    # Compute dynamic CVSS overrides
+    cvss_overrides = compute_cvss_overrides_from_findings(normalized)
+
+    # Print table with overrides
+    print_summary_table(summary, title="Security Scan Results Summary", cvss_overrides=cvss_overrides)
+
+    # If there are findings, keep the existing interactive / export flow.
+    if normalized:
         # === NEW: Ask if user wants to generate interactive HTML report ===
         print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
-        generate_report = input(Fore.YELLOW + "\n📊 Generate interactive HTML report? (y/n): " + Style.RESET_ALL).strip().lower()
-        
+        generate_report = input(Fore.YELLOW + "\nGenerate interactive HTML report? (y/n): " + Style.RESET_ALL).strip().lower()
+
         if generate_report == 'y':
             # Generate filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             html_filename = f"security_scan_report_{timestamp}.html"
-            
-            print(Fore.CYAN + f"\n🔨 Generating interactive report..." + Style.RESET_ALL)
-            
+
+            print(Fore.CYAN + f"\nGenerating interactive report..." + Style.RESET_ALL)
+
             success = generate_interactive_html_report(
                 findings=all_findings,
                 summary=summary,
                 filename=html_filename,
                 target_url=url
             )
-            
+
             if success:
                 print(Fore.GREEN + f"\n✅ Report generated successfully!" + Style.RESET_ALL)
                 print(Fore.CYAN + f"   📁 File: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
                 print(Fore.CYAN + f"   🌐 Opening in browser..." + Style.RESET_ALL)
-                
+
                 # Automatically open in browser
                 try:
                     webbrowser.open('file://' + os.path.abspath(html_filename))
@@ -370,22 +382,22 @@ def main():
                     print(Fore.YELLOW + f"   Please open manually: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
             else:
                 print(Fore.RED + "\n✗ Failed to generate report" + Style.RESET_ALL)
-        
-        # === LEGACY: Option for direct CSV/JSON export (without interactive HTML) ===
+
         else:
+            # === LEGACY: Option for direct CSV/JSON export (without interactive HTML) ===
             export_legacy = input(Fore.YELLOW + "\nExport to CSV or JSON directly? (y/n): " + Style.RESET_ALL).strip().lower()
-            
+
             if export_legacy == 'y':
                 print(Fore.CYAN + "\nAvailable export formats:" + Style.RESET_ALL)
                 print("  1. JSON  – Structured data (for analysis or integration)")
                 print("  2. CSV   – Table summary (for spreadsheets)")
                 print("  3. Both  – Export both formats")
-                
+
                 fmt_choice = input(Fore.YELLOW + "\nEnter your choice: " + Style.RESET_ALL).strip().lower()
-                
+
                 export_json_flag = fmt_choice in ['1', '3', 'json', 'both']
                 export_csv_flag = fmt_choice in ['2', '3', 'csv', 'both']
-                
+
                 # --- JSON Export ---
                 if export_json_flag:
                     json_fname = input("Enter JSON filename (default: security_scan_report.json): ").strip()
@@ -397,7 +409,7 @@ def main():
                         export_to_json(all_findings, summary, filename=json_fname, target_url=url)
                     except Exception as e:
                         print(Fore.RED + f"[ERROR] export_to_json failed: {e}" + Style.RESET_ALL)
-                
+
                 # --- CSV Export ---
                 if export_csv_flag:
                     csv_fname = input("Enter CSV filename (default: security_findings_summary.csv): ").strip()
@@ -411,11 +423,11 @@ def main():
                         print(Fore.RED + f"[ERROR] export_summary_csv failed: {e}" + Style.RESET_ALL)
 
     else:
-        print(Fore.GREEN + "\n✅ No security findings detected across all categories!" + Style.RESET_ALL)
+        print(Fore.GREEN + "\n✓ No security findings detected across all categories!" + Style.RESET_ALL)
 
-    print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
-    print(Fore.GREEN + "Security scan complete. Thank you for using WebSecScan!" + Style.RESET_ALL)
-    print(Fore.CYAN + "=" * 80 + "\n" + Style.RESET_ALL)
+    print(Fore.GREEN + "\n" + "—" * 80 + Style.RESET_ALL)
+    print(Fore.GREEN + "         Security scan complete. Thank you for using WebSecScan!" + Style.RESET_ALL)
+    print(Fore.GREEN + "—" * 80 + "\n" + Style.RESET_ALL)
 
 
 if __name__ == "__main__":

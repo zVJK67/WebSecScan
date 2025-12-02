@@ -77,9 +77,11 @@ def analyze_cors(
 
     # Use the fake_origin argument — do not prompt inside this module.
     if verbose:
-        print("**********************************************************")
+        print("\nPerforming CORS test with Target URL and a Test Origin...")
+        print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
         print("Target URL: " + target)
-        print(f"Test Origin: {fake_origin}")
+        print(f"Test Origin: {fake_origin}\n")
+        print(Fore.YELLOW + f"Response status:" + Style.RESET_ALL)
 
     # --- Step 1: Original requests (no Origin) ---
     orig_get = None
@@ -149,8 +151,8 @@ def analyze_cors(
 
     # --- Display observed headers (verbose mode only) ---
     if verbose:
-        print("\n**********************************************************")
-        print("CORS Headers Observed")
+        print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
+        print("\nTesting Result")
 
         def _print_headers_table(title: str, headers: Dict[str, Optional[str]]) -> None:
             """Print headers in a clean table format"""
@@ -322,7 +324,7 @@ def analyze_cors(
                 })
 
     # --- Print findings in the desired format ---
-    print("\nCORS Security Analysis")
+    print(Fore.CYAN + f"\nCORS Security Analysis" + Style.RESET_ALL)
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
     if findings:
@@ -330,14 +332,14 @@ def analyze_cors(
         print("Severity: High")
         print("CVSS: 8.3 (AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:L/A:N)")
         print("\nFindings:")
-        print("`" * 60)
+        print(Fore.CYAN + f"``````````````````````````````````````````````````````````````````````````````````" + Style.RESET_ALL)
         for idx, f in enumerate(findings, 1):
-            print(f"\n{idx}. {f['Type']}")
+            print(f"{idx}. {f['Type']}")
             print(f"   Detail: {f['Detail']}")
-            print(f"   Recommendation: {f['Recommendation']}")
+            print(f"   Recommendation: {f['Recommendation']}\n")
     else:
         print("✓ No findings.")
 
-    print(Fore.MAGENTA + "\n═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
     return findings

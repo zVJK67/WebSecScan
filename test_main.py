@@ -5,7 +5,7 @@ from http_header import analyze_security_headers, print_findings
 from http_method import check_and_print_http_methods
 from cookie_checker import analyze_cookies
 from cors_checker import analyze_cors
-from ssl_tls import run_ssl_check, check_ssl_tls
+from test2 import run_ssl_check, check_ssl_tls
 from server_info import get_server_info, print_server_info
 from test import normalize_findings, generate_summary, print_summary_table, compute_cvss_overrides_from_findings
 from path_traversal import test_path_traversal, print_path_traversal_results

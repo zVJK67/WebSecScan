@@ -323,7 +323,7 @@ def test_path_traversal(
         })
 
     if verbose:
-        print(Fore.CYAN + f"[done] tests run: {tests_run}" + Style.RESET_ALL)
+        print(Fore.GREEN + f"[done] tests run: {tests_run}" + Style.RESET_ALL)
 
     return findings
 
@@ -335,7 +335,7 @@ def print_path_traversal_results(findings: List[Dict]) -> None:
     
     # Print section header
     print(Fore.CYAN + "\nPath Traversal" + Style.RESET_ALL)
-    print("=" * 64)
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
     
     if not findings:
         # No findings case
@@ -345,11 +345,11 @@ def print_path_traversal_results(findings: List[Dict]) -> None:
     
     # Fixed risk rating
     print("Risk Rating:")
-    print(f"Severity: {Fore.RED}High{Style.RESET_ALL}")
+    print(f"Severity: High")
     print("CVSS: 7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)")
     
     print("\nFindings:")
-    print("`" * 80)
+    print(Fore.CYAN + f"``````````````````````````````````````````````````````````````````````````````````" + Style.RESET_ALL)
     
     for idx, f in enumerate(findings, 1):
         endpoint = f.get("Endpoint", "/")
@@ -357,24 +357,22 @@ def print_path_traversal_results(findings: List[Dict]) -> None:
         behavior = f.get("Behavior", "Server behavior changed")
         
         print(f"{idx}. Endpoint: {endpoint}")
-        print("   Payloads Triggering:")
+        print("\n   Payloads Triggering:")
         for payload in payloads:
             print(f"     - {payload}")
-        print(f"   Behavior: {behavior}")
+        print(f"\n   Behavior: {behavior}")
         
         # Add separator between findings (but not after the last one)
         if idx < len(findings):
             print("─" * 64)
     
-    print("`" * 80)
-    
     # Recommendations section
-    print(f"\n{Fore.RED}[!] Recommendation{Style.RESET_ALL}")
-    print("─" * 64)
-    print("   • Validate and sanitize user-supplied paths. Normalize and resolve paths before use.")
-    print("   • Do not pass user input directly into file system functions.")
-    print("   • Restrict file access to a fixed, safe base directory (enforce an allowlist).")
-    print("   • Return generic error messages to avoid revealing internal directory structure.")
-    print("   • Monitor logs for repeated invalid path requests.")
+    print(f"\n{Fore.YELLOW}Recommendation{Style.RESET_ALL}")
+    Fore.YELLOW + "**********************************************************" + Style.RESET_ALL
+    print("   - Validate and sanitize user-supplied paths. Normalize and resolve paths before use.")
+    print("   - Do not pass user input directly into file system functions.")
+    print("   - Restrict file access to a fixed, safe base directory (enforce an allowlist).")
+    print("   - Return generic error messages to avoid revealing internal directory structure.")
+    print("   - Monitor logs for repeated invalid path requests.")
     
-    print("=" * 64)
+    print(Fore.MAGENTA + "\n═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)

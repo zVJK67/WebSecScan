@@ -145,8 +145,8 @@ def print_dir_scan_results(findings: List[Dict], show_counts: bool = False) -> N
     filtered_findings = [f for f in findings if f.get("RelPath") != "/"]
     
     # Print section header
-    print(Fore.CYAN + "\nDirectory & File Exposure" + Style.RESET_ALL)
-    print("=" * 64)
+    print(Fore.CYAN + "\nSensitive File and Directory Exposure" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
     
     if not filtered_findings:
         # No findings case
@@ -156,11 +156,11 @@ def print_dir_scan_results(findings: List[Dict], show_counts: bool = False) -> N
     
     # Calculate overall risk rating (fixed values)
     print("Risk Rating:")
-    print(f"Severity: {Fore.YELLOW}Medium{Style.RESET_ALL}")
+    print("Severity: Medium")
     print("CVSS: 5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)")
     
     print("\nFindings:")
-    print("─" * 80)
+    print(Fore.CYAN + f"``````````````````````````````````````````````````````````````````````````````````" + Style.RESET_ALL)
     
     # Print findings without severity grouping
     for idx, f in enumerate(filtered_findings, 1):
@@ -186,8 +186,8 @@ def print_dir_scan_results(findings: List[Dict], show_counts: bool = False) -> N
         print()
     
     # Recommendations section
-    print(f"{Fore.RED}[!] Recommendations{Style.RESET_ALL}")
-    print("─" * 64)
+    print(f"{Fore.YELLOW}Recommendations{Style.RESET_ALL}")
+    Fore.YELLOW + "**********************************************************" + Style.RESET_ALL
     
     # Check what types of findings exist to provide targeted recommendations
     has_git = any(".git" in f.get("RelPath", "").lower() for f in filtered_findings)
@@ -220,6 +220,6 @@ def print_dir_scan_results(findings: List[Dict], show_counts: bool = False) -> N
     ])
     
     for rec in recommendations:
-        print(f"   • {rec}")
+        print(f"   - {rec}")
     
-    print("=" * 64)
+    print(Fore.MAGENTA + "\n═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)

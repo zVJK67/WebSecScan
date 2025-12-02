@@ -187,7 +187,7 @@ def print_findings(findings: List[Dict[str, Any]], raw_headers: Dict[str, str], 
     misconfigured_count = len([f for f in issues if f.get("Status") == "Misconfigured"])
 
     # Header lines
-    print(Fore.CYAN + "HTTP Security Header Analysis Results" + Style.RESET_ALL)
+    print(Fore.CYAN + "\nHTTP Security Header Analysis Results" + Style.RESET_ALL)
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
     # ============================================================

@@ -419,11 +419,12 @@ def print_server_info(info: Dict[str, Any], findings: List[Dict[str, Any]]) -> N
     """
     Print server information and findings in the new format.
     """
-    print(Fore.CYAN + "Server Information Leak" + Style.RESET_ALL)
+    print(Fore.CYAN + "\nServer Information Disclousre" + Style.RESET_ALL)
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
     
     # Target information with asterisk borders
-    print(Fore.YELLOW + "*" * 64 + Style.RESET_ALL)
+    print(Fore.WHITE + f"Details"+ Style.RESET_ALL)
+    print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
     print(Fore.WHITE + f"Target URL: {info.get('url')}")
     print(Fore.WHITE + f"Hostname: {info.get('hostname')}")
     ips = info.get("ips") or []
@@ -431,7 +432,7 @@ def print_server_info(info: Dict[str, Any], findings: List[Dict[str, Any]]) -> N
         print(Fore.WHITE + f"Resolved IPs: {', '.join(ips)}")
     else:
         print(Fore.WHITE + "Resolved IPs: N/A")
-    print(Fore.YELLOW + "*" * 64 + Style.RESET_ALL)
+    print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
     
     # Risk Rating section
     print(Fore.WHITE + "\nRisk Rating:")
@@ -441,7 +442,7 @@ def print_server_info(info: Dict[str, Any], findings: List[Dict[str, Any]]) -> N
     # Findings section
     if findings:
         print(Fore.WHITE + "\nFindings:")
-        print(Fore.WHITE + "`" * 80)
+        print(Fore.CYAN + f"``````````````````````````````````````````````````````````````````````````````````" + Style.RESET_ALL)
         
         for i, f in enumerate(findings, 1):
             print(Fore.WHITE + f"{i}. {f.get('Header')}")
@@ -452,8 +453,8 @@ def print_server_info(info: Dict[str, Any], findings: List[Dict[str, Any]]) -> N
         
         # Add note about fingerprinting accuracy
         print(Fore.YELLOW + "\nNote: Server fingerprinting based on response patterns is not 100% accurate. " + Style.RESET_ALL)
-        print(Fore.YELLOW + "Manual verification is recommended to confirm the actual server software in use." + Style.RESET_ALL)
+        print(Fore.YELLOW + "      Manual verification is recommended to confirm the actual server software in use." + Style.RESET_ALL)
     else:
-        print(Fore.GREEN + "\nFindings: None - No server information exposure detected." + Style.RESET_ALL)
+        print(Fore.GREEN + "\n✓ No server information exposure detected." + Style.RESET_ALL)
     
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
