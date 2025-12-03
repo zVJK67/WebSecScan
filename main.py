@@ -321,9 +321,7 @@ def main():
     # ========================================================================
     # === FINDINGS SUMMARY: Aggregate all findings and display summary table
     # ========================================================================
-    print(Fore.GREEN + "\n═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
-    print(Fore.GREEN + "                      SCAN COMPLETED ! GENERATING SUMMARY..." + Style.RESET_ALL)
-    print(Fore.GREEN + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    print(Fore.BLUE + "Generating Summary..." + Style.RESET_ALL)
 
     # Combine all findings into one list (same as before)
     all_findings = []
@@ -425,9 +423,9 @@ def main():
     else:
         print(Fore.GREEN + "\n✓ No security findings detected across all categories!" + Style.RESET_ALL)
 
-    print(Fore.GREEN + "\n" + "—" * 80 + Style.RESET_ALL)
-    print(Fore.GREEN + "         Security scan complete. Thank you for using WebSecScan!" + Style.RESET_ALL)
-    print(Fore.GREEN + "—" * 80 + "\n" + Style.RESET_ALL)
+    print(Fore.GREEN + "\n========================================================================================================================" + Style.RESET_ALL)
+    print(Fore.GREEN + "                    Security Scan Completed ! Thank you for using WebSecScan" + Style.RESET_ALL)
+    print(Fore.GREEN + "========================================================================================================================" + Style.RESET_ALL)
 
 
 if __name__ == "__main__":

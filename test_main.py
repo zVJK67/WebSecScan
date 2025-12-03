@@ -5,12 +5,12 @@ from http_header import analyze_security_headers, print_findings
 from http_method import check_and_print_http_methods
 from cookie_checker import analyze_cookies
 from cors_checker import analyze_cors
-from test2 import run_ssl_check, check_ssl_tls
+from ssl_tls import run_ssl_check, check_ssl_tls
 from server_info import get_server_info, print_server_info
-from test import normalize_findings, generate_summary, print_summary_table, compute_cvss_overrides_from_findings
+from findings_summary import normalize_findings, generate_summary, print_summary_table, compute_cvss_overrides_from_findings
 from path_traversal import test_path_traversal, print_path_traversal_results
 from directory_scan import scan_common_paths, print_dir_scan_results
-from export_findings import generate_interactive_html_report, export_to_json
+from test2 import generate_interactive_html_report, export_to_json
 
 from colorama import Fore, Style, init
 import urllib.parse
@@ -140,11 +140,11 @@ def main():
     header_findings = []
     method_findings = []
     server_findings = []
-    dir_findings = []      # Directory scan findings
+    dir_findings = []      
     cookie_findings = []
     cors_findings = []
     ssl_findings = []
-    pt_findings = []       # Path Traversal
+    pt_findings = []       
 
     # === Step 1: Header Check ===
     print(Fore.CYAN + "\n[1/8] Checking HTTP headers..." + Style.RESET_ALL)
@@ -186,8 +186,7 @@ def main():
     # === Step 3: Server Info Check (ENHANCED) ===
     # Replaced to match requested output format while keeping server_info.py unchanged.
     print(Fore.CYAN + "\n[3/8] Checking for exposed server details..." + Style.RESET_ALL)
-    # Add the visual spacing the sample output shows
-    print("\n\n")
+
     t0 = time.time()
     try:
         # call the existing function (no change to server_info.py)
@@ -261,7 +260,7 @@ def main():
     print(Fore.CYAN + "\n[7/8] Checking for basic Path Traversal patterns..." + Style.RESET_ALL)
     
     # Ask for test count
-    test_count_input = input("How many test run? (press Enter for default run 300): ").strip()
+    test_count_input = input("\nHow many test run? (press Enter for default run 300): ").strip()
     if test_count_input:
         try:
             max_tests = int(test_count_input)
@@ -319,12 +318,10 @@ def main():
     # Tag SSL findings
     ssl_findings = _tag_findings_with_category(ssl_findings, "SSL/TLS")
 
-        # ========================================================================
+    # ========================================================================
     # === FINDINGS SUMMARY: Aggregate all findings and display summary table
     # ========================================================================
-    print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
-    print(Fore.CYAN + "SCAN COMPLETED - GENERATING SUMMARY" + Style.RESET_ALL)
-    print(Fore.CYAN + "=" * 80 + Style.RESET_ALL)
+    print(Fore.BLUE + "Generating Summary..." + Style.RESET_ALL)
 
     # Combine all findings into one list (same as before)
     all_findings = []
@@ -347,20 +344,20 @@ def main():
     cvss_overrides = compute_cvss_overrides_from_findings(normalized)
 
     # Print table with overrides
-    print_summary_table(summary, title="🔍 Security Scan Results Summary", cvss_overrides=cvss_overrides)
+    print_summary_table(summary, title="Security Scan Results Summary", cvss_overrides=cvss_overrides)
 
     # If there are findings, keep the existing interactive / export flow.
     if normalized:
         # === NEW: Ask if user wants to generate interactive HTML report ===
         print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
-        generate_report = input(Fore.YELLOW + "\n📊 Generate interactive HTML report? (y/n): " + Style.RESET_ALL).strip().lower()
+        generate_report = input(Fore.YELLOW + "\nGenerate interactive HTML report? (y/n): " + Style.RESET_ALL).strip().lower()
 
         if generate_report == 'y':
             # Generate filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             html_filename = f"security_scan_report_{timestamp}.html"
 
-            print(Fore.CYAN + f"\n🔨 Generating interactive report..." + Style.RESET_ALL)
+            print(Fore.CYAN + f"\nGenerating interactive report..." + Style.RESET_ALL)
 
             success = generate_interactive_html_report(
                 findings=all_findings,
@@ -424,11 +421,11 @@ def main():
                         print(Fore.RED + f"[ERROR] export_summary_csv failed: {e}" + Style.RESET_ALL)
 
     else:
-        print(Fore.GREEN + "\n✅ No security findings detected across all categories!" + Style.RESET_ALL)
+        print(Fore.GREEN + "\n✓ No security findings detected across all categories!" + Style.RESET_ALL)
 
-    print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
-    print(Fore.GREEN + "Security scan complete. Thank you for using WebSecScan!" + Style.RESET_ALL)
-    print(Fore.CYAN + "=" * 80 + "\n" + Style.RESET_ALL)
+    print(Fore.GREEN + "\n========================================================================================================================" + Style.RESET_ALL)
+    print(Fore.GREEN + "                    Security Scan Completed ! Thank you for using WebSecScan" + Style.RESET_ALL)
+    print(Fore.GREEN + "========================================================================================================================" + Style.RESET_ALL)
 
 
 if __name__ == "__main__":

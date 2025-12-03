@@ -1,0 +1,1579 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>WebSecScan Security Report</title>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* Global reset */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html,body { height:100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      color: #203040;
+      background: #f2f4f8;
+      padding: 20px;
+      -webkit-font-smoothing:antialiased;
+    }
+
+    /* A4 sizing for print and WeasyPrint */
+    .page {
+      width: 210mm;               /* A4 width */
+      margin: 0 auto;
+      background: white;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 8px 30px rgba(15,23,42,0.12);
+    }
+
+    /* Header */
+    .report-header {
+      background: linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+      color: white;
+      padding: 28px 32px;
+    }
+    .report-title { font-size: 28px; font-weight:800; margin-bottom:6px; }
+    .report-sub { color: rgba(255,255,255,0.92); opacity:0.95; font-size:14px; }
+
+    /* Meta */
+    .meta {
+      display:flex;
+      gap:20px;
+      padding:18px 32px;
+      align-items:center;
+      border-bottom: 1px solid #eef2fb;
+    }
+    .meta .meta-item { font-size:13px; color:#2f3a47; }
+    .meta code { background:#eef3ff; padding:3px 6px; border-radius:4px; font-family:monospace; }
+
+    /* Summary area */
+    .summary {
+      padding: 22px 32px 30px 32px;
+      display:flex;
+      gap:18px;
+      align-items:flex-start;
+    }
+    .left-summary { width: 480px; min-width:300px; }
+    .right-summary { flex:1; }
+
+    .stat-cards {
+      display:flex;
+      gap:12px;
+      margin-bottom:14px;
+    }
+    .card {
+      flex:1;
+      background:linear-gradient(180deg,#fff 0,#f7fbff 100%);
+      border-radius:8px;
+      padding:12px;
+      border:1px solid #e7eefc;
+      text-align:center;
+    }
+    .card .num { font-size:22px; font-weight:800; color:#243140; }
+    .card .label { font-size:12px; color:#6b7280; margin-top:6px; text-transform:uppercase; letter-spacing:0.6px; }
+
+    /* Table summary */
+    table.summary-table { width:100%; border-collapse:collapse; margin-top:10px; }
+    table.summary-table th, table.summary-table td {
+      padding:10px 8px; text-align:left; border-bottom:1px solid #f1f6ff;
+      font-size:13px;
+    }
+    table.summary-table th { background:#f8fbff; color:#243140; font-weight:700; font-size:12px; text-transform:uppercase; }
+    table.summary-table tr:hover td { background:#fbfdff; }
+
+    /* Chart container */
+    .chart-wrapper {
+      background: white;
+      border-radius:8px;
+      padding:12px;
+      border:1px solid #eef2fb;
+      display:flex;
+      gap:12px;
+      align-items:center;
+      justify-content:center;
+    }
+    #categoryChart { width:260px; height:260px; }
+
+    /* Details */
+    .details { padding: 24px 32px 40px; }
+    .details h2 { font-size:20px; color:#243140; border-bottom:3px solid #eef3ff; padding-bottom:10px; margin-bottom:18px; }
+
+    .category-section {
+      margin-bottom:20px;
+      padding:16px;
+      background: white;
+      border-radius:8px;
+      border:1px solid #eef5ff;
+    }
+    .category-title {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      margin-bottom:12px;
+    }
+    .category-title .left { font-weight:700; font-size:16px; color:#243140; }
+    .badge { font-size:12px; color:#3b4a5a; background:#f3f7ff; padding:6px 8px; border-radius:6px; }
+
+    .finding-item {
+      background:#fbfdff;
+      border-left:4px solid #667eea;
+      padding:12px;
+      margin-bottom:12px;
+      border-radius:6px;
+    }
+    .finding-header { display:flex; gap:12px; align-items:center; margin-bottom:8px; }
+    .finding-number { background:#6c757d;color:white;padding:4px 10px;border-radius:999px;font-weight:700; }
+    .severity-badge { padding:6px 10px;border-radius:20px;color:white;font-weight:700;font-size:12px; }
+    .sev-high { background:#dc3545; }
+    .sev-medium { background:#fd7e14; }
+    .sev-low { background:#28a745; }
+
+    .finding-description { color:#2f3a47; margin-bottom:8px; }
+    .detail-item { font-size:13px; background:white;padding:8px;border-radius:6px;border:1px solid #eef3ff; margin-bottom:6px; }
+    .detail-item code { background:#f1f6ff; padding:2px 6px; border-radius:4px; font-family:monospace; }
+
+    .recommend { background:#fff8e6; border-left:4px solid #f59e0b; padding:10px;border-radius:6px; }
+
+    /* footer */
+    .report-footer { background:#f8fafc; padding:14px 32px; color:#5b6b7a; font-size:13px; border-top:1px solid #eef2fb; text-align:center; }
+
+    /* small screen fallback (not used for print) */
+    @media (max-width:900px) {
+      .page { width:calc(100% - 40px); }
+      .summary { flex-direction:column; }
+      .left-summary { width:100%; }
+    }
+
+    /* Print friendly / WeasyPrint */
+    @page { size: A4 portrait; margin: 12mm 12mm 12mm 12mm; }
+    @media print {
+      body { background: white; }
+      .page { box-shadow:none; border-radius:0; width: auto; }
+      .chart-wrapper, .card, .summary-table { page-break-inside: avoid; }
+      .report-header, .meta, .report-footer { -webkit-print-color-adjust: exact; }
+      /* hide interactive UI if added */
+      .no-print { display:none !important; }
+    }
+
+    /* small helper link style used by chart click target */
+    .anchor { display:block; padding-top:40px; margin-top:-40px; } /* offset for scroll */
+  </style>
+</head>
+<body>
+  <div class="page" role="document">
+    <!-- HEADER -->
+    <header class="report-header">
+      <div class="report-title">🛡️ WebSecScan Security Report</div>
+      <div class="report-sub">Comprehensive Security Analysis</div>
+    </header>
+
+    <!-- META -->
+    <div class="meta">
+      <div class="meta-item"><strong>Target:</strong> <code>http://127.0.0.1:4000</code></div>
+      <div class="meta-item"><strong>Scan Time:</strong> 2025-12-04 02:46:22</div>
+      <div class="meta-item"><strong>Total Issues:</strong> 43</div>
+      <div style="margin-left:auto;font-size:12px;color:#6b7280;">Generated by WebSecScan</div>
+    </div>
+
+    <!-- SUMMARY -->
+    <section class="summary" aria-label="Executive summary">
+      <div class="left-summary">
+        <div class="stat-cards">
+          <div class="card">
+            <div class="num">43</div>
+            <div class="label">Total Issues</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:#b91c1c;">14</div>
+            <div class="label">High</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:#c2410c;">15</div>
+            <div class="label">Medium</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:#0f766e;">14</div>
+            <div class="label">Low</div>
+          </div>
+        </div>
+
+        <table class="summary-table" role="table" aria-label="Findings summary by category">
+          <thead>
+            <tr><th>Category</th><th>High</th><th>Medium</th><th>Low</th><th>Total</th></tr>
+          </thead>
+          <tbody>
+            
+            <tr>
+              <td>Security Headers</td>
+              <td>0</td>
+              <td>0</td>
+              <td>8</td>
+              <td>8</td>
+            </tr>
+            
+            <tr>
+              <td>Server Information</td>
+              <td>0</td>
+              <td>0</td>
+              <td>1</td>
+              <td>1</td>
+            </tr>
+            
+            <tr>
+              <td>Cookie Security</td>
+              <td>1</td>
+              <td>0</td>
+              <td>0</td>
+              <td>1</td>
+            </tr>
+            
+            <tr>
+              <td>CORS Security</td>
+              <td>0</td>
+              <td>0</td>
+              <td>5</td>
+              <td>5</td>
+            </tr>
+            
+            <tr>
+              <td>Directory Exposure</td>
+              <td>12</td>
+              <td>15</td>
+              <td>0</td>
+              <td>27</td>
+            </tr>
+            
+            <tr>
+              <td>SSL/TLS</td>
+              <td>1</td>
+              <td>0</td>
+              <td>0</td>
+              <td>1</td>
+            </tr>
+            
+          </tbody>
+        </table>
+      </div>
+
+      <div class="right-summary">
+        <div class="chart-wrapper" role="img" aria-label="Vulnerability categories chart">
+          <canvas id="categoryChart" aria-hidden="false" title="Click a slice to go to details"></canvas>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:#5b6b7a;">
+          Click a slice to jump to the details section for that category.
+        </div>
+      </div>
+    </section>
+
+    <!-- DETAILED FINDINGS -->
+    <section class="details" id="details">
+      <h2>🔍 Detailed Findings</h2>
+
+      
+        
+        <a id="anchor-0" class="anchor" aria-hidden="true"></a>
+        <div class="category-section" data-category="Security Headers">
+          <div class="category-title">
+            <div class="left">Security Headers</div>
+            <div class="badge">High: 0 &nbsp; | &nbsp; Medium: 0 &nbsp; | &nbsp; Low: 8</div>
+          </div>
+
+          
+          
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Security-Headers-1">
+                <div class="finding-header">
+                  <div class="finding-number">#1</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-Security-Headers-1" class="finding-description">
+                  Content-Security-Policy: default-src 'self'; frame-ancestors 'none'
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                    <div><strong>Status:</strong> Missing</div>
+                  
+                  
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">Content-Security-Policy: default-src 'self'; frame-ancestors 'none'</div>
+                </div>
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Security-Headers-2">
+                <div class="finding-header">
+                  <div class="finding-number">#2</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-Security-Headers-2" class="finding-description">
+                  Strict-Transport-Security: max-age=31536000; includeSubDomains
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                    <div><strong>Status:</strong> Missing</div>
+                  
+                  
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">Strict-Transport-Security: max-age=31536000; includeSubDomains</div>
+                </div>
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Security-Headers-3">
+                <div class="finding-header">
+                  <div class="finding-number">#3</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-Security-Headers-3" class="finding-description">
+                  X-XSS-Protection: 0
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                    <div><strong>Status:</strong> Missing</div>
+                  
+                  
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">X-XSS-Protection: 0</div>
+                </div>
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Security-Headers-4">
+                <div class="finding-header">
+                  <div class="finding-number">#4</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-Security-Headers-4" class="finding-description">
+                  Cache-Control: no-store, no-cache
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                    <div><strong>Status:</strong> Misconfigured</div>
+                  
+                  
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">Cache-Control: no-store, no-cache</div>
+                </div>
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Security-Headers-5">
+                <div class="finding-header">
+                  <div class="finding-number">#5</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-Security-Headers-5" class="finding-description">
+                  Referrer-Policy: strict-origin-when-cross-origin
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                    <div><strong>Status:</strong> Missing</div>
+                  
+                  
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">Referrer-Policy: strict-origin-when-cross-origin</div>
+                </div>
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Security-Headers-6">
+                <div class="finding-header">
+                  <div class="finding-number">#6</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-Security-Headers-6" class="finding-description">
+                  Cross-Origin-Opener-Policy: same-origin
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                    <div><strong>Status:</strong> Missing</div>
+                  
+                  
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">Cross-Origin-Opener-Policy: same-origin</div>
+                </div>
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Security-Headers-7">
+                <div class="finding-header">
+                  <div class="finding-number">#7</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-Security-Headers-7" class="finding-description">
+                  Cross-Origin-Embedder-Policy: require-corp
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                    <div><strong>Status:</strong> Missing</div>
+                  
+                  
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">Cross-Origin-Embedder-Policy: require-corp</div>
+                </div>
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Security-Headers-8">
+                <div class="finding-header">
+                  <div class="finding-number">#8</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-Security-Headers-8" class="finding-description">
+                  Cross-Origin-Resource-Policy: same-site
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                    <div><strong>Status:</strong> Missing</div>
+                  
+                  
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">Cross-Origin-Resource-Policy: same-site</div>
+                </div>
+                
+              </article>
+            
+          
+        </div>
+      
+        
+        <a id="anchor-1" class="anchor" aria-hidden="true"></a>
+        <div class="category-section" data-category="Server Information">
+          <div class="category-title">
+            <div class="left">Server Information</div>
+            <div class="badge">High: 0 &nbsp; | &nbsp; Medium: 0 &nbsp; | &nbsp; Low: 1</div>
+          </div>
+
+          
+          
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Server-Information-1">
+                <div class="finding-header">
+                  <div class="finding-number">#1</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-Server-Information-1" class="finding-description">
+                  Add a reverse proxy or WAF to normalize responses and reduce fingerprinting accuracy.
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                  
+                  
+                    <div><strong>Detail:</strong>
+                      <pre style="white-space:pre-wrap; font-family:monospace; font-size:12px; margin-top:6px;">The server's unique response patterns match known fingerprints -> lighttpd
+   Matching headers: content-type, content-length, date</pre>
+                    </div>
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">Add a reverse proxy or WAF to normalize responses and reduce fingerprinting accuracy.</div>
+                </div>
+                
+              </article>
+            
+          
+        </div>
+      
+        
+        <a id="anchor-2" class="anchor" aria-hidden="true"></a>
+        <div class="category-section" data-category="Cookie Security">
+          <div class="category-title">
+            <div class="left">Cookie Security</div>
+            <div class="badge">High: 1 &nbsp; | &nbsp; Medium: 0 &nbsp; | &nbsp; Low: 0</div>
+          </div>
+
+          
+          
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Cookie-Security-1">
+                <div class="finding-header">
+                  <div class="finding-number">#1</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-Cookie-Security-1" class="finding-description">
+                  Missing flags: HttpOnly, Secure, Path
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+          
+        </div>
+      
+        
+        <a id="anchor-3" class="anchor" aria-hidden="true"></a>
+        <div class="category-section" data-category="CORS Security">
+          <div class="category-title">
+            <div class="left">CORS Security</div>
+            <div class="badge">High: 0 &nbsp; | &nbsp; Medium: 0 &nbsp; | &nbsp; Low: 5</div>
+          </div>
+
+          
+          
+            
+              <article class="finding-item" role="article" aria-labelledby="f-CORS-Security-1">
+                <div class="finding-header">
+                  <div class="finding-number">#1</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-CORS-Security-1" class="finding-description">
+                  Specify only trusted, legitimate domains instead of using a wildcard *.
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                  
+                  
+                    <div><strong>Detail:</strong>
+                      <pre style="white-space:pre-wrap; font-family:monospace; font-size:12px; margin-top:6px;">Access-Control-Allow-Origin: *</pre>
+                    </div>
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">Specify only trusted, legitimate domains instead of using a wildcard *.</div>
+                </div>
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-CORS-Security-2">
+                <div class="finding-header">
+                  <div class="finding-number">#2</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-CORS-Security-2" class="finding-description">
+                  Restrict allowed methods to only the application requires (eg. GET, POST).
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                  
+                  
+                    <div><strong>Detail:</strong>
+                      <pre style="white-space:pre-wrap; font-family:monospace; font-size:12px; margin-top:6px;">Access-Control-Allow-Methods: GET,HEAD,PUT,PATCH,POST,DELETE
+          -The server allows more HTTP methods than necessary, increasing exposure.</pre>
+                    </div>
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">Restrict allowed methods to only the application requires (eg. GET, POST).</div>
+                </div>
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-CORS-Security-3">
+                <div class="finding-header">
+                  <div class="finding-number">#3</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-CORS-Security-3" class="finding-description">
+                  Set a reasonable Access-Control-Max-Age (eg. 300–600 seconds) to help browsers reuse valid preflight results without adding performance overhead.
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                  
+                  
+                    <div><strong>Detail:</strong>
+                      <pre style="white-space:pre-wrap; font-family:monospace; font-size:12px; margin-top:6px;">The server does not include the Access-Control-Max-Age header.</pre>
+                    </div>
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">Set a reasonable Access-Control-Max-Age (eg. 300–600 seconds) to help browsers reuse valid preflight results without adding performance overhead.</div>
+                </div>
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-CORS-Security-4">
+                <div class="finding-header">
+                  <div class="finding-number">#4</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-CORS-Security-4" class="finding-description">
+                  Only enable CORS for specific API endpoints that truly require cross-origin requests. Disable it for login pages or sensitive routes.
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                  
+                  
+                    <div><strong>Detail:</strong>
+                      <pre style="white-space:pre-wrap; font-family:monospace; font-size:12px; margin-top:6px;">The server appears to return CORS headers even for endpoints that do not require cross-origin access.</pre>
+                    </div>
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">Only enable CORS for specific API endpoints that truly require cross-origin requests. Disable it for login pages or sensitive routes.</div>
+                </div>
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-CORS-Security-5">
+                <div class="finding-header">
+                  <div class="finding-number">#5</div>
+                  
+                  <div class="severity-badge sev-low">Low</div>
+                </div>
+
+                <div id="f-CORS-Security-5" class="finding-description">
+                  Update the preflight validation to reject unapproved origins before responding with CORS permissions.
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                  
+                  
+                    <div><strong>Detail:</strong>
+                      <pre style="white-space:pre-wrap; font-family:monospace; font-size:12px; margin-top:6px;">When the scanner sends an OPTIONS request with an untrusted Origin, the server still responds with full permissions, including credentials and multiple allowed methods.</pre>
+                    </div>
+                  
+                </div>
+
+                
+                <div class="recommend" role="note">
+                  <strong>Recommendation:</strong>
+                  <div style="margin-top:6px;">Update the preflight validation to reject unapproved origins before responding with CORS permissions.</div>
+                </div>
+                
+              </article>
+            
+          
+        </div>
+      
+        
+        <a id="anchor-4" class="anchor" aria-hidden="true"></a>
+        <div class="category-section" data-category="Directory Exposure">
+          <div class="category-title">
+            <div class="left">Directory Exposure</div>
+            <div class="badge">High: 12 &nbsp; | &nbsp; Medium: 15 &nbsp; | &nbsp; Low: 0</div>
+          </div>
+
+          
+          
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-1">
+                <div class="finding-header">
+                  <div class="finding-number">#1</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-1" class="finding-description">
+                  Path / returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-2">
+                <div class="finding-header">
+                  <div class="finding-number">#2</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-2" class="finding-description">
+                  Path /robots.txt returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/robots.txt</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-3">
+                <div class="finding-header">
+                  <div class="finding-number">#3</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-3" class="finding-description">
+                  Path /sitemap.xml returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/sitemap.xml</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-4">
+                <div class="finding-header">
+                  <div class="finding-number">#4</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-Directory-Exposure-4" class="finding-description">
+                  Path /.git/ returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/.git/</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-5">
+                <div class="finding-header">
+                  <div class="finding-number">#5</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-Directory-Exposure-5" class="finding-description">
+                  Path /.env returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/.env</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-6">
+                <div class="finding-header">
+                  <div class="finding-number">#6</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-6" class="finding-description">
+                  Path /.htaccess returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/.htaccess</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-7">
+                <div class="finding-header">
+                  <div class="finding-number">#7</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-Directory-Exposure-7" class="finding-description">
+                  Path /config.php returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/config.php</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-8">
+                <div class="finding-header">
+                  <div class="finding-number">#8</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-Directory-Exposure-8" class="finding-description">
+                  Path /config.php.bak returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/config.php.bak</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-9">
+                <div class="finding-header">
+                  <div class="finding-number">#9</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-Directory-Exposure-9" class="finding-description">
+                  Path /config.bak returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/config.bak</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-10">
+                <div class="finding-header">
+                  <div class="finding-number">#10</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-Directory-Exposure-10" class="finding-description">
+                  Path /backup.zip returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/backup.zip</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-11">
+                <div class="finding-header">
+                  <div class="finding-number">#11</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-Directory-Exposure-11" class="finding-description">
+                  Path /wp-config.php returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/wp-config.php</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-12">
+                <div class="finding-header">
+                  <div class="finding-number">#12</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-12" class="finding-description">
+                  Path /admin/ returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/admin/</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-13">
+                <div class="finding-header">
+                  <div class="finding-number">#13</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-13" class="finding-description">
+                  Path /admin/index.php returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/admin/index.php</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-14">
+                <div class="finding-header">
+                  <div class="finding-number">#14</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-Directory-Exposure-14" class="finding-description">
+                  Path /phpinfo.php returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/phpinfo.php</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-15">
+                <div class="finding-header">
+                  <div class="finding-number">#15</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-15" class="finding-description">
+                  Path /server-status returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/server-status</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-16">
+                <div class="finding-header">
+                  <div class="finding-number">#16</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-16" class="finding-description">
+                  Path /.well-known/security.txt returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/.well-known/security.txt</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-17">
+                <div class="finding-header">
+                  <div class="finding-number">#17</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-17" class="finding-description">
+                  Path /.well-known/change-password returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/.well-known/change-password</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-18">
+                <div class="finding-header">
+                  <div class="finding-number">#18</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-Directory-Exposure-18" class="finding-description">
+                  Path /.git/config returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/.git/config</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-19">
+                <div class="finding-header">
+                  <div class="finding-number">#19</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-19" class="finding-description">
+                  Path /.DS_Store returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/.DS_Store</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-20">
+                <div class="finding-header">
+                  <div class="finding-number">#20</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-Directory-Exposure-20" class="finding-description">
+                  Path /.gitignore returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/.gitignore</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-21">
+                <div class="finding-header">
+                  <div class="finding-number">#21</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-21" class="finding-description">
+                  Path /logs/ returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/logs/</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-22">
+                <div class="finding-header">
+                  <div class="finding-number">#22</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-22" class="finding-description">
+                  Path /error_log returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/error_log</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-23">
+                <div class="finding-header">
+                  <div class="finding-number">#23</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-Directory-Exposure-23" class="finding-description">
+                  Path /.htpasswd returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/.htpasswd</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-24">
+                <div class="finding-header">
+                  <div class="finding-number">#24</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-24" class="finding-description">
+                  Path /README returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/README</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-25">
+                <div class="finding-header">
+                  <div class="finding-number">#25</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-25" class="finding-description">
+                  Path /readme.html returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/readme.html</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-26">
+                <div class="finding-header">
+                  <div class="finding-number">#26</div>
+                  
+                  <div class="severity-badge sev-medium">Medium</div>
+                </div>
+
+                <div id="f-Directory-Exposure-26" class="finding-description">
+                  Path /readme.txt returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/readme.txt</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+              <article class="finding-item" role="article" aria-labelledby="f-Directory-Exposure-27">
+                <div class="finding-header">
+                  <div class="finding-number">#27</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-Directory-Exposure-27" class="finding-description">
+                  Path /backup.tar.gz returned HTTP 200.
+                </div>
+
+                <div class="detail-item">
+                  
+                    <div><strong>URL:</strong> <code>http://127.0.0.1:4000/backup.tar.gz</code></div>
+                  
+                  
+                    <div><strong>Status:</strong> 200</div>
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+          
+        </div>
+      
+        
+        <a id="anchor-5" class="anchor" aria-hidden="true"></a>
+        <div class="category-section" data-category="SSL/TLS">
+          <div class="category-title">
+            <div class="left">SSL/TLS</div>
+            <div class="badge">High: 1 &nbsp; | &nbsp; Medium: 0 &nbsp; | &nbsp; Low: 0</div>
+          </div>
+
+          
+          
+            
+              <article class="finding-item" role="article" aria-labelledby="f-SSL/TLS-1">
+                <div class="finding-header">
+                  <div class="finding-number">#1</div>
+                  
+                  <div class="severity-badge sev-high">High</div>
+                </div>
+
+                <div id="f-SSL/TLS-1" class="finding-description">
+                  SSL/TLS error: [WinError 10061] No connection could be made because the target machine actively refused it
+                </div>
+
+                <div class="detail-item">
+                  
+                  
+                  
+                  
+                </div>
+
+                
+              </article>
+            
+          
+        </div>
+      
+    </section>
+
+    <footer class="report-footer">
+      WebSecScan — Web Security Misconfiguration Analyzer · Generated 2025-12-04 02:46:22 · <span style="opacity:.85">Lee Zhi Hui</span>
+    </footer>
+  </div>
+
+  <!-- Inline script to build Chart.js chart and wire click -> scroll -->
+  <script>
+    (function(){
+      // Build category arrays from Jinja-provided "categories"
+      const categories = [
+        
+          { name: "Security Headers", high: 0, medium: 0, low: 8 },
+        
+          { name: "Server Information", high: 0, medium: 0, low: 1 },
+        
+          { name: "Cookie Security", high: 1, medium: 0, low: 0 },
+        
+          { name: "CORS Security", high: 0, medium: 0, low: 5 },
+        
+          { name: "Directory Exposure", high: 12, medium: 15, low: 0 },
+        
+          { name: "SSL/TLS", high: 1, medium: 0, low: 0 }
+        
+      ];
+
+      // Chart values and labels
+      const labels = categories.map(c => c.name);
+      const values = categories.map(c => (c.high + c.medium + c.low));
+      const colors = labels.map((_, i) => {
+        // simple deterministic palette
+        const palette = [
+          '#FF6B6B','#FF9F43','#FFD43B','#6BCB77','#4D96FF','#845EC2','#00C9A7','#FF9671'
+        ];
+        return palette[i % palette.length];
+      });
+
+      const ctx = document.getElementById('categoryChart').getContext('2d');
+      const categoryChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: colors,
+            borderWidth: 0.5,
+            hoverOffset: 8
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { boxWidth:12, padding:8 } },
+            tooltip: { callbacks: { label: (ctx)=> `${ctx.label}: ${ctx.raw}` } }
+          },
+          onClick(evt, activeEls) {
+            // get clicked index if any and scroll to that category
+            const points = categoryChart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+            if (!points.length) return;
+            const idx = points[0].index;
+            const anchorId = 'anchor-' + idx;
+            const el = document.getElementById(anchorId);
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+              // fallback: find first matching category section by data-category
+              const catName = labels[idx];
+              const sec = document.querySelector(`[data-category="${catName}"]`);
+              if (sec) sec.scrollIntoView({ behavior: 'smooth', block:'start' });
+            }
+          }
+        }
+      });
+
+      // Improve keyboard accessibility: pressing Enter on chart wrapper focuses first category
+      const chartWrapper = document.querySelector('.chart-wrapper');
+      if (chartWrapper) {
+        chartWrapper.setAttribute('tabindex', '0');
+        chartWrapper.addEventListener('keydown', (e)=>{
+          if (e.key === 'Enter' || e.key === ' ') {
+            // go to details top
+            const details = document.getElementById('details');
+            if (details) details.scrollIntoView({behavior:'smooth'});
+            e.preventDefault();
+          }
+        });
+      }
+
+    })();
+  </script>
+</body>
+</html>
