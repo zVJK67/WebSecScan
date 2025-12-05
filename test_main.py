@@ -10,7 +10,9 @@ from server_info import get_server_info, print_server_info
 from findings_summary import normalize_findings, generate_summary, print_summary_table, compute_cvss_overrides_from_findings
 from path_traversal import test_path_traversal, print_path_traversal_results
 from directory_scan import scan_common_paths, print_dir_scan_results
-from test2 import generate_interactive_html_report, export_to_json
+from test import generate_interactive_html_report, export_to_json
+from test3 import VULNERABILITY_DEFINITIONS, enrich_finding_with_details
+
 
 from colorama import Fore, Style, init
 import urllib.parse
@@ -33,6 +35,55 @@ def handle_interrupt(sig, frame):
     sys.exit(0)
 # Capture Ctrl+C and exit gracefully
 signal.signal(signal.SIGINT, handle_interrupt)
+
+
+def enrich_finding_dynamic(finding: dict) -> dict:
+    """
+    Enrich a single finding, but for HTTP Security Headers produce
+    Impact/Recommendation only for the missing headers reported by the scanner.
+    """
+    enriched = enrich_finding_with_details(finding)
+
+    category = (finding.get("Category") or enriched.get("Category") or "").strip()
+    if category != "HTTP Security Headers":
+        return enriched
+
+    missing_headers = (
+        finding.get("MissingHeaders")
+        or finding.get("Missing")
+        or finding.get("HeadersMissing")
+        or []
+    )
+
+    if isinstance(missing_headers, str):
+        missing_headers = [missing_headers]
+
+    if not missing_headers:
+        return enriched
+
+    header_details = VULNERABILITY_DEFINITIONS["HTTP Security Headers"].get("HeaderDetails", {})
+    impacts, recs = [], []
+
+    for hdr in missing_headers:
+        hdr_key = hdr.strip()
+        detail = header_details.get(hdr_key)
+
+        if not detail:
+            alt = hdr_key.replace("-", " ").title().replace(" ", "-")
+            detail = header_details.get(alt)
+
+        if detail:
+            if detail.get("Impact"):
+                impacts.append(f"- {detail['Impact']}")
+            if detail.get("Recommendation"):
+                recs.append(f"- {detail['Recommendation']}")
+
+    if impacts:
+        enriched["Impact"] = "\n".join(impacts)
+    if recs:
+        enriched["Recommendation"] = "\n".join(recs)
+
+    return enriched
 
 
 def normalize_and_validate_url(raw_url: str) -> str:
@@ -333,6 +384,8 @@ def main():
     all_findings.extend(dir_findings or [])
     all_findings.extend(pt_findings or [])
     all_findings.extend(ssl_findings or [])
+
+    
 
     # Normalize findings (ensures Category/Severity/Description present and removes clear "safe" items)
     normalized = normalize_findings(all_findings, exclude_safe=True)

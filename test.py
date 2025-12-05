@@ -1,492 +1,1343 @@
+'''
+# export_findings.py
 """
-Security Findings Summary Generator
+Export Findings Module
 
-This module aggregates findings from multiple security scanners and generates
-a summary table ordered by severity.
-
-Usage:
-    from findings_summary import generate_summary, print_summary_table
-    
-    # Collect findings from all scanners
-    all_findings = []
-    all_findings.extend(dir_scan_findings)
-    all_findings.extend(cors_findings)
-    all_findings.extend(ssl_findings)
-    
-    # Generate and print summary
-    summary = generate_summary(all_findings)
-    cvss_overrides = compute_cvss_overrides_from_findings(all_findings)
-    print_summary_table(summary, cvss_overrides=cvss_overrides)
+Exports security scan findings to HTML, JSON, and PDF formats.
+Generates interactive HTML reports with client-side export functionality.
 """
 
+import json
 from typing import List, Dict, Any
-from collections import defaultdict
-from colorama import Fore, Style, init
+from datetime import datetime
+from colorama import Fore, Style
 
-# Initialize colorama
-init(autoreset=True)
+# dependency for templating
+from jinja2 import Environment, select_autoescape, StrictUndefined
+
+# Import vulnerability definitions for enrichment
+try:
+    from test3 import enrich_all_findings
+except ImportError:
+    # Fallback if vulnerability_definitions.py is not available
+    def enrich_all_findings(findings):
+        return findings
 
 
-# Predefined CVSS mapping for each category
-CATEGORY_CVSS_MAP = {
-    "Security Headers": {
-        "severity": "Low",
-        "cvss": "3.1",
-        "cvss_vector": "AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N"
-    },
-    "HTTP Method": {
-        "severity": "Medium",  # Default, can be overridden
-        "cvss": "5.3",  # Default, can be overridden
-        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
-    },
-    "Server Information": {
-        "severity": "Low",
-        "cvss": "3.1",
-        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
-    },
-    "Cookie Security": {
-        "severity": "High",
-        "cvss": "7.8",
-        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N"
-    },
-    "CORS Security": {
-        "severity": "High",
-        "cvss": "8.3",
-        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:L/A:N"
-    },
-    "Directory Exposure": {
-        "severity": "Medium",
-        "cvss": "5.3",
-        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
-    },
-    "Path Traversal": {
-        "severity": "High",
-        "cvss": "7.5",
-        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
-    },
-    "SSL/TLS": {
-        "severity": "Medium",  # Default, can be overridden
-        "cvss": "5.3",  # Default, can be overridden
-        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+def export_to_json(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, int]],
+                   filename: str = "security_scan_report.json", target_url: str = None) -> bool:
+    """Export findings to a JSON file.""" 
+    try:
+        total_high = sum(counts.get("High", 0) for counts in summary.values())
+        total_medium = sum(counts.get("Medium", 0) for counts in summary.values())
+        total_low = sum(counts.get("Low", 0) for counts in summary.values())
+
+        report = {
+            "scan_metadata": {
+                "target_url": target_url or "Unknown",
+                "scan_time": datetime.now().isoformat(),
+                "total_findings": len(findings),
+                "severity_counts": {
+                    "High": total_high,
+                    "Medium": total_medium,
+                    "Low": total_low
+                }
+            },
+            "summary": summary,
+            "findings": findings
+        }
+
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+
+        print(Fore.GREEN + f"✅ JSON report exported to {filename}" + Style.RESET_ALL)
+        return True
+
+    except Exception as e:
+        print(Fore.RED + f"[ERROR] Failed to export JSON: {e}" + Style.RESET_ALL)
+        return False
+
+
+# ---------------------------
+# Embedded Jinja2 HTML template
+# ---------------------------
+REPORT_TEMPLATE = r"""
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>WebSecScan Security Report</title>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* Global reset */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html,body { height:100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      color: #203040;
+      background: #f2f4f8;
+      padding: 20px;
+      -webkit-font-smoothing:antialiased;
     }
-}
 
+    /* A4 sizing for print and WeasyPrint */
+    .page {
+      width: 210mm;
+      margin: 0 auto;
+      background: white;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 8px 30px rgba(15,23,42,0.12);
+    }
 
-def normalize_findings(findings: List[Dict[str, Any]], force_category: str = None, exclude_safe: bool = True) -> List[Dict[str, Any]]:
+    /* Header */
+    .report-header {
+      background: linear-gradient(135deg,#ABE7B2 0%,#F7A5A5 100%);
+      color: white;
+      padding: 28px 32px;
+    }
+    .report-title { font-size: 28px; font-weight:800; margin-bottom:6px; }
+    .report-sub { color: rgba(255,255,255,0.92); opacity:0.95; font-size:14px; }
+
+    /* Meta */
+    .meta {
+      display:flex;
+      gap:20px;
+      padding:18px 32px;
+      align-items:center;
+      border-bottom: 1px solid #eef2fb;
+    }
+    .meta .meta-item { font-size:13px; color:#2f3a47; }
+    .meta code { background:#eef3ff; padding:3px 6px; border-radius:4px; font-family:monospace; }
+
+    /* Summary area */
+    .summary {
+      padding: 22px 32px 30px 32px;
+      display:flex;
+      gap:18px;
+      align-items:flex-start;
+      justify-content:flex-start;
+    }
+    /* left summary column width match screenshot */
+    .left-summary { width: 560px; min-width:360px; }
+    /* right summary is a fixed card */
+    .right-summary { width: 360px; flex: 0 0 360px; margin-left:18px; }
+
+    .stat-cards { display:flex; gap:12px; margin-bottom:14px; }
+    .card {
+      flex:1;
+      background:linear-gradient(180deg,#fff 0,#FFF5F2 150%);
+      border-radius:8px;
+      padding:12px;
+      border:1px solid #e7eefc;
+      text-align:center;
+    }
+    .card .num { font-size:22px; font-weight:800; color:#243140; }
+    .card .label { font-size:12px; color:#6b7280; margin-top:6px; text-transform:uppercase; letter-spacing:0.6px; }
+
+    /* Table summary */
+    table.summary-table { width:100%; border-collapse:collapse; margin-top:10px; background:#F9F8F6; }
+    table.summary-table th, table.summary-table td {
+      padding:10px 8px; text-align:center; border-bottom:1px solid #CBCBCB;
+      font-size:13px;
+    }
+    table.summary-table th { background:#11224E; color:#CBDCEB; font-weight:700; font-size:12px; text-transform:uppercase; }
+    table.summary-table tr:hover td { background:#EFE9E3; }
+
+    /* Chart container (right card) */
+    .chart-wrapper {
+      background: #FFF0EF;
+      border-radius: 12px;
+      padding: 20px 18px;
+      border: 2px solid rgba(0,0,0,0.08);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      min-height: 420px;
+      position: relative;
+    }
+
+    .chart-wrapper .card-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: #3f5f9a;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    /* Chart canvas container */
+    .chart-container {
+      position: relative;
+      width: 320px;
+      height: 320px;
+    }
+
+    #categoryChart {
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    /* Details */
+    .details { padding: 24px 32px 40px; }
+    .details h2 { font-size:20px; color:#243140; border-bottom:3px solid #eef3ff; padding-bottom:10px; margin-bottom:18px; }
+
+    /* Vulnerability category box */
+    .category-section {
+      margin-bottom:24px;
+      background: white;
+      border-radius:8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .category-section.risk-high { border-left: 6px solid #dc3545; }
+    .category-section.risk-medium { border-left: 6px solid #fd7e14; }
+    .category-section.risk-low { border-left: 6px solid #28a745; }
+
+    .vuln-header { background: #f8f9fa; padding: 16px 20px; border-bottom: 2px solid #e9ecef; }
+    .vuln-title { font-size: 18px; font-weight:700; color:#1a1a1a; margin-bottom:4px; }
+    .vuln-content { padding: 20px; }
+
+    .vuln-section { margin-bottom:20px; }
+    .section-title { font-size: 14px; font-weight:700; color:#495057; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px; }
+    .section-content { font-size:14px; line-height:1.6; color:#2f3a47; }
+
+    .risk-rating { display:flex; gap:20px; align-items:center; }
+    .risk-item { display:flex; align-items:center; gap:8px; }
+    .risk-label { font-weight:600; color:#495057; }
+    .risk-value { padding:4px 12px; border-radius:4px; font-weight:700; font-size:13px; color:white; }
+    .risk-value.high { background:#dc3545; }
+    .risk-value.medium { background:#fd7e14; }
+    .risk-value.low { background:#28a745; }
+
+    .instances-table { width:100%; border-collapse:collapse; margin-top:8px; border:1px solid #dee2e6; font-size:13px; }
+    .instances-table th { background:#f1f3f5; padding:10px 12px; text-align:left; font-weight:600; color:#495057; border-bottom:2px solid #dee2e6; }
+    .instances-table td { padding:10px 12px; border-bottom:1px solid #e9ecef; color:#2f3a47; }
+    .instances-table tr:last-child td { border-bottom:none; }
+    .instances-table tr:hover { background:#f8f9fa; }
+    .instances-table code { background:#e7f1ff; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px; }
+
+    .remediation-box { background:#fff3cd; border-left:4px solid #ffc107; padding:14px 16px; border-radius:4px; }
+    .remediation-box .section-title { color:#856404; margin-bottom:8px; }
+    .remediation-box .section-content { color:#664d03; }
+
+    .report-footer { background:#f8fafc; padding:14px 32px; color:#5b6b7a; font-size:13px; border-top:1px solid #eef2fb; text-align:center; }
+
+    /* responsive */
+    @media (max-width:900px) {
+      .page { width:calc(100% - 40px); }
+      .summary { flex-direction:column; }
+      .left-summary { width:100%; }
+      .right-summary { width:100%; flex: none; margin-left:0; }
+      .chart-container { width: 260px; height: 260px; }
+    }
+
+    /* print */
+    @page { size: A4 portrait; margin: 12mm; }
+    @media print {
+      body { background: white; }
+      .page { box-shadow:none; border-radius:0; width: auto; }
+      .chart-wrapper, .card, .summary-table { page-break-inside: avoid; }
+      .report-header, .meta, .report-footer { -webkit-print-color-adjust: exact; }
+      .no-print { display:none !important; }
+    }
+
+    .anchor { display:block; padding-top:40px; margin-top:-40px; }
+  </style>
+</head>
+<body>
+  <div class="page" role="document">
+    <!-- HEADER -->
+    <header class="report-header">
+      <div class="report-title">WebSecScan Security Report</div>
+      <div class="report-sub">Web Application Security Analysis</div>
+    </header>
+
+    <!-- META -->
+    <div class="meta">
+      <div class="meta-item"><strong>Target:</strong> <code>{{ target_url }}</code></div>
+      <div class="meta-item"><strong>Scan Time:</strong> {{ scan_time }}</div>
+    </div>
+
+    <!-- SUMMARY -->
+    <section class="summary" aria-label="Executive summary">
+      <div class="left-summary">
+        <div class="stat-cards">
+          <div class="card">
+            <div class="num">{{ total_findings }}</div>
+            <div class="label">Total Findings</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Red;">{{ total_high }}</div>
+            <div class="label">High</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Orange;">{{ total_medium }}</div>
+            <div class="label">Medium</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Green;">{{ total_low }}</div>
+            <div class="label">Low</div>
+          </div>
+        </div>
+
+        <table class="summary-table" role="table" aria-label="Findings summary by category">
+          <thead>
+            <tr><th>Category</th><th>High</th><th>Medium</th><th>Low</th><th>Total</th></tr>
+          </thead>
+          <tbody>
+            {% for c in categories %}
+            <tr>
+              <td style="font-weight:700; color:#452829">{{ c.name }}</td>
+              <td style="font-weight:700; color:Red">{{ c.high }}</td>
+              <td style="font-weight:700; color:Orange">{{ c.medium }}</td>
+              <td style="font-weight:700; color:Green">{{ c.low }}</td>
+              <td style="font-weight:800; color:#452829">{{ (c.high|int + c.medium|int + c.low|int) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="right-summary">
+        <div class="chart-wrapper" role="img" aria-label="Vulnerability categories chart">
+          <div class="card-title">Vulnerability Categories Chart</div>
+          <div class="chart-container">
+            <canvas id="categoryChart"></canvas>
+          </div>
+          <div style="margin-top:16px;font-size:13px;font-weight:700;color:#5b6b7a;">
+            Click a slice to jump to that details section.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DETAILED FINDINGS -->
+    <section class="details" id="details">
+      <h2>🔍 Detailed Findings</h2>
+
+      {% for c in categories %}
+        {% set cat_name = c.name %}
+        {% set findings = findings_by_category.get(cat_name, []) %}
+
+        {# derive class based on summary counts #}
+        {% set risk_class = 'risk-low' %}
+        {% if c.high > 0 %}
+          {% set risk_class = 'risk-high' %}
+        {% elif c.medium > 0 %}
+          {% set risk_class = 'risk-medium' %}
+        {% endif %}
+
+        <a id="anchor-{{ loop.index0 }}" class="anchor" aria-hidden="true"></a>
+        <div class="category-section {{ risk_class }}" data-category="{{ cat_name|e }}">
+          <div class="vuln-header">
+            <div class="vuln-title">{{ cat_name }}</div>
+          </div>
+
+          <div class="vuln-content">
+            {% if findings %}
+              {% set first_finding = findings[0] %}
+
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                <div class="section-content">
+                  {{ first_finding.get('Description', 'No description provided.') }}
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    {% if c.high > 0 %}
+                      <span class="risk-value high">High</span>
+                    {% elif c.medium > 0 %}
+                      <span class="risk-value medium">Medium</span>
+                    {% else %}
+                      <span class="risk-value low">Low</span>
+                    {% endif %}
+                  </div>
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    <span class="risk-value {% if c.high > 0 %}high{% elif c.medium > 0 %}medium{% else %}low{% endif %}">
+                      {{ first_finding.get('CVSS', 'N/A') }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      <th>Finding</th>
+                      <th>Status</th>
+                      <th>Current Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for f in findings %}
+                      <tr>
+                        <td style="font-weight:600;">{{ f.get('Context', f.get('Detail', 'Finding')) }}</td>
+                        <td>{{ f.get('Status', 'Missing') }}</td>
+                        <td><code>{{ f.get('Detail', '-') }}</code></td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+
+              {# IMPACT/CONSEQUENCE SECTION - Show all impacts #}
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title" style="font-size:15px;text-transform:uppercase;letter-spacing:0.8px;color:#495057;">Impact / Consequence:</div>
+                {% for f in findings %}
+                  {% if f.get('Impact') %}
+                    <div class="section-content" style="margin-top:12px;">
+                      <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">{{ f.get('Context', cat_name) }}</div>
+                      <div style="padding-left:0px;">
+                        {{ f.get('Impact', 'Impact information not available.') }}
+                      </div>
+                    </div>
+                  {% endif %}
+                {% endfor %}
+              </div>
+
+              {# REMEDIATION SECTION - Show all remediations #}
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title" style="font-size:15px;text-transform:uppercase;letter-spacing:0.8px;">Remediation:</div>
+                  {% for f in findings %}
+                    {% if f.get('Recommendation') %}
+                      <div class="section-content" style="margin-top:12px;">
+                        <div style="font-weight:600;color:#856404;margin-bottom:4px;">{{ f.get('Context', cat_name) }}</div>
+                        <div style="padding-left:0px;">
+                          {{ f.get('Recommendation') }}
+                        </div>
+                      </div>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+
+            {% else %}
+              <div style="padding:10px;color:#5b6b7a;background:#f8f9fa;border-radius:6px;">
+                No findings recorded for this category.
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </section>
+
+    <footer class="report-footer">
+      WebSecScan — Web Security Misconfiguration Analyzer · Generated {{ scan_time }} · <span style="opacity:.85">Lee Zhi Hui</span>
+    </footer>
+  </div>
+
+  <!-- Chart.js script -->
+  <script>
+    (function(){
+      const categories = [
+        {% for c in categories %}
+          { name: {{ c.name|tojson }}, high: {{ c.high|int }}, medium: {{ c.medium|int }}, low: {{ c.low|int }} }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ];
+      const labels = categories.map(c => c.name);
+      const values = categories.map(c => (c.high + c.medium + c.low));
+      const palette = ['#FF6B6B','#FF9F43','#FFD43B','#6BCB77','#4D96FF','#845EC2','#00C9A7','#FF9671'];
+      const colors = labels.map((_,i)=>palette[i%palette.length]);
+
+      const ctx = document.getElementById('categoryChart').getContext('2d');
+      const categoryChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: colors,
+            borderWidth: 2,
+            borderColor: '#fff',
+            hoverOffset: 8,
+            spacing: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { 
+                boxWidth: 14, 
+                padding: 10, 
+                usePointStyle: true,
+                font: {
+                  size: 12
+                }
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.label}: ${ctx.raw} findings`
+              }
+            }
+          },
+          onClick(evt) {
+            const points = categoryChart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+            if (!points.length) return;
+            const idx = points[0].index;
+            const anchorId = 'anchor-' + idx;
+            const el = document.getElementById(anchorId);
+            if (el) { 
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' }); 
+              return; 
+            }
+            const catName = labels[idx];
+            const sec = document.querySelector(`[data-category="${catName}"]`);
+            if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+      });
+
+      // keyboard accessibility for chart wrapper
+      const chartWrapper = document.querySelector('.chart-wrapper');
+      if (chartWrapper) {
+        chartWrapper.setAttribute('tabindex','0');
+        chartWrapper.addEventListener('keydown', (e)=>{
+          if (e.key === 'Enter' || e.key === ' ') {
+            const details = document.getElementById('details');
+            if (details) details.scrollIntoView({ behavior: 'smooth' });
+            e.preventDefault();
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
+"""
+
+# ---------------------------
+# Helper: transform your findings+summary into 'categories' and 'findings_by_category'
+# ---------------------------
+def _prepare_report_data(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, int]], debug: bool = False):
     """
-    Normalize findings to ensure they all have Category, Severity, and Description.
-    If force_category is provided, it will override any existing Category.
-    
+    Build categories (list of {name, high, medium, low}) and findings_by_category (dict).
+    This version ALWAYS computes counts from the actual `findings` list to avoid
+    mismatches when `summary` is stale or empty. `summary` is used only as a
+    preferred order if provided.
+
     Args:
-        findings: List of finding dictionaries
-        force_category: Optional category name to force on all findings
-        exclude_safe: If True, exclude findings that are informational/non-issues only
-        
-    Returns:
-        Normalized list of findings
-    """
-    normalized = []
-    
-    for f in (findings or []):
-        # Create a copy to avoid mutating the original
-        finding = f.copy()
-        
-        # Skip "safe" findings if exclude_safe is True
-        if exclude_safe:
-            status = str(finding.get("Status", "")).lower()
-            
-            # IMPORTANT: Only exclude if it's CLEARLY a "good" status
-            # Be very specific to avoid false exclusions
-            truly_safe_statuses = [
-                "safe",                    # HTTP Methods: Status="Safe"
-                "not exposed",            # Server Info: Status="Not exposed"
-                "configured correctly",   # Headers: Status="Configured correctly"
-            ]
-            
-            # Check if status exactly matches or is a safe variant
-            is_safe = False
-            for safe_status in truly_safe_statuses:
-                if status == safe_status or status.startswith(safe_status):
-                    is_safe = True
-                    break
-            
-            # Additional check: if it explicitly says things are OK in the description/recommendation
-            if not is_safe:
-                desc = str(finding.get("Description", "")).lower()
-                rec = str(finding.get("Recommendation", "")).lower()
-                
-                # These phrases indicate informational/good findings
-                good_phrases = [
-                    "no issues detected",
-                    "properly configured",
-                    "looks acceptable",
-                    "set appropriately",
-                    "no unsafe",
-                    "no commonly unsafe",
-                ]
-                
-                if any(phrase in desc or phrase in rec for phrase in good_phrases):
-                    is_safe = True
-            
-            if is_safe:
-                continue
-        
-        # Force category if specified (this fixes the duplication issue)
-        if force_category:
-            finding["Category"] = force_category
-        elif not finding.get("Category"):
-            # Fallback to "Unknown" if no category at all
-            finding["Category"] = "Unknown"
-        
-        # Ensure Severity exists
-        if not finding.get("Severity"):
-            finding["Severity"] = "Low"
-        
-        # Ensure Description exists
-        if not finding.get("Description"):
-            finding["Description"] = (
-                finding.get("Recommendation") or
-                finding.get("Status") or
-                finding.get("Header") or
-                finding.get("Name") or
-                "No description available"
-            )
-        
-        normalized.append(finding)
-    
-    return normalized
+        findings: list of finding dicts (each may have Category and Severity)
+        summary: optional precomputed summary dict (category -> {High,Medium,Low})
+        debug: if True, will print a short debug snapshot to stdout
 
-
-def compute_cvss_overrides_from_findings(findings: List[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
-    """
-    Compute dynamic CVSS overrides for categories that have conditional severity/CVSS.
-    Currently handles:
-    - HTTP Method: Low (3.7) if only OPTIONS, Medium (5.3) otherwise
-    - SSL/TLS: High (9.8) if any High findings, Medium (5.3) otherwise
-    
-    Args:
-        findings: List of all findings
-        
     Returns:
-        Dictionary mapping category names to {severity, cvss, cvss_vector}
+        categories, findings_by_category
     """
-    overrides = {}
-    
-    # Group findings by category
-    by_category = defaultdict(list)
+    # 1) Group findings by category and count severities from actual findings
+    findings_by_category: Dict[str, List[Dict[str, Any]]] = {}
+    counts_by_category: Dict[str, Dict[str, int]] = {}
+
     for f in findings:
-        cat = f.get("Category", "Unknown")
-        by_category[cat].append(f)
-    
-    # --- HTTP Method Dynamic Logic ---
-    if "HTTP Method" in by_category:
-        http_findings = by_category["HTTP Method"]
-        # Check if only OPTIONS method is unsafe
-        methods = []
-        for f in http_findings:
-            method = f.get("Method", "")
-            if method:
-                methods.append(method.upper())
-        
-        # If only OPTIONS is present, use Low severity
-        if set(methods) == {"OPTIONS"}:
-            overrides["HTTP Method"] = {
-                "severity": "Low",
-                "cvss": "3.7",
-                "cvss_vector": "AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N"
-            }
-        else:
-            # Default Medium severity
-            overrides["HTTP Method"] = {
-                "severity": "Medium",
-                "cvss": "5.3",
-                "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
-            }
-    
-    # --- SSL/TLS Dynamic Logic ---
-    if "SSL/TLS" in by_category:
-        ssl_findings = by_category["SSL/TLS"]
-        severities = [f.get("Severity", "Low") for f in ssl_findings]
-        
-        if "High" in severities:
-            overrides["SSL/TLS"] = {
-                "severity": "High",
-                "cvss": "9.8",
-                "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
-            }
-        else:
-            # Default Medium severity
-            overrides["SSL/TLS"] = {
-                "severity": "Medium",
-                "cvss": "5.3",
-                "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
-            }
-    
-    return overrides
+        # Normalize keys (support both "Category" and "category")
+        cat = f.get("Category") or f.get("category") or "Uncategorized"
+        sev = f.get("Severity") or f.get("severity") or "Low"
+        sev = sev if sev in ("High", "Medium", "Low") else ("High" if sev.lower()=="high" else ("Medium" if sev.lower()=="medium" else "Low"))
+
+        findings_by_category.setdefault(cat, []).append(f)
+        if cat not in counts_by_category:
+            counts_by_category[cat] = {"High": 0, "Medium": 0, "Low": 0}
+        counts_by_category[cat][sev] = counts_by_category[cat].get(sev, 0) + 1
+
+    # 2) If summary provided, try to use its order. Otherwise order by total counts desc.
+    ordered_category_names = []
+    if summary and isinstance(summary, dict) and len(summary) > 0:
+        # preserve order of summary dict (likely insertion order from generate_summary)
+        ordered_category_names = list(summary.keys())
+        # But ensure we include any categories that appear in findings but not in summary
+        for cat in counts_by_category.keys():
+            if cat not in ordered_category_names:
+                ordered_category_names.append(cat)
+    else:
+        # sort by total findings per category desc
+        ordered_category_names = sorted(counts_by_category.keys(), key=lambda c: sum(counts_by_category[c].values()), reverse=True)
+
+    # 3) Build final categories list using counts computed from findings
+    categories = []
+    for cat in ordered_category_names:
+        cnts = counts_by_category.get(cat, {"High":0,"Medium":0,"Low":0})
+        categories.append({"name": cat, "high": int(cnts.get("High", 0)), "medium": int(cnts.get("Medium", 0)), "low": int(cnts.get("Low", 0))})
+
+    # 4) Add any categories present in findings but missing in ordered list (shouldn't happen, but safe)
+    existing = set(ordered_category_names)
+    for cat, cnts in counts_by_category.items():
+        if cat not in existing:
+            categories.append({"name": cat, "high": int(cnts.get("High", 0)), "medium": int(cnts.get("Medium", 0)), "low": int(cnts.get("Low", 0))})
+
+    # Debugging snapshot
+    if debug:
+        try:
+            print("DEBUG: derived categories (name, high, medium, low):")
+            for c in categories:
+                print(f"  - {c['name']}: H={c['high']} M={c['medium']} L={c['low']}")
+            # show one example finding for each of first 3 categories (if present)
+            shown = 0
+            for cat in categories:
+                if shown >= 3:
+                    break
+                items = findings_by_category.get(cat['name'], [])
+                if items:
+                    sample = items[0]
+                    print(f"  SAMPLE for {cat['name']}: Severity={sample.get('Severity')} Desc={str(sample.get('Description',''))[:80]}")
+                    shown += 1
+        except Exception as e:
+            print("[DEBUG] failed to print debug info:", e)
+
+    return categories, findings_by_category
 
 
-def generate_summary(findings: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
+def generate_interactive_html_report(findings: List[Dict[str, Any]],
+                                    summary: Dict[str, Dict[str, int]],
+                                    filename: str = "security_scan_report.html",
+                                    target_url: str = None) -> bool:
     """
-    Generate a summary of findings grouped by category with counts.
-    Note: This now just counts findings per category (no severity breakdown).
-    
-    Args:
-        findings: List of finding dictionaries with 'Category' keys
+    Generate an interactive HTML report using the embedded Jinja2 template.
+
+    Notes:
+      - The template uses Chart.js for interactive charts in the browser.
+      - Findings are automatically enriched with detailed vulnerability information.
+    """
+    try:
+        # ENRICH FINDINGS with detailed vulnerability information
+        enriched_findings = enrich_all_findings(findings)
         
-    Returns:
-        Dictionary mapping category names to finding counts
-        Example: {'CORS Security': {'count': 3}, 'Security Headers': {'count': 11}, ...}
-    """
-    summary = defaultdict(lambda: {"count": 0})
-    
-    for finding in findings:
-        category = finding.get("Category", "Unknown")
-        summary[category]["count"] += 1
-    
-    return dict(summary)
+        # Ensure summary/findings are in expected shapes
+        categories, findings_by_category = _prepare_report_data(enriched_findings, summary)
+
+        # Totals
+        total_high = sum(c["high"] for c in categories)
+        total_medium = sum(c["medium"] for c in categories)
+        total_low = sum(c["low"] for c in categories)
+        total_findings = total_high + total_medium + total_low
+
+        # Render the template using an Environment that enables `do`
+        env = Environment(
+            extensions=["jinja2.ext.do"],
+            autoescape=select_autoescape(["html", "xml"]),
+            undefined=StrictUndefined  # optional: helps catch missing keys early; remove if too strict
+        )
+
+        tmpl = env.from_string(REPORT_TEMPLATE)
+        rendered = tmpl.render(
+            target_url=target_url or "Unknown",
+            scan_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            total_findings=total_findings,
+            total_high=total_high,
+            total_medium=total_medium,
+            total_low=total_low,
+            categories=categories,
+            findings_by_category=findings_by_category
+        )
+
+        # Write file
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(rendered)
+
+        print(Fore.GREEN + f"✅ Interactive HTML report generated: {filename}" + Style.RESET_ALL)
+        print(Fore.CYAN + f"   Open the file in a browser to view and export the report." + Style.RESET_ALL)
+        return True
+
+    except Exception as e:
+        print(Fore.RED + f"[ERROR] Failed to generate interactive HTML: {e}" + Style.RESET_ALL)
+        import traceback
+        traceback.print_exc()
+        return False
 
 
-def calculate_category_score(category: str, count: int, cvss_map: Dict[str, Dict[str, str]]) -> int:
-    """
-    Calculate a score for sorting categories by severity.
-    Higher score = more severe issues.
-    
-    Args:
-        category: Category name
-        count: Number of findings
-        cvss_map: CVSS mapping with severity info
-        
-    Returns:
-        Integer score (High=100, Medium=10, Low=1) * count
-    """
-    severity = cvss_map.get(category, {}).get("severity", "Low")
-    
-    severity_weights = {
-        "High": 100,
-        "Medium": 10,
-        "Low": 1
+# Legacy function for backward compatibility
+def export_to_html(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, int]],
+                   filename: str = "security_scan_report.html", target_url: str = None) -> bool:
+    """Legacy function - redirects to interactive HTML generation."""
+    return generate_interactive_html_report(findings, summary, filename, target_url)
+'''
+
+# export_findings.py
+"""
+Export Findings Module
+
+Exports security scan findings to HTML, JSON, and PDF formats.
+Generates interactive HTML reports with client-side export functionality.
+"""
+
+import json
+from typing import List, Dict, Any
+from datetime import datetime
+from colorama import Fore, Style
+
+# dependency for templating
+from jinja2 import Environment, select_autoescape, StrictUndefined
+
+# Import vulnerability definitions for enrichment
+try:
+    from test3 import enrich_all_findings
+except ImportError:
+    # Fallback if vulnerability_definitions.py is not available
+    def enrich_all_findings(findings):
+        return findings
+
+
+def export_to_json(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, int]],
+                   filename: str = "security_scan_report.json", target_url: str = None) -> bool:
+    """Export findings to a JSON file.""" 
+    try:
+        total_high = sum(counts.get("High", 0) for counts in summary.values())
+        total_medium = sum(counts.get("Medium", 0) for counts in summary.values())
+        total_low = sum(counts.get("Low", 0) for counts in summary.values())
+
+        report = {
+            "scan_metadata": {
+                "target_url": target_url or "Unknown",
+                "scan_time": datetime.now().isoformat(),
+                "total_findings": len(findings),
+                "severity_counts": {
+                    "High": total_high,
+                    "Medium": total_medium,
+                    "Low": total_low
+                }
+            },
+            "summary": summary,
+            "findings": findings
+        }
+
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+
+        print(Fore.GREEN + f"✅ JSON report exported to {filename}" + Style.RESET_ALL)
+        return True
+
+    except Exception as e:
+        print(Fore.RED + f"[ERROR] Failed to export JSON: {e}" + Style.RESET_ALL)
+        return False
+
+
+# ---------------------------
+# Embedded Jinja2 HTML template
+# ---------------------------
+REPORT_TEMPLATE = r"""
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>WebSecScan Security Report</title>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* Global reset */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html,body { height:100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      color: #203040;
+      background: #f2f4f8;
+      padding: 20px;
+      -webkit-font-smoothing:antialiased;
     }
-    
-    weight = severity_weights.get(severity, 1)
-    return weight * count
 
+    /* A4 sizing for print and WeasyPrint */
+    .page {
+      width: 210mm;
+      margin: 0 auto;
+      background: white;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 8px 30px rgba(15,23,42,0.12);
+    }
 
-def print_summary_table(summary: Dict[str, Dict[str, int]], title: str = "Security Findings Summary", cvss_overrides: Dict[str, Dict[str, str]] = None):
+    /* Header */
+    .report-header {
+      background: linear-gradient(135deg,#ABE7B2 0%,#F7A5A5 100%);
+      color: white;
+      padding: 28px 32px;
+    }
+    .report-title { font-size: 28px; font-weight:800; margin-bottom:6px; }
+    .report-sub { color: rgba(255,255,255,0.92); opacity:0.95; font-size:14px; }
+
+    /* Meta */
+    .meta {
+      display:flex;
+      gap:20px;
+      padding:18px 32px;
+      align-items:center;
+      border-bottom: 1px solid #eef2fb;
+    }
+    .meta .meta-item { font-size:13px; color:#2f3a47; }
+    .meta code { background:#eef3ff; padding:3px 6px; border-radius:4px; font-family:monospace; }
+
+    /* Summary area */
+    .summary {
+      padding: 22px 32px 30px 32px;
+      display:flex;
+      gap:18px;
+      align-items:flex-start;
+      justify-content:flex-start;
+    }
+    /* left summary column width match screenshot */
+    .left-summary { width: 560px; min-width:360px; }
+    /* right summary is a fixed card */
+    .right-summary { width: 360px; flex: 0 0 360px; margin-left:18px; }
+
+    .stat-cards { display:flex; gap:12px; margin-bottom:14px; }
+    .card {
+      flex:1;
+      background:linear-gradient(180deg,#fff 0,#FFF5F2 150%);
+      border-radius:8px;
+      padding:12px;
+      border:1px solid #e7eefc;
+      text-align:center;
+    }
+    .card .num { font-size:22px; font-weight:800; color:#243140; }
+    .card .label { font-size:12px; color:#6b7280; margin-top:6px; text-transform:uppercase; letter-spacing:0.6px; }
+
+    /* Table summary */
+    table.summary-table { width:100%; border-collapse:collapse; margin-top:10px; background:#F9F8F6; }
+    table.summary-table th, table.summary-table td {
+      padding:10px 8px; text-align:center; border-bottom:1px solid #CBCBCB;
+      font-size:13px;
+    }
+    table.summary-table th { background:#11224E; color:#CBDCEB; font-weight:700; font-size:12px; text-transform:uppercase; }
+    table.summary-table tr:hover td { background:#EFE9E3; }
+
+    /* Chart container (right card) */
+    .chart-wrapper {
+      background: #FFF0EF;
+      border-radius: 12px;
+      padding: 20px 18px;
+      border: 2px solid rgba(0,0,0,0.08);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      min-height: 420px;
+      position: relative;
+    }
+
+    .chart-wrapper .card-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: #3f5f9a;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    /* Chart canvas container */
+    .chart-container {
+      position: relative;
+      width: 320px;
+      height: 320px;
+    }
+
+    #categoryChart {
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    /* Details */
+    .details { padding: 24px 32px 40px; }
+    .details h2 { font-size:20px; color:#243140; border-bottom:3px solid #eef3ff; padding-bottom:10px; margin-bottom:18px; }
+
+    /* Vulnerability category box */
+    .category-section {
+      margin-bottom:24px;
+      background: white;
+      border-radius:8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .category-section.risk-high { border-left: 6px solid #dc3545; }
+    .category-section.risk-medium { border-left: 6px solid #fd7e14; }
+    .category-section.risk-low { border-left: 6px solid #28a745; }
+
+    .vuln-header { background: #f8f9fa; padding: 16px 20px; border-bottom: 2px solid #e9ecef; }
+    .vuln-title { font-size: 18px; font-weight:700; color:#1a1a1a; margin-bottom:4px; }
+    .vuln-content { padding: 20px; }
+
+    .vuln-section { margin-bottom:20px; }
+    .section-title { font-size: 14px; font-weight:700; color:#495057; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px; }
+    .section-content { font-size:14px; line-height:1.6; color:#2f3a47; }
+
+    .risk-rating { display:flex; gap:20px; align-items:center; }
+    .risk-item { display:flex; align-items:center; gap:8px; }
+    .risk-label { font-weight:600; color:#495057; }
+    .risk-value { padding:4px 12px; border-radius:4px; font-weight:700; font-size:13px; color:white; }
+    .risk-value.high { background:#dc3545; }
+    .risk-value.medium { background:#fd7e14; }
+    .risk-value.low { background:#28a745; }
+
+    .instances-table { width:100%; border-collapse:collapse; margin-top:8px; border:1px solid #dee2e6; font-size:13px; }
+    .instances-table th { background:#f1f3f5; padding:10px 12px; text-align:left; font-weight:600; color:#495057; border-bottom:2px solid #dee2e6; }
+    .instances-table td { padding:10px 12px; border-bottom:1px solid #e9ecef; color:#2f3a47; }
+    .instances-table tr:last-child td { border-bottom:none; }
+    .instances-table tr:hover { background:#f8f9fa; }
+    .instances-table code { background:#e7f1ff; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px; }
+
+    .remediation-box { background:#fff3cd; border-left:4px solid #ffc107; padding:14px 16px; border-radius:4px; }
+    .remediation-box .section-title { color:#856404; margin-bottom:8px; }
+    .remediation-box .section-content { color:#664d03; }
+
+    .report-footer { background:#f8fafc; padding:14px 32px; color:#5b6b7a; font-size:13px; border-top:1px solid #eef2fb; text-align:center; }
+
+    /* responsive */
+    @media (max-width:900px) {
+      .page { width:calc(100% - 40px); }
+      .summary { flex-direction:column; }
+      .left-summary { width:100%; }
+      .right-summary { width:100%; flex: none; margin-left:0; }
+      .chart-container { width: 260px; height: 260px; }
+    }
+
+    /* print */
+    @page { size: A4 portrait; margin: 12mm; }
+    @media print {
+      body { background: white; }
+      .page { box-shadow:none; border-radius:0; width: auto; }
+      .chart-wrapper, .card, .summary-table { page-break-inside: avoid; }
+      .report-header, .meta, .report-footer { -webkit-print-color-adjust: exact; }
+      .no-print { display:none !important; }
+    }
+
+    .anchor { display:block; padding-top:40px; margin-top:-40px; }
+  </style>
+</head>
+<body>
+  <div class="page" role="document">
+    <!-- HEADER -->
+    <header class="report-header">
+      <div class="report-title">WebSecScan Security Report</div>
+      <div class="report-sub">Web Application Security Analysis</div>
+    </header>
+
+    <!-- META -->
+    <div class="meta">
+      <div class="meta-item"><strong>Target:</strong> <code>{{ target_url }}</code></div>
+      <div class="meta-item"><strong>Scan Time:</strong> {{ scan_time }}</div>
+    </div>
+
+    <!-- SUMMARY -->
+    <section class="summary" aria-label="Executive summary">
+      <div class="left-summary">
+        <div class="stat-cards">
+          <div class="card">
+            <div class="num">{{ total_findings }}</div>
+            <div class="label">Total Findings</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Red;">{{ total_high }}</div>
+            <div class="label">High</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Orange;">{{ total_medium }}</div>
+            <div class="label">Medium</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Green;">{{ total_low }}</div>
+            <div class="label">Low</div>
+          </div>
+        </div>
+
+        <table class="summary-table" role="table" aria-label="Findings summary by category">
+          <thead>
+            <tr><th>Category</th><th>High</th><th>Medium</th><th>Low</th><th>Total</th></tr>
+          </thead>
+          <tbody>
+            {% for c in categories %}
+            <tr>
+              <td style="font-weight:700; color:#452829">{{ c.name }}</td>
+              <td style="font-weight:700; color:Red">{{ c.high }}</td>
+              <td style="font-weight:700; color:Orange">{{ c.medium }}</td>
+              <td style="font-weight:700; color:Green">{{ c.low }}</td>
+              <td style="font-weight:800; color:#452829">{{ (c.high|int + c.medium|int + c.low|int) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="right-summary">
+        <div class="chart-wrapper" role="img" aria-label="Vulnerability categories chart">
+          <div class="card-title">Vulnerability Categories Chart</div>
+          <div class="chart-container">
+            <canvas id="categoryChart"></canvas>
+          </div>
+          <div style="margin-top:16px;font-size:13px;font-weight:700;color:#5b6b7a;">
+            Click a slice to jump to that details section.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DETAILED FINDINGS -->
+    <section class="details" id="details">
+      <h2>🔍 Detailed Findings</h2>
+
+      {% for c in categories %}
+        {% set cat_name = c.name %}
+        {% set findings = findings_by_category.get(cat_name, []) %}
+
+        {# derive class based on summary counts #}
+        {% set risk_class = 'risk-low' %}
+        {% if c.high > 0 %}
+          {% set risk_class = 'risk-high' %}
+        {% elif c.medium > 0 %}
+          {% set risk_class = 'risk-medium' %}
+        {% endif %}
+
+        <a id="anchor-{{ loop.index0 }}" class="anchor" aria-hidden="true"></a>
+        <div class="category-section {{ risk_class }}" data-category="{{ cat_name|e }}">
+          <div class="vuln-header">
+            <div class="vuln-title">{{ cat_name }}</div>
+          </div>
+
+          <div class="vuln-content">
+            {% if findings %}
+              {% set first_finding = findings[0] %}
+
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                <div class="section-content">
+                  {{ first_finding.get('Description', 'No description provided.') }}
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    {% if c.high > 0 %}
+                      <span class="risk-value high">High</span>
+                    {% elif c.medium > 0 %}
+                      <span class="risk-value medium">Medium</span>
+                    {% else %}
+                      <span class="risk-value low">Low</span>
+                    {% endif %}
+                  </div>
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    <span class="risk-value {% if c.high > 0 %}high{% elif c.medium > 0 %}medium{% else %}low{% endif %}">
+                      {{ first_finding.get('CVSS', 'N/A') }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      <th>Security Header</th>
+                      <th>Status</th>
+                      <th>Current Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for f in findings %}
+                      <tr>
+                        <td style="font-weight:600;">{{ f.get('Header', f.get('Context', f.get('Detail', 'Finding'))) }}</td>
+                        <td>{{ f.get('Status', 'Missing') }}</td>
+                        <td><code>{{ f.get('Value', f.get('Detail', '-')) }}</code></td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+
+              {# IMPACT/CONSEQUENCE SECTION - Show specific impacts for each header #}
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title" style="font-size:15px;text-transform:uppercase;letter-spacing:0.8px;color:#495057;">Impact / Consequence:</div>
+                {% for f in findings %}
+                  {% set header_name = f.get('Header', f.get('Context', '')) %}
+                  {% set impact_text = f.get('Impact', '') %}
+                  {% if impact_text and header_name %}
+                    <div class="section-content" style="margin-top:12px;">
+                      <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">{{ header_name }}</div>
+                      <div style="padding-left:0px;">
+                        {{ impact_text }}
+                      </div>
+                    </div>
+                  {% endif %}
+                {% endfor %}
+              </div>
+
+              {# REMEDIATION SECTION - Show specific remediations for each header #}
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title" style="font-size:15px;text-transform:uppercase;letter-spacing:0.8px;">Remediation:</div>
+                  {% for f in findings %}
+                    {% set header_name = f.get('Header', f.get('Context', '')) %}
+                    {% set recommendation_text = f.get('Recommendation', '') %}
+                    {% if recommendation_text and header_name %}
+                      <div class="section-content" style="margin-top:12px;">
+                        <div style="font-weight:600;color:#856404;margin-bottom:4px;">{{ header_name }}</div>
+                        <div style="padding-left:0px;">
+                          {{ recommendation_text }}
+                        </div>
+                      </div>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+
+            {% else %}
+              <div style="padding:10px;color:#5b6b7a;background:#f8f9fa;border-radius:6px;">
+                No findings recorded for this category.
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </section>
+
+    <footer class="report-footer">
+      WebSecScan — Web Security Misconfiguration Analyzer · Generated {{ scan_time }} · <span style="opacity:.85">Lee Zhi Hui</span>
+    </footer>
+  </div>
+
+  <!-- Chart.js script -->
+  <script>
+    (function(){
+      const categories = [
+        {% for c in categories %}
+          { name: {{ c.name|tojson }}, high: {{ c.high|int }}, medium: {{ c.medium|int }}, low: {{ c.low|int }} }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ];
+      const labels = categories.map(c => c.name);
+      const values = categories.map(c => (c.high + c.medium + c.low));
+      const palette = ['#FF6B6B','#FF9F43','#FFD43B','#6BCB77','#4D96FF','#845EC2','#00C9A7','#FF9671'];
+      const colors = labels.map((_,i)=>palette[i%palette.length]);
+
+      const ctx = document.getElementById('categoryChart').getContext('2d');
+      const categoryChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: colors,
+            borderWidth: 2,
+            borderColor: '#fff',
+            hoverOffset: 8,
+            spacing: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { 
+                boxWidth: 14, 
+                padding: 10, 
+                usePointStyle: true,
+                font: {
+                  size: 12
+                }
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.label}: ${ctx.raw} findings`
+              }
+            }
+          },
+          onClick(evt) {
+            const points = categoryChart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+            if (!points.length) return;
+            const idx = points[0].index;
+            const anchorId = 'anchor-' + idx;
+            const el = document.getElementById(anchorId);
+            if (el) { 
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' }); 
+              return; 
+            }
+            const catName = labels[idx];
+            const sec = document.querySelector(`[data-category="${catName}"]`);
+            if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+      });
+
+      // keyboard accessibility for chart wrapper
+      const chartWrapper = document.querySelector('.chart-wrapper');
+      if (chartWrapper) {
+        chartWrapper.setAttribute('tabindex','0');
+        chartWrapper.addEventListener('keydown', (e)=>{
+          if (e.key === 'Enter' || e.key === ' ') {
+            const details = document.getElementById('details');
+            if (details) details.scrollIntoView({ behavior: 'smooth' });
+            e.preventDefault();
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
+"""
+
+# ---------------------------
+# Helper: transform your findings+summary into 'categories' and 'findings_by_category'
+# ---------------------------
+def _prepare_report_data(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, int]], debug: bool = False):
     """
-    Print a formatted summary table matching the new design:
-    Category | Severity | CVSS Score | Number of Findings | Status
-    
+    Build categories (list of {name, high, medium, low}) and findings_by_category (dict).
+    This version ALWAYS computes counts from the actual `findings` list to avoid
+    mismatches when `summary` is stale or empty. `summary` is used only as a
+    preferred order if provided.
+
     Args:
-        summary: Dictionary from generate_summary()
-        title: Optional title for the table
-        cvss_overrides: Optional dictionary of dynamic CVSS overrides from compute_cvss_overrides_from_findings()
+        findings: list of finding dicts (each may have Category and Severity)
+        summary: optional precomputed summary dict (category -> {High,Medium,Low})
+        debug: if True, will print a short debug snapshot to stdout
+
+    Returns:
+        categories, findings_by_category
     """
-    if not summary:
-        print(Fore.GREEN + f"\n{title}")
-        print("=" * 120)
-        print("✅ No security findings detected.")
-        print("=" * 120 + "\n")
-        return
-    
-    # Merge predefined CVSS with overrides
-    cvss_map = CATEGORY_CVSS_MAP.copy()
-    if cvss_overrides:
-        for cat, override in cvss_overrides.items():
-            if cat in cvss_map:
-                cvss_map[cat].update(override)
-    
-    # Sort categories by severity score (highest first)
-    sorted_categories = sorted(
-        summary.items(),
-        key=lambda x: calculate_category_score(x[0], x[1]["count"], cvss_map),
-        reverse=True
-    )
-    
-    # Calculate totals
-    total_findings = sum(counts["count"] for _, counts in sorted_categories)
-    
-    # Print header
-    print(Fore.CYAN + f"\n{title}")
-    print("=" * 120)
-    print(Fore.WHITE + f"Total Findings: {total_findings}")
-    print("=" * 120 + "\n")
-    
-    # Table header
-    print(f"{Fore.WHITE}{'Category':<40} {'Severity':<12} {'CVSS Score':<20} {'Number of Findings':<22} {'Status':<20}")
-    print("-" * 120)
-    
-    # Print each category
-    for category, counts in sorted_categories:
-        finding_count = counts["count"]
-        
-        # Get CVSS info for this category
-        cvss_info = cvss_map.get(category, {
-            "severity": "Low",
-            "cvss": "N/A",
-            "cvss_vector": ""
-        })
-        
-        severity = cvss_info.get("severity", "Low")
-        cvss = cvss_info.get("cvss", "N/A")
-        
-        # Determine status
-        status = "✗ Issues found" if finding_count > 0 else "✓ No issues"
-        
-        # Color code based on severity
-        if severity == "High":
-            severity_color = Fore.RED
-            category_color = Fore.RED
-        elif severity == "Medium":
-            severity_color = Fore.YELLOW
-            category_color = Fore.YELLOW
-        else:
-            severity_color = Fore.GREEN
-            category_color = Fore.GREEN
-        
-        # Status color
-        status_color = Fore.RED if finding_count > 0 else Fore.GREEN
-        
-        # Format finding count
-        finding_text = f"{finding_count} finding{'s' if finding_count != 1 else ''}"
-        
-        print(f"{category_color}{category:<40}{Style.RESET_ALL} "
-              f"{severity_color}{severity:<12}{Style.RESET_ALL} "
-              f"{Fore.WHITE}{cvss:<20}{Style.RESET_ALL} "
-              f"{Fore.WHITE}{finding_text:<22}{Style.RESET_ALL} "
-              f"{status_color}{status:<20}{Style.RESET_ALL}")
-    
-    # Add "Overall" row
-    print("-" * 120)
-    
-    # Determine overall severity
-    has_high = any(cvss_map.get(cat, {}).get("severity") == "High" and summary.get(cat, {}).get("count", 0) > 0 
-                   for cat in summary.keys())
-    has_medium = any(cvss_map.get(cat, {}).get("severity") == "Medium" and summary.get(cat, {}).get("count", 0) > 0 
-                     for cat in summary.keys())
-    
-    if has_high:
-        overall_severity = "High"
-        overall_color = Fore.RED
-    elif has_medium:
-        overall_severity = "Medium"
-        overall_color = Fore.YELLOW
+    # 1) Group findings by category and count severities from actual findings
+    findings_by_category: Dict[str, List[Dict[str, Any]]] = {}
+    counts_by_category: Dict[str, Dict[str, int]] = {}
+
+    for f in findings:
+        # Normalize keys (support both "Category" and "category")
+        cat = f.get("Category") or f.get("category") or "Uncategorized"
+        sev = f.get("Severity") or f.get("severity") or "Low"
+        sev = sev if sev in ("High", "Medium", "Low") else ("High" if sev.lower()=="high" else ("Medium" if sev.lower()=="medium" else "Low"))
+
+        findings_by_category.setdefault(cat, []).append(f)
+        if cat not in counts_by_category:
+            counts_by_category[cat] = {"High": 0, "Medium": 0, "Low": 0}
+        counts_by_category[cat][sev] = counts_by_category[cat].get(sev, 0) + 1
+
+    # 2) If summary provided, try to use its order. Otherwise order by total counts desc.
+    ordered_category_names = []
+    if summary and isinstance(summary, dict) and len(summary) > 0:
+        # preserve order of summary dict (likely insertion order from generate_summary)
+        ordered_category_names = list(summary.keys())
+        # But ensure we include any categories that appear in findings but not in summary
+        for cat in counts_by_category.keys():
+            if cat not in ordered_category_names:
+                ordered_category_names.append(cat)
     else:
-        overall_severity = "Low"
-        overall_color = Fore.GREEN
-    
-    overall_status = "⚠ Security weaknesses detected"
-    overall_status_color = Fore.YELLOW
-    
-    print(f"{Fore.CYAN}{'Overall':<40}{Style.RESET_ALL} "
-          f"{overall_color}{overall_severity:<12}{Style.RESET_ALL} "
-          f"{Fore.WHITE}{'—':<20}{Style.RESET_ALL} "
-          f"{Fore.WHITE}{'—':<22}{Style.RESET_ALL} "
-          f"{overall_status_color}{overall_status:<20}{Style.RESET_ALL}")
-    
-    print("=" * 120 + "\n")
+        # sort by total findings per category desc
+        ordered_category_names = sorted(counts_by_category.keys(), key=lambda c: sum(counts_by_category[c].values()), reverse=True)
+
+    # 3) Build final categories list using counts computed from findings
+    categories = []
+    for cat in ordered_category_names:
+        cnts = counts_by_category.get(cat, {"High":0,"Medium":0,"Low":0})
+        categories.append({"name": cat, "high": int(cnts.get("High", 0)), "medium": int(cnts.get("Medium", 0)), "low": int(cnts.get("Low", 0))})
+
+    # 4) Add any categories present in findings but missing in ordered list (shouldn't happen, but safe)
+    existing = set(ordered_category_names)
+    for cat, cnts in counts_by_category.items():
+        if cat not in existing:
+            categories.append({"name": cat, "high": int(cnts.get("High", 0)), "medium": int(cnts.get("Medium", 0)), "low": int(cnts.get("Low", 0))})
+
+    # Debugging snapshot
+    if debug:
+        try:
+            print("DEBUG: derived categories (name, high, medium, low):")
+            for c in categories:
+                print(f"  - {c['name']}: H={c['high']} M={c['medium']} L={c['low']}")
+            # show one example finding for each of first 3 categories (if present)
+            shown = 0
+            for cat in categories:
+                if shown >= 3:
+                    break
+                items = findings_by_category.get(cat['name'], [])
+                if items:
+                    sample = items[0]
+                    print(f"  SAMPLE for {cat['name']}: Severity={sample.get('Severity')} Desc={str(sample.get('Description',''))[:80]}")
+                    shown += 1
+        except Exception as e:
+            print("[DEBUG] failed to print debug info:", e)
+
+    return categories, findings_by_category
 
 
-def print_detailed_findings(findings: List[Dict[str, Any]], category_filter: str = None):
+def generate_interactive_html_report(findings: List[Dict[str, Any]],
+                                    summary: Dict[str, Dict[str, int]],
+                                    filename: str = "security_scan_report.html",
+                                    target_url: str = None) -> bool:
     """
-    Print detailed findings, optionally filtered by category.
-    
-    Args:
-        findings: List of finding dictionaries
-        category_filter: Optional category name to filter by
+    Generate an interactive HTML report using the embedded Jinja2 template.
+
+    Notes:
+      - The template uses Chart.js for interactive charts in the browser.
+      - Findings are automatically enriched with detailed vulnerability information.
     """
-    if category_filter:
-        findings = [f for f in findings if f.get("Category") == category_filter]
-        print(Fore.CYAN + f"\nDetailed Findings for: {category_filter}")
-    else:
-        print(Fore.CYAN + "\nDetailed Findings (All Categories)")
-    
-    print("=" * 80 + "\n")
-    
-    if not findings:
-        print(Fore.GREEN + "No findings to display.\n")
-        return
-    
-    # Sort by severity
-    severity_order = {"High": 0, "Medium": 1, "Low": 2}
-    sorted_findings = sorted(
-        findings,
-        key=lambda f: (severity_order.get(f.get("Severity", "Low"), 3), f.get("Category", ""))
-    )
-    
-    for idx, finding in enumerate(sorted_findings, 1):
-        severity = finding.get("Severity", "Low")
-        category = finding.get("Category", "Unknown")
-        description = finding.get("Description", "No description")
+    try:
+        # ENRICH FINDINGS with detailed vulnerability information
+        enriched_findings = enrich_all_findings(findings)
         
-        # Color based on severity
-        sev_color = {"High": Fore.RED, "Medium": Fore.YELLOW, "Low": Fore.GREEN}.get(severity, Fore.WHITE)
-        
-        print(f"{Fore.WHITE}{idx}. [{category}]{Style.RESET_ALL}")
-        print(f"   Severity: {sev_color}{severity}{Style.RESET_ALL}")
-        print(f"   {description}")
-        
-        # Print additional context if available
-        if "URL" in finding and finding["URL"]:
-            print(f"   URL: {finding['URL']}")
-        if "Context" in finding and finding["Context"]:
-            print(f"   Context: {finding['Context']}")
-        if "Recommendation" in finding and finding["Recommendation"]:
-            print(f"   {Fore.CYAN}→ {finding['Recommendation']}{Style.RESET_ALL}")
-        
-        print()
+        # Ensure summary/findings are in expected shapes
+        categories, findings_by_category = _prepare_report_data(enriched_findings, summary)
+
+        # Totals
+        total_high = sum(c["high"] for c in categories)
+        total_medium = sum(c["medium"] for c in categories)
+        total_low = sum(c["low"] for c in categories)
+        total_findings = total_high + total_medium + total_low
+
+        # Render the template using an Environment that enables `do`
+        env = Environment(
+            extensions=["jinja2.ext.do"],
+            autoescape=select_autoescape(["html", "xml"]),
+            undefined=StrictUndefined  # optional: helps catch missing keys early; remove if too strict
+        )
+
+        tmpl = env.from_string(REPORT_TEMPLATE)
+        rendered = tmpl.render(
+            target_url=target_url or "Unknown",
+            scan_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            total_findings=total_findings,
+            total_high=total_high,
+            total_medium=total_medium,
+            total_low=total_low,
+            categories=categories,
+            findings_by_category=findings_by_category
+        )
+
+        # Write file
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(rendered)
+
+        print(Fore.GREEN + f"✅ Interactive HTML report generated: {filename}" + Style.RESET_ALL)
+        print(Fore.CYAN + f"   Open the file in a browser to view and export the report." + Style.RESET_ALL)
+        return True
+
+    except Exception as e:
+        print(Fore.RED + f"[ERROR] Failed to generate interactive HTML: {e}" + Style.RESET_ALL)
+        import traceback
+        traceback.print_exc()
+        return False
 
 
-def export_summary_csv(summary: Dict[str, Dict[str, int]], filename: str = "security_findings_summary.csv", cvss_overrides: Dict[str, Dict[str, str]] = None):
-    """
-    Export the summary table to a CSV file.
-    
-    Args:
-        summary: Dictionary from generate_summary()
-        filename: Output CSV filename
-        cvss_overrides: Optional dictionary of dynamic CVSS overrides
-    """
-    import csv
-    
-    # Merge predefined CVSS with overrides
-    cvss_map = CATEGORY_CVSS_MAP.copy()
-    if cvss_overrides:
-        for cat, override in cvss_overrides.items():
-            if cat in cvss_map:
-                cvss_map[cat].update(override)
-    
-    # Sort categories by severity
-    sorted_categories = sorted(
-        summary.items(),
-        key=lambda x: calculate_category_score(x[0], x[1]["count"], cvss_map),
-        reverse=True
-    )
-    
-    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(['Category', 'Severity', 'CVSS Score', 'Number of Findings', 'Status'])
-        
-        for category, counts in sorted_categories:
-            finding_count = counts["count"]
-            cvss_info = cvss_map.get(category, {"severity": "Low", "cvss": "N/A"})
-            severity = cvss_info.get("severity", "Low")
-            cvss = cvss_info.get("cvss", "N/A")
-            status = "Issues found" if finding_count > 0 else "No issues"
-            
-            writer.writerow([category, severity, cvss, finding_count, status])
-        
-        # Overall row
-        has_high = any(cvss_map.get(cat, {}).get("severity") == "High" and summary.get(cat, {}).get("count", 0) > 0 
-                       for cat in summary.keys())
-        has_medium = any(cvss_map.get(cat, {}).get("severity") == "Medium" and summary.get(cat, {}).get("count", 0) > 0 
-                         for cat in summary.keys())
-        
-        if has_high:
-            overall_severity = "High"
-        elif has_medium:
-            overall_severity = "Medium"
-        else:
-            overall_severity = "Low"
-        
-        writer.writerow(['Overall', overall_severity, '—', '—', 'Security weaknesses detected'])
-    
-    print(Fore.GREEN + f"✅ Summary exported to {filename}\n" + Style.RESET_ALL)
+# Legacy function for backward compatibility
+def export_to_html(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, int]],
+                   filename: str = "security_scan_report.html", target_url: str = None) -> bool:
+    """Legacy function - redirects to interactive HTML generation."""
+    return generate_interactive_html_report(findings, summary, filename, target_url)

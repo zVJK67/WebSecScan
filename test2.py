@@ -77,7 +77,7 @@ REPORT_TEMPLATE = r"""
 
     /* A4 sizing for print and WeasyPrint */
     .page {
-      width: 210mm;               /* A4 width */
+      width: 210mm;
       margin: 0 auto;
       background: white;
       border-radius: 6px;
@@ -87,7 +87,7 @@ REPORT_TEMPLATE = r"""
 
     /* Header */
     .report-header {
-      background: linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+      background: linear-gradient(135deg,#ABE7B2 0%,#F7A5A5 100%);
       color: white;
       padding: 28px 32px;
     }
@@ -122,7 +122,7 @@ REPORT_TEMPLATE = r"""
     }
     .card {
       flex:1;
-      background:linear-gradient(180deg,#fff 0,#f7fbff 100%);
+      background:linear-gradient(180deg,#fff 0,#fffaf8 100%);
       border-radius:8px;
       padding:12px;
       border:1px solid #e7eefc;
@@ -132,67 +132,152 @@ REPORT_TEMPLATE = r"""
     .card .label { font-size:12px; color:#6b7280; margin-top:6px; text-transform:uppercase; letter-spacing:0.6px; }
 
     /* Table summary */
-    table.summary-table { width:100%; border-collapse:collapse; margin-top:10px; }
+    table.summary-table { width:100%; border-collapse:collapse; margin-top:10px; background:#F9F8F6}
     table.summary-table th, table.summary-table td {
-      padding:10px 8px; text-align:left; border-bottom:1px solid #f1f6ff;
+      padding:10px 8px; text-align:center; border-bottom:1px solid #CBCBCB;
       font-size:13px;
     }
-    table.summary-table th { background:#f8fbff; color:#243140; font-weight:700; font-size:12px; text-transform:uppercase; }
-    table.summary-table tr:hover td { background:#fbfdff; }
+    table.summary-table th { background:#11224E; color:#BADFDB; font-weight:700; font-size:12px; text-transform:uppercase; }
+    table.summary-table tr:hover td { background:#EFE9E3; }
 
     /* Chart container */
     .chart-wrapper {
-      background: white;
+      background: #fffaf8;
       border-radius:8px;
-      padding:12px;
-      border:1px solid #eef2fb;
+      padding:16px;
+      border:1px solid #e0e0e0;
       display:flex;
       gap:12px;
       align-items:center;
       justify-content:center;
     }
-    #categoryChart { width:260px; height:260px; }
+    #categoryChart { width:280px; height:280px; }
 
     /* Details */
     .details { padding: 24px 32px 40px; }
-    .details h2 { font-size:20px; color:#243140; border-bottom:3px solid #eef3ff; padding-bottom:10px; margin-bottom:18px; }
+    .details h2 { font-size:22px; color:#4A70A9; font-weight:800; border-bottom:3px solid #eef3ff; padding-bottom:10px; margin-bottom:18px; }
 
     .category-section {
-      margin-bottom:20px;
-      padding:16px;
+      margin-bottom:24px;
       background: white;
       border-radius:8px;
-      border:1px solid #eef5ff;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
-    .category-title {
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:10px;
-      margin-bottom:12px;
+    
+    /* Colored left border for severity */
+    .category-section.risk-high { border-left: 6px solid #dc3545; }
+    .category-section.risk-medium { border-left: 6px solid #fd7e14; }
+    .category-section.risk-low { border-left: 6px solid #28a745; }
+    
+    .vuln-header {
+      background: #f8f9fa;
+      padding: 16px 20px;
+      border-bottom: 2px solid #e9ecef;
     }
-    .category-title .left { font-weight:700; font-size:16px; color:#243140; }
-    .badge { font-size:12px; color:#3b4a5a; background:#f3f7ff; padding:6px 8px; border-radius:6px; }
-
-    .finding-item {
-      background:#fbfdff;
-      border-left:4px solid #667eea;
-      padding:12px;
-      margin-bottom:12px;
-      border-radius:6px;
+    .vuln-title { 
+      font-size: 18px; 
+      font-weight: 700; 
+      color: #1a1a1a;
+      margin-bottom: 4px;
     }
-    .finding-header { display:flex; gap:12px; align-items:center; margin-bottom:8px; }
-    .finding-number { background:#6c757d;color:white;padding:4px 10px;border-radius:999px;font-weight:700; }
-    .severity-badge { padding:6px 10px;border-radius:20px;color:white;font-weight:700;font-size:12px; }
-    .sev-high { background:#dc3545; }
-    .sev-medium { background:#fd7e14; }
-    .sev-low { background:#28a745; }
-
-    .finding-description { color:#2f3a47; margin-bottom:8px; }
-    .detail-item { font-size:13px; background:white;padding:8px;border-radius:6px;border:1px solid #eef3ff; margin-bottom:6px; }
-    .detail-item code { background:#f1f6ff; padding:2px 6px; border-radius:4px; font-family:monospace; }
-
-    .recommend { background:#fff8e6; border-left:4px solid #f59e0b; padding:10px;border-radius:6px; }
+    
+    .vuln-content { padding: 20px; }
+    
+    .vuln-section {
+      margin-bottom: 20px;
+    }
+    .vuln-section:last-child { margin-bottom: 0; }
+    
+    .section-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #495057;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .section-content {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #2f3a47;
+    }
+    
+    /* Risk Rating styling */
+    .risk-rating {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+    .risk-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .risk-label {
+      font-weight: 600;
+      color: #495057;
+    }
+    .risk-value {
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .risk-value.high { background: #dc3545; color: white; }
+    .risk-value.medium { background: #fd7e14; color: white; }
+    .risk-value.low { background: #28a745; color: white; }
+    
+    /* Instances table */
+    .instances-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      border: 1px solid #dee2e6;
+      font-size: 13px;
+    }
+    .instances-table th {
+      background: #f1f3f5;
+      padding: 10px 12px;
+      text-align: left;
+      font-weight: 600;
+      color: #495057;
+      border-bottom: 2px solid #dee2e6;
+    }
+    .instances-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e9ecef;
+      color: #2f3a47;
+    }
+    .instances-table tr:last-child td {
+      border-bottom: none;
+    }
+    .instances-table tr:hover {
+      background: #f8f9fa;
+    }
+    .instances-table code {
+      background: #e7f1ff;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+    
+    /* Remediation box */
+    .remediation-box {
+      background: #fff3cd;
+      border-left: 4px solid #ffc107;
+      padding: 14px 16px;
+      border-radius: 4px;
+    }
+    .remediation-box .section-title {
+      color: #856404;
+      margin-bottom: 8px;
+    }
+    .remediation-box .section-content {
+      color: #664d03;
+    }
 
     /* footer */
     .report-footer { background:#f8fafc; padding:14px 32px; color:#5b6b7a; font-size:13px; border-top:1px solid #eef2fb; text-align:center; }
@@ -211,28 +296,25 @@ REPORT_TEMPLATE = r"""
       .page { box-shadow:none; border-radius:0; width: auto; }
       .chart-wrapper, .card, .summary-table { page-break-inside: avoid; }
       .report-header, .meta, .report-footer { -webkit-print-color-adjust: exact; }
-      /* hide interactive UI if added */
       .no-print { display:none !important; }
     }
 
     /* small helper link style used by chart click target */
-    .anchor { display:block; padding-top:40px; margin-top:-40px; } /* offset for scroll */
+    .anchor { display:block; padding-top:40px; margin-top:-40px; }
   </style>
 </head>
 <body>
   <div class="page" role="document">
     <!-- HEADER -->
     <header class="report-header">
-      <div class="report-title">🛡️ WebSecScan Security Report</div>
-      <div class="report-sub">Comprehensive Security Analysis</div>
+      <div class="report-title">WebSecScan Security Report</div>
+      <div class="report-sub">Web Application Security Analysis</div>
     </header>
 
     <!-- META -->
     <div class="meta">
       <div class="meta-item"><strong>Target:</strong> <code>{{ target_url }}</code></div>
       <div class="meta-item"><strong>Scan Time:</strong> {{ scan_time }}</div>
-      <div class="meta-item"><strong>Total Issues:</strong> {{ total_findings }}</div>
-      <div style="margin-left:auto;font-size:12px;color:#6b7280;">Generated by WebSecScan</div>
     </div>
 
     <!-- SUMMARY -->
@@ -241,18 +323,18 @@ REPORT_TEMPLATE = r"""
         <div class="stat-cards">
           <div class="card">
             <div class="num">{{ total_findings }}</div>
-            <div class="label">Total Issues</div>
+            <div class="label">Total Findings</div>
           </div>
           <div class="card">
-            <div class="num" style="color:#b91c1c;">{{ total_high }}</div>
+            <div class="num" style="color:Red;">{{ total_high }}</div>
             <div class="label">High</div>
           </div>
           <div class="card">
-            <div class="num" style="color:#c2410c;">{{ total_medium }}</div>
+            <div class="num" style="color:Orange;">{{ total_medium }}</div>
             <div class="label">Medium</div>
           </div>
           <div class="card">
-            <div class="num" style="color:#0f766e;">{{ total_low }}</div>
+            <div class="num" style="color:Green;">{{ total_low }}</div>
             <div class="label">Low</div>
           </div>
         </div>
@@ -264,11 +346,11 @@ REPORT_TEMPLATE = r"""
           <tbody>
             {% for c in categories %}
             <tr>
-              <td>{{ c.name }}</td>
-              <td>{{ c.high }}</td>
-              <td>{{ c.medium }}</td>
-              <td>{{ c.low }}</td>
-              <td>{{ (c.high|int + c.medium|int + c.low|int) }}</td>
+              <td style="font-weight:700; color:#452829">{{ c.name }}</td>
+              <td style="font-weight:700; color:Red">{{ c.high }}</td>
+              <td style="font-weight:700; color:Orange">{{ c.medium }}</td>
+              <td style="font-weight:700; color:Green">{{ c.low }}</td>
+              <td style="font-weight:800; color:#452829">{{ (c.high|int + c.medium|int + c.low|int) }}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -276,72 +358,162 @@ REPORT_TEMPLATE = r"""
       </div>
 
       <div class="right-summary">
-        <div class="chart-wrapper" role="img" aria-label="Vulnerability categories chart">
-          <canvas id="categoryChart" aria-hidden="false" title="Click a slice to go to details"></canvas>
+        <div style="text-align:center; margin-bottom:12px;">
+          <div style="font-size:16px; font-weight:700; color:#4A70A9; margin-bottom:4px;">Vulnerability Categories Chart</div>
         </div>
-        <div style="margin-top:10px;font-size:12px;color:#5b6b7a;">
-          Click a slice to jump to the details section for that category.
+        <div class="chart-wrapper" role="img" aria-label="Vulnerability categories chart">
+          <canvas id="categoryChart" aria-hidden="false"></canvas>
+        </div>
+        <div style="margin-top:12px;font-size:12px;color:#5b6b7a;text-align:center;font-weight:600;">
+          Click a slice to jump to that details section.
         </div>
       </div>
     </section>
 
     <!-- DETAILED FINDINGS -->
     <section class="details" id="details">
-      <h2>🔍 Detailed Findings</h2>
+      <h2>Detailed Findings</h2>
 
       {% for c in categories %}
         {% set cat_name = c.name %}
+        {% set findings = findings_by_category.get(cat_name, []) %}
+        
+        {# Determine category risk level - use highest severity from its findings #}
+        {% set risk_class = 'risk-low' %}
+        {% if c.high > 0 %}
+          {% set risk_class = 'risk-high' %}
+        {% elif c.medium > 0 %}
+          {% set risk_class = 'risk-medium' %}
+        {% endif %}
+        
         <a id="anchor-{{ loop.index0 }}" class="anchor" aria-hidden="true"></a>
-        <div class="category-section" data-category="{{ cat_name|e }}">
-          <div class="category-title">
-            <div class="left">{{ cat_name }}</div>
-            <div class="badge">High: {{ c.high }} &nbsp; | &nbsp; Medium: {{ c.medium }} &nbsp; | &nbsp; Low: {{ c.low }}</div>
+        <div class="category-section {{ risk_class }}" data-category="{{ cat_name|e }}">
+          
+          <!-- Vulnerability Header -->
+          <div class="vuln-header">
+            <div class="vuln-title">{{ cat_name }}</div>
           </div>
-
-          {% set findings = findings_by_category.get(cat_name, []) %}
-          {% if findings %}
-            {% for f in findings %}
-              <article class="finding-item" role="article" aria-labelledby="f-{{ cat_name|replace(' ','-') }}-{{ loop.index }}">
-                <div class="finding-header">
-                  <div class="finding-number">#{{ loop.index }}</div>
-                  {% set sev = (f.Severity or f.get('Severity','Low')) %}
-                  <div class="severity-badge {% if sev == 'High' %}sev-high{% elif sev == 'Medium' %}sev-medium{% else %}sev-low{% endif %}">{{ sev }}</div>
+          
+          <div class="vuln-content">
+            {% if findings %}
+              {# Get first finding for description (assuming all findings in category share same description) #}
+              {% set first_finding = findings[0] %}
+              
+              <!-- Description Section -->
+              <div class="vuln-section">
+                <div class="section-title">Description:</div>
+                <div class="section-content">
+                  {{ first_finding.Description or first_finding.get('Description', 'No description provided.') }}
                 </div>
-
-                <div id="f-{{ cat_name|replace(' ','-') }}-{{ loop.index }}" class="finding-description">
-                  {{ f.Description or f.get('Description','No description provided.') }}
+              </div>
+              
+              <!-- Risk Rating Section -->
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating:</div>
+                <div class="risk-rating">
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    {% if c.high > 0 %}
+                      <span class="risk-value high">High</span>
+                    {% elif c.medium > 0 %}
+                      <span class="risk-value medium">Medium</span>
+                    {% else %}
+                      <span class="risk-value low">Low</span>
+                    {% endif %}
+                  </div>
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    <span class="risk-value {% if c.high > 0 %}high{% elif c.medium > 0 %}medium{% else %}low{% endif %}">
+                      {{ first_finding.CVSS or first_finding.get('CVSS', 'N/A') }}
+                    </span>
+                  </div>
                 </div>
-
-                <div class="detail-item">
-                  {% if f.URL %}
-                    <div><strong>URL:</strong> <code>{{ f.URL }}</code></div>
-                  {% endif %}
-                  {% if f.Status %}
-                    <div><strong>Status:</strong> {{ f.Status }}</div>
-                  {% endif %}
-                  {% if f.Context %}
-                    <div><strong>Context:</strong> {{ f.Context }}</div>
-                  {% endif %}
-                  {% if f.Detail %}
-                    <div><strong>Detail:</strong>
-                      <pre style="white-space:pre-wrap; font-family:monospace; font-size:12px; margin-top:6px;">{{ f.Detail if f.Detail is string else (f.Detail|tojson(indent=2)) }}</pre>
-                    </div>
-                  {% endif %}
+              </div>
+              
+              <!-- Instances Section -->
+              <div class="vuln-section">
+                <div class="section-title">Instances:</div>
+                <table class="instances-table">
+                  <thead>
+                    <tr>
+                      {% if findings[0].URL or findings[0].get('URL') %}
+                        <th>Page Affected</th>
+                      {% endif %}
+                      {% if findings[0].Status or findings[0].get('Status') %}
+                        <th>Status</th>
+                      {% endif %}
+                      {% if findings[0].Context or findings[0].get('Context') %}
+                        <th>Context</th>
+                      {% endif %}
+                      {% if findings[0].Detail or findings[0].get('Detail') %}
+                        <th>Details</th>
+                      {% endif %}
+                      {# Fallback if no standard fields #}
+                      {% if not (findings[0].URL or findings[0].Status or findings[0].Context or findings[0].Detail) %}
+                        <th>Finding Details</th>
+                      {% endif %}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for f in findings %}
+                      <tr>
+                        {% if f.URL or f.get('URL') %}
+                          <td><code>{{ f.URL or f.get('URL', 'N/A') }}</code></td>
+                        {% endif %}
+                        {% if f.Status or f.get('Status') %}
+                          <td>{{ f.Status or f.get('Status', 'N/A') }}</td>
+                        {% endif %}
+                        {% if f.Context or f.get('Context') %}
+                          <td>{{ f.Context or f.get('Context', 'N/A') }}</td>
+                        {% endif %}
+                        {% if f.Detail or f.get('Detail') %}
+                          <td>
+                            {% if f.Detail is string %}
+                              {{ f.Detail }}
+                            {% else %}
+                              {{ f.Detail|tojson }}
+                            {% endif %}
+                          </td>
+                        {% endif %}
+                        {# Fallback row #}
+                        {% if not (f.URL or f.Status or f.Context or f.Detail) %}
+                          <td>{{ f.Description or f.get('Description', 'Finding recorded') }}</td>
+                        {% endif %}
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              
+              <!-- Impact/Consequence Section -->
+              {% if first_finding.Impact or first_finding.get('Impact') %}
+              <div class="vuln-section">
+                <div class="section-title">Impact/Consequence:</div>
+                <div class="section-content">
+                  {{ first_finding.Impact or first_finding.get('Impact', 'Impact information not available.') }}
                 </div>
-
-                {% if f.Recommendation or f.get("Recommendation") %}
-                <div class="recommend" role="note">
-                  <strong>Recommendation:</strong>
-                  <div style="margin-top:6px;">{{ f.Recommendation or f.get("Recommendation") }}</div>
+              </div>
+              {% endif %}
+              
+              <!-- Remediation Section -->
+              {% if first_finding.Recommendation or first_finding.get('Recommendation') %}
+              <div class="vuln-section">
+                <div class="remediation-box">
+                  <div class="section-title">Remediation:</div>
+                  <div class="section-content">
+                    {{ first_finding.Recommendation or first_finding.get('Recommendation') }}
+                  </div>
                 </div>
-                {% endif %}
-              </article>
-            {% endfor %}
-          {% else %}
-            <div style="padding:10px;color:#5b6b7a;background:#fbfdff;border-radius:6px;border:1px solid #eef3ff;">
-              No findings recorded for this category.
-            </div>
-          {% endif %}
+              </div>
+              {% endif %}
+              
+            {% else %}
+              <div style="padding:10px;color:#5b6b7a;background:#f8f9fa;border-radius:6px;">
+                No findings recorded for this category.
+              </div>
+            {% endif %}
+          </div>
+          
         </div>
       {% endfor %}
     </section>

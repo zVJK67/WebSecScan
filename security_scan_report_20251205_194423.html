@@ -1,0 +1,3030 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>WebSecScan Security Report</title>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* Global reset */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html,body { height:100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      color: #203040;
+      background: #f2f4f8;
+      padding: 20px;
+      -webkit-font-smoothing:antialiased;
+    }
+
+    /* A4 sizing for print and WeasyPrint */
+    .page {
+      width: 210mm;
+      margin: 0 auto;
+      background: white;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 8px 30px rgba(15,23,42,0.12);
+    }
+
+    /* Header */
+    .report-header {
+      background: linear-gradient(135deg,#ABE7B2 0%,#F7A5A5 100%);
+      color: white;
+      padding: 28px 32px;
+    }
+    .report-title { font-size: 28px; font-weight:800; margin-bottom:6px; }
+    .report-sub { color: rgba(255,255,255,0.92); opacity:0.95; font-size:14px; }
+
+    /* Meta */
+    .meta {
+      display:flex;
+      gap:20px;
+      padding:18px 32px;
+      align-items:center;
+      border-bottom: 1px solid #eef2fb;
+    }
+    .meta .meta-item { font-size:13px; color:#2f3a47; }
+    .meta code { background:#eef3ff; padding:3px 6px; border-radius:4px; font-family:monospace; }
+
+    /* Summary area */
+    .summary {
+      padding: 22px 32px 30px 32px;
+      display:flex;
+      gap:18px;
+      align-items:flex-start;
+    }
+    .left-summary { width: 480px; min-width:300px; }
+    .right-summary { flex:1; }
+
+    .stat-cards {
+      display:flex;
+      gap:12px;
+      margin-bottom:14px;
+    }
+    .card {
+      flex:1;
+      background:linear-gradient(180deg,#fff 0,#fffaf8 100%);
+      border-radius:8px;
+      padding:12px;
+      border:1px solid #e7eefc;
+      text-align:center;
+    }
+    .card .num { font-size:22px; font-weight:800; color:#243140; }
+    .card .label { font-size:12px; color:#6b7280; margin-top:6px; text-transform:uppercase; letter-spacing:0.6px; }
+
+    /* Table summary */
+    table.summary-table { width:100%; border-collapse:collapse; margin-top:10px; background:#F9F8F6}
+    table.summary-table th, table.summary-table td {
+      padding:10px 8px; text-align:center; border-bottom:1px solid #CBCBCB;
+      font-size:13px;
+    }
+    table.summary-table th { background:#11224E; color:#BADFDB; font-weight:700; font-size:12px; text-transform:uppercase; }
+    table.summary-table tr:hover td { background:#EFE9E3; }
+
+    /* Chart container */
+    .chart-wrapper {
+      background: #fffaf8;
+      border-radius:8px;
+      padding:16px;
+      border:1px solid #e0e0e0;
+      display:flex;
+      gap:12px;
+      align-items:center;
+      justify-content:center;
+    }
+    #categoryChart { width:280px; height:280px; }
+
+    /* Details */
+    .details { padding: 24px 32px 40px; }
+    .details h2 { font-size:22px; color:#4A70A9; font-weight:800; border-bottom:3px solid #eef3ff; padding-bottom:10px; margin-bottom:18px; }
+
+    .category-section {
+      margin-bottom:24px;
+      background: white;
+      border-radius:8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    
+    /* Colored left border for severity */
+    .category-section.risk-high { border-left: 6px solid #dc3545; }
+    .category-section.risk-medium { border-left: 6px solid #fd7e14; }
+    .category-section.risk-low { border-left: 6px solid #28a745; }
+    
+    .vuln-header {
+      background: #f8f9fa;
+      padding: 16px 20px;
+      border-bottom: 2px solid #e9ecef;
+    }
+    .vuln-title { 
+      font-size: 18px; 
+      font-weight: 700; 
+      color: #1a1a1a;
+      margin-bottom: 4px;
+    }
+    
+    .vuln-content { padding: 20px; }
+    
+    .vuln-section {
+      margin-bottom: 20px;
+    }
+    .vuln-section:last-child { margin-bottom: 0; }
+    
+    .section-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #495057;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .section-content {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #2f3a47;
+      white-space: pre-line;
+    }
+    
+    /* Risk Rating styling */
+    .risk-rating {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+    }
+    .risk-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .risk-label {
+      font-weight: 600;
+      color: #495057;
+    }
+    .risk-value {
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .risk-value.high { background: #dc3545; color: white; }
+    .risk-value.medium { background: #fd7e14; color: white; }
+    .risk-value.low { background: #28a745; color: white; }
+    
+    /* Instances table */
+    .instances-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      border: 1px solid #dee2e6;
+      font-size: 13px;
+    }
+    .instances-table th {
+      background: #f1f3f5;
+      padding: 10px 12px;
+      text-align: left;
+      font-weight: 600;
+      color: #495057;
+      border-bottom: 2px solid #dee2e6;
+    }
+    .instances-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e9ecef;
+      color: #2f3a47;
+      vertical-align: top;
+    }
+    .instances-table tr:last-child td {
+      border-bottom: none;
+    }
+    .instances-table tr:hover {
+      background: #f8f9fa;
+    }
+    .instances-table code {
+      background: #e7f1ff;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+    }
+    
+    /* Remediation box */
+    .remediation-box {
+      background: #fff3cd;
+      border-left: 4px solid #ffc107;
+      padding: 14px 16px;
+      border-radius: 4px;
+    }
+    .remediation-box .section-title {
+      color: #856404;
+      margin-bottom: 8px;
+    }
+    .remediation-box .section-content {
+      color: #664d03;
+    }
+
+    /* footer */
+    .report-footer { background:#f8fafc; padding:14px 32px; color:#5b6b7a; font-size:13px; border-top:1px solid #eef2fb; text-align:center; }
+
+    /* small screen fallback (not used for print) */
+    @media (max-width:900px) {
+      .page { width:calc(100% - 40px); }
+      .summary { flex-direction:column; }
+      .left-summary { width:100%; }
+    }
+
+    /* Print friendly / WeasyPrint */
+    @page { size: A4 portrait; margin: 12mm 12mm 12mm 12mm; }
+    @media print {
+      body { background: white; }
+      .page { box-shadow:none; border-radius:0; width: auto; }
+      .chart-wrapper, .card, .summary-table { page-break-inside: avoid; }
+      .report-header, .meta, .report-footer { -webkit-print-color-adjust: exact; }
+      .no-print { display:none !important; }
+    }
+
+    /* small helper link style used by chart click target */
+    .anchor { display:block; padding-top:40px; margin-top:-40px; }
+  </style>
+</head>
+<body>
+  <div class="page" role="document">
+    <!-- HEADER -->
+    <header class="report-header">
+      <div class="report-title">WebSecScan Security Report</div>
+      <div class="report-sub">Web Application Security Analysis</div>
+    </header>
+
+    <!-- META -->
+    <div class="meta">
+      <div class="meta-item"><strong>Target:</strong> <code>http://127.0.0.1:4000</code></div>
+      <div class="meta-item"><strong>Scan Time:</strong> 2025-12-05 19:44:23</div>
+    </div>
+
+    <!-- SUMMARY -->
+    <section class="summary" aria-label="Executive summary">
+      <div class="left-summary">
+        <div class="stat-cards">
+          <div class="card">
+            <div class="num">43</div>
+            <div class="label">Total Findings</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Red;">14</div>
+            <div class="label">High</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Orange;">15</div>
+            <div class="label">Medium</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Green;">14</div>
+            <div class="label">Low</div>
+          </div>
+        </div>
+
+        <table class="summary-table" role="table" aria-label="Findings summary by category">
+          <thead>
+            <tr><th>Category</th><th>High</th><th>Medium</th><th>Low</th><th>Total</th></tr>
+          </thead>
+          <tbody>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Security Headers</td>
+              <td style="font-weight:700; color:Red">0</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">8</td>
+              <td style="font-weight:800; color:#452829">8</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Server Information</td>
+              <td style="font-weight:700; color:Red">0</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">1</td>
+              <td style="font-weight:800; color:#452829">1</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Cookie Security</td>
+              <td style="font-weight:700; color:Red">1</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">0</td>
+              <td style="font-weight:800; color:#452829">1</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">CORS Security</td>
+              <td style="font-weight:700; color:Red">0</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">5</td>
+              <td style="font-weight:800; color:#452829">5</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Directory Exposure</td>
+              <td style="font-weight:700; color:Red">12</td>
+              <td style="font-weight:700; color:Orange">15</td>
+              <td style="font-weight:700; color:Green">0</td>
+              <td style="font-weight:800; color:#452829">27</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">SSL/TLS</td>
+              <td style="font-weight:700; color:Red">1</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">0</td>
+              <td style="font-weight:800; color:#452829">1</td>
+            </tr>
+            
+          </tbody>
+        </table>
+      </div>
+
+      <div class="right-summary">
+        <div class="chart-wrapper" role="img" aria-label="Vulnerability categories chart">
+          <div class="card-title">Vulnerability Categories Chart</div>
+          <canvas id="categoryChart" width="320" height="320" aria-hidden="false"></canvas>
+          <div style="margin-top:16px;font-size:13px;font-weight:700;color:#5b6b7a;">
+            Click a slice to jump to that details section.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    
+  <!-- DETAILED FINDINGS -->
+    <section class="details" id="details">
+      <h2>Detailed Findings</h2>
+
+      
+        
+        
+        
+        
+        
+        
+        
+        <a id="anchor-0" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-low" data-category="Security Headers">
+          
+          <!-- Vulnerability Header -->
+          <div class="vuln-header">
+            <div class="vuln-title">Security Headers</div>
+          </div>
+          
+          <div class="vuln-content">
+            
+              
+              
+              
+              <!-- Description Section -->
+              <div class="vuln-section">
+                <div class="section-title">Description:</div>
+                <div class="section-content">
+                  Content-Security-Policy: default-src &#39;self&#39;; frame-ancestors &#39;none&#39;
+                </div>
+              </div>
+              
+              <!-- Risk Rating Section -->
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating:</div>
+                <div class="risk-rating">
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value low">Low</span>
+                    
+                  </div>
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    <span class="risk-value low">
+                      3.1 (AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N)
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              
+              <div class="vuln-section">
+                <div class="section-title">Findings:</div>
+
+                
+                
+
+                  <table class="instances-table">
+                    <thead>
+                      <tr>
+                        <th style="width:40%;">Finding</th>
+                        <th style="width:25%;">Status</th>
+                        <th style="width:35%;">Current Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      
+                      <tr>
+                        <td><strong>Content-Security-Policy</strong></td>
+                        <td>Missing</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>Strict-Transport-Security</strong></td>
+                        <td>Missing</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>X-XSS-Protection</strong></td>
+                        <td>Missing</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>Cache-Control</strong></td>
+                        <td>Misconfigured</td>
+                        <td>
+                            <code>public, max-age=0</code>
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>Referrer-Policy</strong></td>
+                        <td>Missing</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>Cross-Origin-Opener-Policy</strong></td>
+                        <td>Missing</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>Cross-Origin-Embedder-Policy</strong></td>
+                        <td>Missing</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>Cross-Origin-Resource-Policy</strong></td>
+                        <td>Missing</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                    </tbody>
+                  </table>
+
+                  
+                  <div style="margin-top:18px;">
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Content-Security-Policy</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Content-Security-Policy: default-src 'self'; frame-ancestors 'none'
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Strict-Transport-Security</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Strict-Transport-Security: max-age=31536000; includeSubDomains
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">X-XSS-Protection</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            X-XSS-Protection: 0
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Cache-Control</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Cache-Control: no-store, no-cache
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Referrer-Policy</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Referrer-Policy: strict-origin-when-cross-origin
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Cross-Origin-Opener-Policy</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Cross-Origin-Opener-Policy: same-origin
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Cross-Origin-Embedder-Policy</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Cross-Origin-Embedder-Policy: require-corp
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Cross-Origin-Resource-Policy</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Cross-Origin-Resource-Policy: same-site
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                  </div>
+                
+              </div>
+
+              
+              <!-- Impact/Consequence Section -->
+              
+
+              
+              
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+
+              
+              
+                <div class="vuln-section">
+                  <div class="section-title">Impact/Consequence:</div>
+                  <div class="section-content">
+                    
+                      <div class="impact-item" style="margin-bottom:12px;">
+                        <div class="impact-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                          Content-Security-Policy
+                        </div>
+                        <div class="impact-body" style="margin-left:6px;">
+                          1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                        </div>
+                      </div>
+                    
+                      <div class="impact-item" style="margin-bottom:12px;">
+                        <div class="impact-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                          Strict-Transport-Security
+                        </div>
+                        <div class="impact-body" style="margin-left:6px;">
+                          1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                        </div>
+                      </div>
+                    
+                      <div class="impact-item" style="margin-bottom:12px;">
+                        <div class="impact-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                          X-XSS-Protection
+                        </div>
+                        <div class="impact-body" style="margin-left:6px;">
+                          1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                        </div>
+                      </div>
+                    
+                      <div class="impact-item" style="margin-bottom:12px;">
+                        <div class="impact-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                          Cache-Control
+                        </div>
+                        <div class="impact-body" style="margin-left:6px;">
+                          1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                        </div>
+                      </div>
+                    
+                      <div class="impact-item" style="margin-bottom:12px;">
+                        <div class="impact-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                          Referrer-Policy
+                        </div>
+                        <div class="impact-body" style="margin-left:6px;">
+                          1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                        </div>
+                      </div>
+                    
+                      <div class="impact-item" style="margin-bottom:12px;">
+                        <div class="impact-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                          Cross-Origin-Opener-Policy
+                        </div>
+                        <div class="impact-body" style="margin-left:6px;">
+                          1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                        </div>
+                      </div>
+                    
+                      <div class="impact-item" style="margin-bottom:12px;">
+                        <div class="impact-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                          Cross-Origin-Embedder-Policy
+                        </div>
+                        <div class="impact-body" style="margin-left:6px;">
+                          1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                        </div>
+                      </div>
+                    
+                      <div class="impact-item" style="margin-bottom:12px;">
+                        <div class="impact-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                          Cross-Origin-Resource-Policy
+                        </div>
+                        <div class="impact-body" style="margin-left:6px;">
+                          1. Increased risk of cross-site scripting (XSS) attacks<br>2. Vulnerability to clickjacking attacks<br>3. Potential for MIME-type sniffing attacks<br>4. Exposure to man-in-the-middle attacks (if HSTS is missing)<br>5. Browser-based security features not properly utilized
+                        </div>
+                      </div>
+                    
+                  </div>
+                </div>
+              
+
+              
+              <!-- Remediation Section -->
+              
+
+              
+              
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+                
+                
+                  
+                  
+                    
+                  
+                
+              
+
+              
+              
+                <div class="vuln-section">
+                  <div class="remediation-box">
+                    <div class="section-title">Remediation:</div>
+                    <div class="section-content">
+                      
+                        <div class="rec-item" style="margin-bottom:12px;">
+                          <div class="rec-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                            Content-Security-Policy
+                          </div>
+                          <div class="rec-body" style="margin-left:6px;">
+                            Content-Security-Policy: default-src 'self'; frame-ancestors 'none'
+                          </div>
+                        </div>
+                      
+                        <div class="rec-item" style="margin-bottom:12px;">
+                          <div class="rec-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                            Strict-Transport-Security
+                          </div>
+                          <div class="rec-body" style="margin-left:6px;">
+                            Strict-Transport-Security: max-age=31536000; includeSubDomains
+                          </div>
+                        </div>
+                      
+                        <div class="rec-item" style="margin-bottom:12px;">
+                          <div class="rec-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                            X-XSS-Protection
+                          </div>
+                          <div class="rec-body" style="margin-left:6px;">
+                            X-XSS-Protection: 0
+                          </div>
+                        </div>
+                      
+                        <div class="rec-item" style="margin-bottom:12px;">
+                          <div class="rec-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                            Cache-Control
+                          </div>
+                          <div class="rec-body" style="margin-left:6px;">
+                            Cache-Control: no-store, no-cache
+                          </div>
+                        </div>
+                      
+                        <div class="rec-item" style="margin-bottom:12px;">
+                          <div class="rec-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                            Referrer-Policy
+                          </div>
+                          <div class="rec-body" style="margin-left:6px;">
+                            Referrer-Policy: strict-origin-when-cross-origin
+                          </div>
+                        </div>
+                      
+                        <div class="rec-item" style="margin-bottom:12px;">
+                          <div class="rec-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                            Cross-Origin-Opener-Policy
+                          </div>
+                          <div class="rec-body" style="margin-left:6px;">
+                            Cross-Origin-Opener-Policy: same-origin
+                          </div>
+                        </div>
+                      
+                        <div class="rec-item" style="margin-bottom:12px;">
+                          <div class="rec-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                            Cross-Origin-Embedder-Policy
+                          </div>
+                          <div class="rec-body" style="margin-left:6px;">
+                            Cross-Origin-Embedder-Policy: require-corp
+                          </div>
+                        </div>
+                      
+                        <div class="rec-item" style="margin-bottom:12px;">
+                          <div class="rec-title" style="font-weight:700; text-decoration:underline; margin-bottom:4px;">
+                            Cross-Origin-Resource-Policy
+                          </div>
+                          <div class="rec-body" style="margin-left:6px;">
+                            Cross-Origin-Resource-Policy: same-site
+                          </div>
+                        </div>
+                      
+                    </div>
+                  </div>
+                </div>
+              
+
+              
+            
+          
+        </div>
+      
+        
+        
+        
+        
+        
+        
+        
+        <a id="anchor-1" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-low" data-category="Server Information">
+          
+          <!-- Vulnerability Header -->
+          <div class="vuln-header">
+            <div class="vuln-title">Server Information</div>
+          </div>
+          
+          <div class="vuln-content">
+            
+              
+              
+              
+              <!-- Description Section -->
+              <div class="vuln-section">
+                <div class="section-title">Description:</div>
+                <div class="section-content">
+                  Add a reverse proxy or WAF to normalize responses and reduce fingerprinting accuracy.
+                </div>
+              </div>
+              
+              <!-- Risk Rating Section -->
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating:</div>
+                <div class="risk-rating">
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value low">Low</span>
+                    
+                  </div>
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    <span class="risk-value low">
+                      5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              
+              <div class="vuln-section">
+                <div class="section-title">Findings:</div>
+
+                
+                
+
+                  <table class="instances-table">
+                    <thead>
+                      <tr>
+                        <th style="width:40%;">Finding</th>
+                        <th style="width:25%;">Status</th>
+                        <th style="width:35%;">Current Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      
+                      <tr>
+                        <td><strong>Server Behavior Fingerprinting</strong></td>
+                        <td>N/A</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                    </tbody>
+                  </table>
+
+                  
+                  <div style="margin-top:18px;">
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Server Behavior Fingerprinting</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Attackers can identify specific software versions and search for known vulnerabilities<br>2. Technology stack information helps in crafting targeted attacks<br>3. Reduces the effort required for reconnaissance phase of attacks<br>4. May reveal end-of-life or outdated software in use
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Add a reverse proxy or WAF to normalize responses and reduce fingerprinting accuracy.
+                          </div>
+                        
+
+                        
+                        
+                        
+                          <div class="evidence" style="margin-top:8px;">
+                            <strong>Evidence:</strong><br>
+                            
+                              <pre style="white-space:pre-wrap; background:#fafafa; padding:8px; border-radius:4px;">The server&#39;s unique response patterns match known fingerprints -&gt; lighttpd
+   Matching headers: content-type, content-length, date</pre>
+                            
+                          </div>
+                        
+                      </div>
+                    
+                  </div>
+                
+              </div>
+
+              
+              <!-- Impact/Consequence Section -->
+              
+
+              
+              
+              
+                
+                
+              
+
+              
+              
+
+              
+              <!-- Remediation Section -->
+              
+
+              
+              
+              
+                
+                
+              
+
+              
+              
+
+              
+            
+          
+        </div>
+      
+        
+        
+        
+        
+        
+        
+          
+        
+        
+        <a id="anchor-2" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-high" data-category="Cookie Security">
+          
+          <!-- Vulnerability Header -->
+          <div class="vuln-header">
+            <div class="vuln-title">Cookie Security</div>
+          </div>
+          
+          <div class="vuln-content">
+            
+              
+              
+              
+              <!-- Description Section -->
+              <div class="vuln-section">
+                <div class="section-title">Description:</div>
+                <div class="section-content">
+                  Missing flags: HttpOnly, Secure, Path
+                </div>
+              </div>
+              
+              <!-- Risk Rating Section -->
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating:</div>
+                <div class="risk-rating">
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value high">High</span>
+                    
+                  </div>
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    <span class="risk-value high">
+                      6.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N)
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              
+              <div class="vuln-section">
+                <div class="section-title">Findings:</div>
+
+                
+                
+
+                  <table class="instances-table">
+                    <thead>
+                      <tr>
+                        <th style="width:40%;">Finding</th>
+                        <th style="width:25%;">Status</th>
+                        <th style="width:35%;">Current Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>N/A</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                    </tbody>
+                  </table>
+
+                  
+                  <div style="margin-top:18px;">
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Session hijacking through cookie theft<br>2. Cross-site scripting (XSS) attacks can access sensitive cookies<br>3. Man-in-the-middle attacks can intercept cookies over insecure connections<br>4. Cross-site request forgery (CSRF) attacks<br>5. Unauthorized access to user accounts and sensitive data
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Set appropriate cookie attributes:<br>- Secure: Ensure cookies are only transmitted over HTTPS<br>- HttpOnly: Prevent JavaScript access to cookies<br>- SameSite: Set to 'Strict' or 'Lax' to prevent CSRF attacks<br>- Domain and Path: Scope cookies appropriately<br>- Expiration: Set reasonable expiration times for session cookies
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                  </div>
+                
+              </div>
+
+              
+              <!-- Impact/Consequence Section -->
+              
+
+              
+              
+              
+                
+                
+              
+
+              
+              
+
+              
+              <!-- Remediation Section -->
+              
+
+              
+              
+              
+                
+                
+              
+
+              
+              
+
+              
+            
+          
+        </div>
+      
+        
+        
+        
+        
+        
+        
+        
+        <a id="anchor-3" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-low" data-category="CORS Security">
+          
+          <!-- Vulnerability Header -->
+          <div class="vuln-header">
+            <div class="vuln-title">CORS Security</div>
+          </div>
+          
+          <div class="vuln-content">
+            
+              
+              
+              
+              <!-- Description Section -->
+              <div class="vuln-section">
+                <div class="section-title">Description:</div>
+                <div class="section-content">
+                  Specify only trusted, legitimate domains instead of using a wildcard *.
+                </div>
+              </div>
+              
+              <!-- Risk Rating Section -->
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating:</div>
+                <div class="risk-rating">
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value low">Low</span>
+                    
+                  </div>
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    <span class="risk-value low">
+                      7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              
+              <div class="vuln-section">
+                <div class="section-title">Findings:</div>
+
+                
+                
+
+                  <table class="instances-table">
+                    <thead>
+                      <tr>
+                        <th style="width:40%;">Finding</th>
+                        <th style="width:25%;">Status</th>
+                        <th style="width:35%;">Current Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>N/A</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>N/A</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>N/A</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>N/A</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>N/A</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                    </tbody>
+                  </table>
+
+                  
+                  <div style="margin-top:18px;">
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Unauthorized access to sensitive API endpoints from malicious origins<br>2. Data exfiltration to attacker-controlled domains<br>3. Theft of authentication tokens and session information<br>4. Ability to perform authenticated actions on behalf of victims<br>5. Bypass of same-origin policy protections
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Specify only trusted, legitimate domains instead of using a wildcard *.
+                          </div>
+                        
+
+                        
+                        
+                        
+                          <div class="evidence" style="margin-top:8px;">
+                            <strong>Evidence:</strong><br>
+                            
+                              <pre style="white-space:pre-wrap; background:#fafafa; padding:8px; border-radius:4px;">Access-Control-Allow-Origin: *</pre>
+                            
+                          </div>
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Unauthorized access to sensitive API endpoints from malicious origins<br>2. Data exfiltration to attacker-controlled domains<br>3. Theft of authentication tokens and session information<br>4. Ability to perform authenticated actions on behalf of victims<br>5. Bypass of same-origin policy protections
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Restrict allowed methods to only the application requires (eg. GET, POST).
+                          </div>
+                        
+
+                        
+                        
+                        
+                          <div class="evidence" style="margin-top:8px;">
+                            <strong>Evidence:</strong><br>
+                            
+                              <pre style="white-space:pre-wrap; background:#fafafa; padding:8px; border-radius:4px;">Access-Control-Allow-Methods: GET,HEAD,PUT,PATCH,POST,DELETE
+          -The server allows more HTTP methods than necessary, increasing exposure.</pre>
+                            
+                          </div>
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Unauthorized access to sensitive API endpoints from malicious origins<br>2. Data exfiltration to attacker-controlled domains<br>3. Theft of authentication tokens and session information<br>4. Ability to perform authenticated actions on behalf of victims<br>5. Bypass of same-origin policy protections
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Set a reasonable Access-Control-Max-Age (eg. 300–600 seconds) to help browsers reuse valid preflight results without adding performance overhead.
+                          </div>
+                        
+
+                        
+                        
+                        
+                          <div class="evidence" style="margin-top:8px;">
+                            <strong>Evidence:</strong><br>
+                            
+                              <pre style="white-space:pre-wrap; background:#fafafa; padding:8px; border-radius:4px;">The server does not include the Access-Control-Max-Age header.</pre>
+                            
+                          </div>
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Unauthorized access to sensitive API endpoints from malicious origins<br>2. Data exfiltration to attacker-controlled domains<br>3. Theft of authentication tokens and session information<br>4. Ability to perform authenticated actions on behalf of victims<br>5. Bypass of same-origin policy protections
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Only enable CORS for specific API endpoints that truly require cross-origin requests. Disable it for login pages or sensitive routes.
+                          </div>
+                        
+
+                        
+                        
+                        
+                          <div class="evidence" style="margin-top:8px;">
+                            <strong>Evidence:</strong><br>
+                            
+                              <pre style="white-space:pre-wrap; background:#fafafa; padding:8px; border-radius:4px;">The server appears to return CORS headers even for endpoints that do not require cross-origin access.</pre>
+                            
+                          </div>
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Unauthorized access to sensitive API endpoints from malicious origins<br>2. Data exfiltration to attacker-controlled domains<br>3. Theft of authentication tokens and session information<br>4. Ability to perform authenticated actions on behalf of victims<br>5. Bypass of same-origin policy protections
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            Update the preflight validation to reject unapproved origins before responding with CORS permissions.
+                          </div>
+                        
+
+                        
+                        
+                        
+                          <div class="evidence" style="margin-top:8px;">
+                            <strong>Evidence:</strong><br>
+                            
+                              <pre style="white-space:pre-wrap; background:#fafafa; padding:8px; border-radius:4px;">When the scanner sends an OPTIONS request with an untrusted Origin, the server still responds with full permissions, including credentials and multiple allowed methods.</pre>
+                            
+                          </div>
+                        
+                      </div>
+                    
+                  </div>
+                
+              </div>
+
+              
+              <!-- Impact/Consequence Section -->
+              
+
+              
+              
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+
+              
+              
+
+              
+              <!-- Remediation Section -->
+              
+
+              
+              
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+
+              
+              
+
+              
+            
+          
+        </div>
+      
+        
+        
+        
+        
+        
+        
+          
+        
+        
+        <a id="anchor-4" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-high" data-category="Directory Exposure">
+          
+          <!-- Vulnerability Header -->
+          <div class="vuln-header">
+            <div class="vuln-title">Directory Exposure</div>
+          </div>
+          
+          <div class="vuln-content">
+            
+              
+              
+              
+              <!-- Description Section -->
+              <div class="vuln-section">
+                <div class="section-title">Description:</div>
+                <div class="section-content">
+                  Path / returned HTTP 200.
+                </div>
+              </div>
+              
+              <!-- Risk Rating Section -->
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating:</div>
+                <div class="risk-rating">
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value high">High</span>
+                    
+                  </div>
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    <span class="risk-value high">
+                      5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              
+              <div class="vuln-section">
+                <div class="section-title">Findings:</div>
+
+                
+                
+
+                  <table class="instances-table">
+                    <thead>
+                      <tr>
+                        <th style="width:40%;">Finding</th>
+                        <th style="width:25%;">Status</th>
+                        <th style="width:35%;">Current Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>200</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                    </tbody>
+                  </table>
+
+                  
+                  <div style="margin-top:18px;">
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Exposure of source code and sensitive configuration data<br>2. Discovery of backup files containing sensitive information<br>3. Revelation of application structure aiding further attacks<br>4. Access to credentials, API keys, or database connection strings<br>5. Discovery of hidden administrative interfaces<br>6. Information useful for social engineering attacks
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Disable directory listing in web server configuration<br>2. Remove or restrict access to .git, .svn, and other version control directories<br>3. Delete backup files, old code, and testing resources from production<br>4. Implement proper access controls for administrative areas<br>5. Use robots.txt carefully (does not provide security)<br>6. Regularly scan for exposed sensitive files<br>7. Implement proper file permissions on the server
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                  </div>
+                
+              </div>
+
+              
+              <!-- Impact/Consequence Section -->
+              
+
+              
+              
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+
+              
+              
+
+              
+              <!-- Remediation Section -->
+              
+
+              
+              
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+                
+                
+              
+
+              
+              
+
+              
+            
+          
+        </div>
+      
+        
+        
+        
+        
+        
+        
+          
+        
+        
+        <a id="anchor-5" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-high" data-category="SSL/TLS">
+          
+          <!-- Vulnerability Header -->
+          <div class="vuln-header">
+            <div class="vuln-title">SSL/TLS</div>
+          </div>
+          
+          <div class="vuln-content">
+            
+              
+              
+              
+              <!-- Description Section -->
+              <div class="vuln-section">
+                <div class="section-title">Description:</div>
+                <div class="section-content">
+                  SSL/TLS error: [WinError 10061] No connection could be made because the target machine actively refused it
+                </div>
+              </div>
+              
+              <!-- Risk Rating Section -->
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating:</div>
+                <div class="risk-rating">
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value high">High</span>
+                    
+                  </div>
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    <span class="risk-value high">
+                      7.4 (AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N)
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              
+              <div class="vuln-section">
+                <div class="section-title">Findings:</div>
+
+                
+                
+
+                  <table class="instances-table">
+                    <thead>
+                      <tr>
+                        <th style="width:40%;">Finding</th>
+                        <th style="width:25%;">Status</th>
+                        <th style="width:35%;">Current Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      
+                      <tr>
+                        <td><strong>N/A</strong></td>
+                        <td>N/A</td>
+                        <td>
+                            -
+                          
+                        </td>
+                      </tr>
+                      
+                    </tbody>
+                  </table>
+
+                  
+                  <div style="margin-top:18px;">
+                    
+                      <div class="finding-block" style="margin-bottom:12px;">
+                        <div class="finding-title">Finding</div>
+
+                        
+                        
+                          <div class="impact">
+                            <strong>Impact / Consequence:</strong><br>
+                            1. Man-in-the-middle attacks allowing traffic interception<br>2. Exposure of sensitive data transmitted over insecure connections<br>3. Session hijacking through unencrypted session tokens<br>4. Credential theft during authentication<br>5. Loss of user trust due to browser security warnings<br>6. Compliance violations (PCI-DSS, HIPAA, GDPR)<br>7. Vulnerability to known attacks (BEAST, POODLE, CRIME)
+                          </div>
+                        
+
+                        
+                        
+                          <div class="recommendation" style="margin-top:8px;">
+                            <strong>Recommendation:</strong><br>
+                            1. Use valid certificates from trusted Certificate Authorities<br>2. Disable SSLv3, TLS 1.0, and TLS 1.1 - use TLS 1.2 or TLS 1.3<br>3. Configure strong cipher suites and disable weak ciphers<br>4. Implement HTTP Strict Transport Security (HSTS)<br>5. Enable Perfect Forward Secrecy (PFS)<br>6. Regularly monitor certificate expiration dates<br>7. Implement certificate pinning for mobile applications<br>8. Use tools like SSL Labs to test configuration<br>9. Keep OpenSSL/TLS libraries updated
+                          </div>
+                        
+
+                        
+                        
+                        
+                      </div>
+                    
+                  </div>
+                
+              </div>
+
+              
+              <!-- Impact/Consequence Section -->
+              
+
+              
+              
+              
+                
+                
+              
+
+              
+              
+
+              
+              <!-- Remediation Section -->
+              
+
+              
+              
+              
+                
+                
+              
+
+              
+              
+
+              
+            
+          
+        </div>
+      
+    </section>
+    <footer class="report-footer">
+      WebSecScan — Web Security Misconfiguration Analyzer · Generated 2025-12-05 19:44:23 · <span style="opacity:.85">Lee Zhi Hui</span>
+    </footer>
+  </div>
+
+  <!-- Inline script to build Chart.js chart and wire click -> scroll -->
+  <script>
+    (function(){
+      // Build category arrays from Jinja-provided "categories"
+      const categories = [
+        
+          { name: "Security Headers", high: 0, medium: 0, low: 8 },
+        
+          { name: "Server Information", high: 0, medium: 0, low: 1 },
+        
+          { name: "Cookie Security", high: 1, medium: 0, low: 0 },
+        
+          { name: "CORS Security", high: 0, medium: 0, low: 5 },
+        
+          { name: "Directory Exposure", high: 12, medium: 15, low: 0 },
+        
+          { name: "SSL/TLS", high: 1, medium: 0, low: 0 }
+        
+      ];
+
+      // Chart values and labels
+      const labels = categories.map(c => c.name);
+      const values = categories.map(c => (c.high + c.medium + c.low));
+      const colors = labels.map((_, i) => {
+        // simple deterministic palette
+        const palette = [
+          '#FF6B6B','#FF9F43','#FFD43B','#6BCB77','#4D96FF','#845EC2','#00C9A7','#FF9671'
+        ];
+        return palette[i % palette.length];
+      });
+
+      const ctx = document.getElementById('categoryChart').getContext('2d');
+      const categoryChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: colors,
+            borderWidth: 0.5,
+            hoverOffset: 8
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { boxWidth:12, padding:8 } },
+            tooltip: { callbacks: { label: (ctx)=> `${ctx.label}: ${ctx.raw}` } }
+          },
+          onClick(evt, activeEls) {
+            // get clicked index if any and scroll to that category
+            const points = categoryChart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+            if (!points.length) return;
+            const idx = points[0].index;
+            const anchorId = 'anchor-' + idx;
+            const el = document.getElementById(anchorId);
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+              // fallback: find first matching category section by data-category
+              const catName = labels[idx];
+              const sec = document.querySelector(`[data-category="${catName}"]`);
+              if (sec) sec.scrollIntoView({ behavior: 'smooth', block:'start' });
+            }
+          }
+        }
+      });
+
+      // Improve keyboard accessibility: pressing Enter on chart wrapper focuses first category
+      const chartWrapper = document.querySelector('.chart-wrapper');
+      if (chartWrapper) {
+        chartWrapper.setAttribute('tabindex', '0');
+        chartWrapper.addEventListener('keydown', (e)=>{
+          if (e.key === 'Enter' || e.key === ' ') {
+            // go to details top
+            const details = document.getElementById('details');
+            if (details) details.scrollIntoView({behavior:'smooth'});
+            e.preventDefault();
+          }
+        });
+      }
+
+    })();
+  </script>
+</body>
+</html>
