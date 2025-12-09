@@ -52,6 +52,7 @@ def analyze_http_methods_from_list(methods_list: List[str]) -> List[Dict[str, An
     if risky:
         for m in risky:
             findings.append({
+                "Category": "HTTP Methods",
                 "Header": f"HTTP Method: {m}",
                 "Status": "Unsafe",
                 "Severity": "High",
@@ -148,7 +149,7 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
         print(Fore.RED + "[!] Failed to retrieve OPTIONS response from server." + Style.RESET_ALL)
         print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.GREEN}0{Style.RESET_ALL}")
         print(Fore.WHITE + "\nFindings:")
-        print("``````````````````````````````````````````````````````````````````````````````````")
+        print(Fore.CYAN + f"``````````````````````````````````````````````````````````````````````````````````" + Style.RESET_ALL)
         print(Fore.GREEN + "[!] No unsafe HTTP methods detected as no OPTIONS response received." + Style.RESET_ALL)
         print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
         print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)

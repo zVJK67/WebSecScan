@@ -150,6 +150,7 @@ https://github.com
 https://stackoverflow.com
 https://www.howsmyssl.com/a/check
 https://wrong.host.badssl.com/
+
 https://expired.badssl.com/
 http://localhost:8000
 
@@ -172,8 +173,8 @@ https://httpbin.org/response-headers?Allow=GET,POST,OPTIONS — returns custom h
 
 
 Server header / product/version differences
-
-https://www.apache.org — often shows an Apache-flavored Server header.
+https://www.apache.org
+ — often shows an Apache-flavored Server header.
 
 https://nginx.org — will usually show nginx in Server header.
 
@@ -203,11 +204,29 @@ Local / controlled testing (if you run services locally)
 http://localhost:8000 — if you run a local server (quick to spin up and fully under your control).
 
 
+ ("https://www.google.com", "Well-configured modern HTTPS"),
+        ("https://www.github.com", "Popular site with modern TLS"),
+        ("https://neverssl.com", "HTTP-only site (no HTTPS)"),
+        ("https://wrong.host.badssl.com/", "Certificate hostname mismatch (badssl)"),
+        ("https://self-signed.badssl.com/", "Self-signed certificate (badssl)"),
+        ("https://expired.badssl.com/", "Expired certificate (badssl)"),
+        ("https://tls-v1-0.badssl.com:1010/", "TLS 1.0 only (badssl)"),
+        ("https://sha1-intermediate.badssl.com/", "SHA-1 signed intermediate (badssl)"),
 
 +++++++++++++++++++++++++++++++++++++++++++++++++++++
 docker run --rm -p 4000:3000 bkimminich/juice-shop
 http://127.0.0.1:4000
 
+docker run --rm -p 8080:8080 webgoat/webgoat
+http://127.0.0.1:8080/WebGoat
+
+docker run --rm -p 5000:80 raesene/bwapp
+http://127.0.0.1:5000/
+
+docker run -p 2000:80 kennethreitz/httpbin
+http://localhost:2000/response-headers?Allow=GET,POST,OPTIONS
+
+✓
 
 websecscan.report@gmail.com
 xids ggpt ugbz ecli

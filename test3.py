@@ -9,6 +9,7 @@ This data enriches findings before report generation.
 VULNERABILITY_DEFINITIONS = {
     "HTTP Security Headers": {
         "DisplayName": "Misconfigured HTTP Security Header",
+        "TableType": "headers",
         "Description": """HTTP security headers provide yet another layer of security by helping to mitigate attacks and security vulnerabilities. Whenever a browser requests a page from a web server, the server responds with the content along with HTTP response headers. With the misconfigured or missing of HTTP security headers, the attackers may gain information from the data which may lead to various of attacks such as clickjacking, cross-site scripting (XSS) and others attacks as well.""",
         "CVSS": "3.1 (AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N)",
 
@@ -59,15 +60,21 @@ VULNERABILITY_DEFINITIONS = {
     
     "Unsafe HTTP Methods Enabled": {
         "DisplayName": "Unsafe HTTP Methods Enabled",
-        "Description": """HTTP offers a number of methods that can be used to perform actions on the web server. Many of these methods are designed to aid developers in deploying and testing HTTP applications. These HTTP methods can be used for nefarious purposes if the web server is misconfigured.
-
-    Some of these methods can potentially pose a security risk for a web application, as they allow a hacker to modify the files stored on the web server and, in some scenarios, steal the credentials of legitimate users. More specifically, the methods that should be disabled are the following:
-
-    - OPTIONS: This method is a diagnostic method which is mainly used for debugging purpose. It provides a list of the methods that are supported by the web server.
-    - TRACE: This method simply echoes back to the client whatever string has been sent to the server, and is used mainly for debugging purposes.
-    - PUT: This method allows a client to upload new files on the web server. An attacker can exploit it by uploading malicious files.
-    - DELETE: This method allows a client to delete a file on the web server. An attacker can exploit it as a very simple and direct way to deface a web site or to mount a Denial of Service (DoS) attack.
-    - DEBUG: This method is used for debugging purposes. It allows developers to diagnose and troubleshoot issues by providing detailed information about the server's operation.""",
+        "TableType": "methods",
+        "Description": (
+            "HTTP provides various methods to support development and debugging, but if misconfigured, "
+            "some of these methods can expose serious security risks. Attackers may exploit them to "
+            "upload or delete files, retrieve sensitive information, or abuse server functionality.\n\n"
+            "The following methods should be disabled:\n"
+            "- OPTIONS: This method is a diagnostic method which is mainly used for debugging purpose. "
+            "It provides a list of the methods that are supported by the web server.\n"
+            "- TRACE: This method simply echoes back to the client whatever string has been sent to the server, "
+            "and is used mainly for debugging purposes.\n"
+            "- PUT: This method allows a client to upload new files on the web server.\n"
+            "- DELETE: This method allows a client to delete a file on the web server.\n"
+            "- DEBUG: This method is used for debugging purposes. It allows developers to diagnose and "
+            "troubleshoot issues by providing detailed information about the server's operation."
+            ),
 
         # Default CVSS (scanner may override per finding)
         "CVSS": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)",
