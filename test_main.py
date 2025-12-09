@@ -41,47 +41,68 @@ def enrich_finding_dynamic(finding: dict) -> dict:
     """
     Enrich a single finding, but for HTTP Security Headers produce
     Impact/Recommendation only for the missing headers reported by the scanner.
+    For Unsafe HTTP Methods, produce Impact only for the specific methods detected.
     """
     enriched = enrich_finding_with_details(finding)
 
     category = (finding.get("Category") or enriched.get("Category") or "").strip()
-    if category != "HTTP Security Headers":
-        return enriched
+    
+    # Special handling for HTTP Security Headers
+    if category == "HTTP Security Headers":
+        missing_headers = (
+            finding.get("MissingHeaders")
+            or finding.get("Missing")
+            or finding.get("HeadersMissing")
+            or []
+        )
 
-    missing_headers = (
-        finding.get("MissingHeaders")
-        or finding.get("Missing")
-        or finding.get("HeadersMissing")
-        or []
-    )
+        if isinstance(missing_headers, str):
+            missing_headers = [missing_headers]
 
-    if isinstance(missing_headers, str):
-        missing_headers = [missing_headers]
+        if not missing_headers:
+            return enriched
 
-    if not missing_headers:
-        return enriched
+        header_details = VULNERABILITY_DEFINITIONS["HTTP Security Headers"].get("HeaderDetails", {})
+        impacts, recs = [], []
 
-    header_details = VULNERABILITY_DEFINITIONS["HTTP Security Headers"].get("HeaderDetails", {})
-    impacts, recs = [], []
+        for hdr in missing_headers:
+            hdr_key = hdr.strip()
+            detail = header_details.get(hdr_key)
 
-    for hdr in missing_headers:
-        hdr_key = hdr.strip()
-        detail = header_details.get(hdr_key)
+            if not detail:
+                alt = hdr_key.replace("-", " ").title().replace(" ", "-")
+                detail = header_details.get(alt)
 
-        if not detail:
-            alt = hdr_key.replace("-", " ").title().replace(" ", "-")
-            detail = header_details.get(alt)
+            if detail:
+                if detail.get("Impact"):
+                    impacts.append(f"- {detail['Impact']}")
+                if detail.get("Recommendation"):
+                    recs.append(f"- {detail['Recommendation']}")
 
-        if detail:
-            if detail.get("Impact"):
-                impacts.append(f"- {detail['Impact']}")
-            if detail.get("Recommendation"):
-                recs.append(f"- {detail['Recommendation']}")
-
-    if impacts:
-        enriched["Impact"] = "\n".join(impacts)
-    if recs:
-        enriched["Recommendation"] = "\n".join(recs)
+        if impacts:
+            enriched["Impact"] = "\n".join(impacts)
+        if recs:
+            enriched["Recommendation"] = "\n".join(recs)
+    
+    # Special handling for Unsafe HTTP Methods
+    elif category == "Unsafe HTTP Methods Enabled":
+        # Ensure DisplayName is set
+        vuln_def = VULNERABILITY_DEFINITIONS.get(category, {})
+        if vuln_def.get("DisplayName"):
+            enriched["DisplayName"] = vuln_def["DisplayName"]
+        
+        # Get the specific method from the finding
+        method = finding.get("Header") or finding.get("Method") or ""
+        method_details = vuln_def.get("MethodDetails", {})
+        
+        if method and method in method_details:
+            method_info = method_details[method]
+            if method_info.get("Impact"):
+                enriched["Impact"] = method_info["Impact"]
+        
+        # Use category-level recommendation (same for all methods)
+        if vuln_def.get("Recommendation"):
+            enriched["Recommendation"] = vuln_def["Recommendation"]
 
     return enriched
 
