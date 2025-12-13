@@ -198,7 +198,7 @@
     <!-- META -->
     <div class="meta">
       <div class="meta-item"><strong>Target:</strong> <code>http://localhost:2000/response-headers?Allow=GET,POST,OPTIONS</code></div>
-      <div class="meta-item"><strong>Scan Time:</strong> 2025-12-09 13:50:02</div>
+      <div class="meta-item"><strong>Scan Time:</strong> 2025-12-09 16:41:25</div>
     </div>
 
     <!-- SUMMARY -->
@@ -230,7 +230,7 @@
           <tbody>
             
             <tr>
-              <td style="font-weight:700; color:#452829"></td>
+              <td style="font-weight:700; color:#452829">Misconfigured HTTP Security Header</td>
               <td style="font-weight:700; color:Red">0</td>
               <td style="font-weight:700; color:Orange">0</td>
               <td style="font-weight:700; color:Green">12</td>
@@ -238,7 +238,7 @@
             </tr>
             
             <tr>
-              <td style="font-weight:700; color:#452829"></td>
+              <td style="font-weight:700; color:#452829">Unsafe HTTP Methods Enabled</td>
               <td style="font-weight:700; color:Red">1</td>
               <td style="font-weight:700; color:Orange">0</td>
               <td style="font-weight:700; color:Green">0</td>
@@ -246,7 +246,7 @@
             </tr>
             
             <tr>
-              <td style="font-weight:700; color:#452829"></td>
+              <td style="font-weight:700; color:#452829">Server Information Disclosure</td>
               <td style="font-weight:700; color:Red">0</td>
               <td style="font-weight:700; color:Orange">0</td>
               <td style="font-weight:700; color:Green">3</td>
@@ -254,7 +254,7 @@
             </tr>
             
             <tr>
-              <td style="font-weight:700; color:#452829"></td>
+              <td style="font-weight:700; color:#452829">CORS Security</td>
               <td style="font-weight:700; color:Red">0</td>
               <td style="font-weight:700; color:Orange">0</td>
               <td style="font-weight:700; color:Green">4</td>
@@ -262,7 +262,7 @@
             </tr>
             
             <tr>
-              <td style="font-weight:700; color:#452829"></td>
+              <td style="font-weight:700; color:#452829">Directory Exposure</td>
               <td style="font-weight:700; color:Red">0</td>
               <td style="font-weight:700; color:Orange">2</td>
               <td style="font-weight:700; color:Green">0</td>
@@ -270,7 +270,7 @@
             </tr>
             
             <tr>
-              <td style="font-weight:700; color:#452829"></td>
+              <td style="font-weight:700; color:#452829">SSL/TLS</td>
               <td style="font-weight:700; color:Red">1</td>
               <td style="font-weight:700; color:Orange">0</td>
               <td style="font-weight:700; color:Green">0</td>
@@ -308,6 +308,9 @@
         
         
         
+        
+          
+        
 
         <a id="anchor-0" class="anchor" aria-hidden="true"></a>
         <div class="category-section risk-low" data-category="Security Headers">
@@ -320,15 +323,18 @@
           <div class="vuln-content">
               <div class="vuln-section">
                 <div class="section-title">Description</div>
-                                <div class="section-content">
-                  HTTP security headers provide yet another layer of security by helping to mitigate attacks and security vulnerabilities. Whenever a browser requests a page from a web server, the server responds with the content along with HTTP response headers. With the misconfigured or missing of HTTP security headers, the attackers may gain information from the data which may lead to various of attacks such as clickjacking, cross-site scripting (XSS) and others attacks as well.
-                </div>
+                  
+                  <div class="section-content">
+                    
+                      <p>HTTP security headers provide yet another layer of security by helping to mitigate attacks and security vulnerabilities. Whenever a browser requests a page from a web server, the server responds with the content along with HTTP response headers. With the misconfigured or missing of HTTP security headers, the attackers may gain information from the data which may lead to various of attacks such as clickjacking, cross-site scripting (XSS) and others attacks as well.</p>
+                    
+                  </div>
               </div>
 
               <div class="vuln-section">
                 <div class="section-title">Risk Rating</div>
                 <div class="risk-rating">
-                                    
+                  
                   
                   
                   
@@ -336,10 +342,7 @@
                   <div class="risk-item">
                     <span class="risk-label">Severity:</span>
                     
-                      
-                      
-                        <span class="risk-value low">Low</span>
-                      
+                      <span class="risk-value low">Low</span>
                     
                   </div>
 
@@ -540,117 +543,109 @@
                   
                   
                   
+                  
                     <div class="section-content" style="margin-top:12px;">
                       <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">Content-Security-Policy</div>
-                      <div style="padding-left:0px;">
-                        Missing Content-Security-Policy significantly increases exploitability of XSS vulnerabilities.
-                      </div>
+                      <div style="padding-left:0px;">Missing Content-Security-Policy significantly increases exploitability of XSS vulnerabilities.</div>
                     </div>
                   
                 
+                  
                   
                   
                   
                     <div class="section-content" style="margin-top:12px;">
                       <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">Strict-Transport-Security</div>
-                      <div style="padding-left:0px;">
-                        Missing Strict-Transport-Security allows downgrade attacks and enables interception of traffic as this header lets a website tell browsers that it should only be accessed using HTTPS, instead of using HTTP.
-                      </div>
+                      <div style="padding-left:0px;">Missing Strict-Transport-Security allows downgrade attacks and enables interception of traffic as this header lets a website tell browsers that it should only be accessed using HTTPS, instead of using HTTP.</div>
                     </div>
                   
                 
+                  
                   
                   
                   
                     <div class="section-content" style="margin-top:12px;">
                       <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">X-Frame-Options</div>
-                      <div style="padding-left:0px;">
-                        Missing X-Frame-Options allows clickjacking attacks.
-                      </div>
+                      <div style="padding-left:0px;">Missing X-Frame-Options allows clickjacking attacks.</div>
                     </div>
                   
                 
+                  
                   
                   
                   
                     <div class="section-content" style="margin-top:12px;">
                       <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">X-XSS-Protection</div>
-                      <div style="padding-left:0px;">
-                        Missing X-XSS-Protection increases exposure to reflected XSS attacks in older browsers.
-                      </div>
+                      <div style="padding-left:0px;">Missing X-XSS-Protection increases exposure to reflected XSS attacks in older browsers.</div>
                     </div>
                   
                 
+                  
                   
                   
                   
                     <div class="section-content" style="margin-top:12px;">
                       <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">X-Content-Type-Options</div>
-                      <div style="padding-left:0px;">
-                        Missing or insecure X-Content-Type-Options allows MIME-sniffing attacks, increasing XSS risk.
-                      </div>
+                      <div style="padding-left:0px;">Missing or insecure X-Content-Type-Options allows MIME-sniffing attacks, increasing XSS risk.</div>
                     </div>
                   
                 
+                  
                   
                   
                   
                     <div class="section-content" style="margin-top:12px;">
                       <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">Cache-Control</div>
-                      <div style="padding-left:0px;">
-                        Missing or weak Cache-Control may expose sensitive information stored in browser cache.
-                      </div>
+                      <div style="padding-left:0px;">Missing or weak Cache-Control may expose sensitive information stored in browser cache.</div>
                     </div>
                   
                 
+                  
                   
                   
                   
                     <div class="section-content" style="margin-top:12px;">
                       <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">Referrer-Policy</div>
-                      <div style="padding-left:0px;">
-                        Missing Referrer-Policy may cause the browser to leak sensitive URL information to external sites during navigation.
-                      </div>
+                      <div style="padding-left:0px;">Missing Referrer-Policy may cause the browser to leak sensitive URL information to external sites during navigation.</div>
                     </div>
                   
                 
                   
                   
                   
+                  
                 
+                  
                   
                   
                   
                     <div class="section-content" style="margin-top:12px;">
                       <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">Cross-Origin-Opener-Policy</div>
-                      <div style="padding-left:0px;">
-                        Missing COOP allows external sites to open and interact with the browsing context, increasing risks such as cross-origin attacks and tab-nabbing.
-                      </div>
+                      <div style="padding-left:0px;">Missing COOP allows external sites to open and interact with the browsing context, increasing risks such as cross-origin attacks and tab-nabbing.</div>
                     </div>
                   
                 
+                  
                   
                   
                   
                     <div class="section-content" style="margin-top:12px;">
                       <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">Cross-Origin-Embedder-Policy</div>
-                      <div style="padding-left:0px;">
-                        Missing COEP may allow the application to load untrusted cross-origin resources that are not opt-in, reducing the protection against cross-site data leaks.
-                      </div>
+                      <div style="padding-left:0px;">Missing COEP may allow the application to load untrusted cross-origin resources that are not opt-in, reducing the protection against cross-site data leaks.</div>
                     </div>
                   
                 
+                  
                   
                   
                   
                     <div class="section-content" style="margin-top:12px;">
                       <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">Cross-Origin-Resource-Policy</div>
-                      <div style="padding-left:0px;">
-                        Missing CORP may allow other websites to load the resources cross-origin, potentially exposing sensitive data.
-                      </div>
+                      <div style="padding-left:0px;">Missing CORP may allow other websites to load the resources cross-origin, potentially exposing sensitive data.</div>
                     </div>
                   
                 
+                  
                   
                   
                   
@@ -667,9 +662,7 @@
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">Content-Security-Policy</div>
-                        <div style="padding-left:0px;">
-                          Set Content-Security-Policy: default-src &#39;self&#39;; frame-ancestors &#39;none&#39; to restrict script, frame, and resource loading sources.
-                        </div>
+                        <div style="padding-left:0px;">Content-Security-Policy: default-src &#39;self&#39;; frame-ancestors &#39;none&#39;</div>
                       </div>
                     
                   
@@ -678,9 +671,7 @@
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">Strict-Transport-Security</div>
-                        <div style="padding-left:0px;">
-                          Enable HSTS with an appropriate max-age and includeSubDomains; consider preload where suitable.
-                        </div>
+                        <div style="padding-left:0px;">Strict-Transport-Security: max-age=31536000; includeSubDomains</div>
                       </div>
                     
                   
@@ -689,9 +680,7 @@
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">X-Frame-Options</div>
-                        <div style="padding-left:0px;">
-                          Set X-Frame-Options to SAMEORIGIN or DENY to prevent framing by untrusted sites.
-                        </div>
+                        <div style="padding-left:0px;">X-Frame-Options: SAMEORIGIN / DENY</div>
                       </div>
                     
                   
@@ -700,9 +689,7 @@
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">X-XSS-Protection</div>
-                        <div style="padding-left:0px;">
-                          Enable &#39;Content Security Policy&#39; (CSP) that disables the use of inline JavaScript. Disable the &#39;X-XSS-Protection&#39; by setting the following response header: &#39;X-XSS-Protection: 0&#39;
-                        </div>
+                        <div style="padding-left:0px;">X-XSS-Protection: 0</div>
                       </div>
                     
                   
@@ -711,9 +698,7 @@
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">X-Content-Type-Options</div>
-                        <div style="padding-left:0px;">
-                          Set X-Content-Type-Options: nosniff on all responses.
-                        </div>
+                        <div style="padding-left:0px;">X-Content-Type-Options: nosniff</div>
                       </div>
                     
                   
@@ -722,9 +707,7 @@
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">Cache-Control</div>
-                        <div style="padding-left:0px;">
-                          Use Cache-Control: no-store,no-cache for sensitive pages to prevent caching.
-                        </div>
+                        <div style="padding-left:0px;">Cache-Control: no-store, no-cache</div>
                       </div>
                     
                   
@@ -733,9 +716,7 @@
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">Referrer-Policy</div>
-                        <div style="padding-left:0px;">
-                          Set Referrer-Policy: strict-origin-when-cross-origin to limit referrer data sent to external origins.
-                        </div>
+                        <div style="padding-left:0px;">Referrer-Policy: strict-origin-when-cross-origin</div>
                       </div>
                     
                   
@@ -744,9 +725,7 @@
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">Content-Type</div>
-                        <div style="padding-left:0px;">
-                          Content-Type: text/html; charset=UTF-8
-                        </div>
+                        <div style="padding-left:0px;">Content-Type: text/html; charset=UTF-8</div>
                       </div>
                     
                   
@@ -755,9 +734,7 @@
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">Cross-Origin-Opener-Policy</div>
-                        <div style="padding-left:0px;">
-                          Set Cross-Origin-Opener-Policy: same-origin to isolate the browsing context and enhance security.
-                        </div>
+                        <div style="padding-left:0px;">Cross-Origin-Opener-Policy: same-origin</div>
                       </div>
                     
                   
@@ -766,9 +743,7 @@
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">Cross-Origin-Embedder-Policy</div>
-                        <div style="padding-left:0px;">
-                          Set Cross-Origin-Embedder-Policy: require-corp to ensure only secure, explicitly allowed resources can be embedded.
-                        </div>
+                        <div style="padding-left:0px;">Cross-Origin-Embedder-Policy: require-corp</div>
                       </div>
                     
                   
@@ -777,9 +752,7 @@
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">Cross-Origin-Resource-Policy</div>
-                        <div style="padding-left:0px;">
-                          Set Cross-Origin-Resource-Policy: same-site to restrict resource usage to the same site.
-                        </div>
+                        <div style="padding-left:0px;">Cross-Origin-Resource-Policy: same-site</div>
                       </div>
                     
                   
@@ -788,9 +761,7 @@
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">Permissions-Policy</div>
-                        <div style="padding-left:0px;">
-                          Add Permissions-Policy to control access to powerful features (camera, microphone, geolocation).
-                        </div>
+                        <div style="padding-left:0px;">Add Permissions-Policy to control access to powerful features (camera, microphone, geolocation).</div>
                       </div>
                     
                   
@@ -810,11 +781,12 @@
         
         
         
+        
           
         
 
         <a id="anchor-1" class="anchor" aria-hidden="true"></a>
-        <div class="category-section risk-high" data-category="HTTP Methods">
+        <div class="category-section risk-low" data-category="HTTP Methods">
           <div class="vuln-header">
             
             
@@ -824,23 +796,20 @@
           <div class="vuln-content">
               <div class="vuln-section">
                 <div class="section-title">Description</div>
-                                <div class="section-content">
-                  HTTP offers a number of methods that can be used to perform actions on the web server. Many of these methods are designed to aid developers in deploying and testing HTTP applications. These HTTP methods can be used for nefarious purposes if the web server is misconfigured.
-
-    Some of these methods can potentially pose a security risk for a web application, as they allow a hacker to modify the files stored on the web server and, in some scenarios, steal the credentials of legitimate users. More specifically, the methods that should be disabled are the following:
-
-    - OPTIONS: This method is a diagnostic method which is mainly used for debugging purpose. It provides a list of the methods that are supported by the web server.
-    - TRACE: This method simply echoes back to the client whatever string has been sent to the server, and is used mainly for debugging purposes.
-    - PUT: This method allows a client to upload new files on the web server. An attacker can exploit it by uploading malicious files.
-    - DELETE: This method allows a client to delete a file on the web server. An attacker can exploit it as a very simple and direct way to deface a web site or to mount a Denial of Service (DoS) attack.
-    - DEBUG: This method is used for debugging purposes. It allows developers to diagnose and troubleshoot issues by providing detailed information about the server&#39;s operation.
-                </div>
+                  
+                  <div class="section-content">
+                    
+                      <p>HTTP provides various methods to support development and debugging, but if misconfigured, some of these methods can expose serious security risks. Attackers may exploit them to upload or delete files, retrieve sensitive information, or abuse server functionality.</p>
+                    
+                      <p>The following methods should be disabled:<br/>- OPTIONS: This method is a diagnostic method which is mainly used for debugging purpose. It provides a list of the methods that are supported by the web server.<br/>- TRACE: This method simply echoes back to the client whatever string has been sent to the server, and is used mainly for debugging purposes.<br/>- PUT: This method allows a client to upload new files on the web server.<br/>- DELETE: This method allows a client to delete a file on the web server.<br/>- DEBUG: This method is used for debugging purposes. It allows developers to diagnose and troubleshoot issues by providing detailed information about the server's operation.</p>
+                    
+                  </div>
               </div>
 
               <div class="vuln-section">
                 <div class="section-title">Risk Rating</div>
                 <div class="risk-rating">
-                                    
+                  
                   
                   
                   
@@ -848,10 +817,7 @@
                   <div class="risk-item">
                     <span class="risk-label">Severity:</span>
                     
-                      
-                      
-                        <span class="risk-value high">High</span>
-                      
+                      <span class="risk-value low">Low</span>
                     
                   </div>
 
@@ -859,7 +825,7 @@
                     <span class="risk-label">CVSS:</span>
                     
                     
-                    <span class="risk-value low">5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)</span>
+                    <span class="risk-value low">3.7 (AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N)</span>
                   </div>
                 </div>
               </div>
@@ -905,11 +871,10 @@
                   
                   
                   
+                  
                     <div class="section-content" style="margin-top:12px;">
-                      <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">HTTP Method: OPTIONS</div>
-                      <div style="padding-left:0px;">
-                        This method can be considered as a shortcut to find another hole.
-                      </div>
+                      <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">OPTIONS</div>
+                      <div style="padding-left:0px;">This method can be considered as a shortcut to find another hole.</div>
                     </div>
                   
                 
@@ -924,10 +889,8 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#856404;margin-bottom:4px;">HTTP Method: OPTIONS</div>
-                        <div style="padding-left:0px;">
-                          This method is a diagnostic method mainly used for debugging purposes, but it can unintentionally help attackers by revealing supported server methods.
-                        </div>
+                        <div style="font-weight:600;color:#856404;margin-bottom:4px;">OPTIONS</div>
+                        <div style="padding-left:0px;">This method is a diagnostic method mainly used for debugging purposes, but it can unintentionally help attackers by revealing supported server methods.</div>
                       </div>
                     
                   
@@ -947,29 +910,35 @@
         
         
         
+        
+          
+        
 
         <a id="anchor-2" class="anchor" aria-hidden="true"></a>
         <div class="category-section risk-low" data-category="Server Information">
           <div class="vuln-header">
             
             
-            <div class="vuln-title">Server Information</div>
+            <div class="vuln-title">Server Information Disclosure</div>
           </div>
 
           <div class="vuln-content">
               <div class="vuln-section">
                 <div class="section-title">Description</div>
-                                <div class="section-content">
-                  Web servers often expose detailed version information in HTTP response headers (Server, X-Powered-By) or error pages. This information disclosure can help attackers identify known vulnerabilities specific to the software versions in use.
-
-Exposing server software versions, framework details, or technology stack information provides attackers with valuable reconnaissance data to craft targeted exploits.
-                </div>
+                  
+                  <div class="section-content">
+                    
+                      <p>Server Information Disclosure occurs when a web server exposes details about its software, technologies, or behavior through HTTP headers or error responses. These details help attackers fingerprint the environment and identify version-specific vulnerabilities.</p>
+                    
+                      <p>Exposing server, technology, or framework details increases the chance attackers can find and use known exploits against specific versions. Error responses that reveal internal details further aid fingerprinting and targeted attacks.</p>
+                    
+                  </div>
               </div>
 
               <div class="vuln-section">
                 <div class="section-title">Risk Rating</div>
                 <div class="risk-rating">
-                                    
+                  
                   
                   
                   
@@ -977,10 +946,7 @@ Exposing server software versions, framework details, or technology stack inform
                   <div class="risk-item">
                     <span class="risk-label">Severity:</span>
                     
-                      
-                      
-                        <span class="risk-value low">Low</span>
-                      
+                      <span class="risk-value low">Low</span>
                     
                   </div>
 
@@ -988,7 +954,7 @@ Exposing server software versions, framework details, or technology stack inform
                     <span class="risk-label">CVSS:</span>
                     
                     
-                    <span class="risk-value low">5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)</span>
+                    <span class="risk-value low">3.1 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)</span>
                   </div>
                 </div>
               </div>
@@ -1066,43 +1032,16 @@ Exposing server software versions, framework details, or technology stack inform
                   
                   
                   
-                    <div class="section-content" style="margin-top:12px;">
-                      <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">Server Header Exposed</div>
-                      <div style="padding-left:0px;">
-                        1. Attackers can identify specific software versions and search for known vulnerabilities
-2. Technology stack information helps in crafting targeted attacks
-3. Reduces the effort required for reconnaissance phase of attacks
-4. May reveal end-of-life or outdated software in use
-                      </div>
-                    </div>
                   
                 
                   
                   
                   
-                    <div class="section-content" style="margin-top:12px;">
-                      <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">Error Page Reveals Server Details (Invalid HTTP Method)</div>
-                      <div style="padding-left:0px;">
-                        1. Attackers can identify specific software versions and search for known vulnerabilities
-2. Technology stack information helps in crafting targeted attacks
-3. Reduces the effort required for reconnaissance phase of attacks
-4. May reveal end-of-life or outdated software in use
-                      </div>
-                    </div>
                   
                 
                   
                   
                   
-                    <div class="section-content" style="margin-top:12px;">
-                      <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">Error Page Reveals Server Details (Non-existent page (404))</div>
-                      <div style="padding-left:0px;">
-                        1. Attackers can identify specific software versions and search for known vulnerabilities
-2. Technology stack information helps in crafting targeted attacks
-3. Reduces the effort required for reconnaissance phase of attacks
-4. May reveal end-of-life or outdated software in use
-                      </div>
-                    </div>
                   
                 
               </div>
@@ -1117,9 +1056,7 @@ Exposing server software versions, framework details, or technology stack inform
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">Server Header Exposed</div>
-                        <div style="padding-left:0px;">
-                          Disable or mask the Server header through server configuration or by using a reverse proxy.
-                        </div>
+                        <div style="padding-left:0px;">Disable or mask the Server header through server configuration or by using a reverse proxy.</div>
                       </div>
                     
                   
@@ -1128,9 +1065,7 @@ Exposing server software versions, framework details, or technology stack inform
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">Error Page Reveals Server Details (Invalid HTTP Method)</div>
-                        <div style="padding-left:0px;">
-                          Replace default error pages with custom ones that do not reveal server details.
-                        </div>
+                        <div style="padding-left:0px;">Replace default error pages with custom ones that do not reveal server details.</div>
                       </div>
                     
                   
@@ -1139,9 +1074,7 @@ Exposing server software versions, framework details, or technology stack inform
                     
                       <div class="section-content" style="margin-top:12px;">
                         <div style="font-weight:600;color:#856404;margin-bottom:4px;">Error Page Reveals Server Details (Non-existent page (404))</div>
-                        <div style="padding-left:0px;">
-                          Replace default error pages with custom ones that do not reveal server details.
-                        </div>
+                        <div style="padding-left:0px;">Replace default error pages with custom ones that do not reveal server details.</div>
                       </div>
                     
                   
@@ -1161,6 +1094,12 @@ Exposing server software versions, framework details, or technology stack inform
         
         
         
+        
+          
+          
+            
+          
+        
 
         <a id="anchor-3" class="anchor" aria-hidden="true"></a>
         <div class="category-section risk-low" data-category="CORS Security">
@@ -1173,17 +1112,20 @@ Exposing server software versions, framework details, or technology stack inform
           <div class="vuln-content">
               <div class="vuln-section">
                 <div class="section-title">Description</div>
-                                <div class="section-content">
-                  Cross-Origin Resource Sharing (CORS) is a mechanism that allows restricted resources on a web page to be requested from another domain. Misconfigured CORS policies can allow malicious websites to access sensitive data or perform actions on behalf of authenticated users.
-
-An overly permissive CORS policy (especially using wildcards with credentials) can expose the application to data theft and unauthorized actions.
-                </div>
+                  
+                  <div class="section-content">
+                    
+                      <p>Cross-Origin Resource Sharing (CORS) is a mechanism that allows restricted resources on a web page to be requested from another domain. Misconfigured CORS policies can allow malicious websites to access sensitive data or perform actions on behalf of authenticated users.</p>
+                    
+                      <p>An overly permissive CORS policy (especially using wildcards with credentials) can expose the application to data theft and unauthorized actions.</p>
+                    
+                  </div>
               </div>
 
               <div class="vuln-section">
                 <div class="section-title">Risk Rating</div>
                 <div class="risk-rating">
-                                    
+                  
                   
                   
                   
@@ -1202,7 +1144,7 @@ An overly permissive CORS policy (especially using wildcards with credentials) c
                     <span class="risk-label">CVSS:</span>
                     
                     
-                    <span class="risk-value low">7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)</span>
+                    <span class="risk-value low">None</span>
                   </div>
                 </div>
               </div>
@@ -1295,17 +1237,59 @@ An overly permissive CORS policy (especially using wildcards with credentials) c
                   
                   
                   
+                  
+                    <div class="section-content" style="margin-top:12px;">
+                      <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">https://evil-attacker.com
+          -The server reflects whatever Origin the request sends, meaning it trusts unknown domains.</div>
+                      <div style="padding-left:0px;">1. Unauthorized access to sensitive API endpoints from malicious origins
+2. Data exfiltration to attacker-controlled domains
+3. Theft of authentication tokens and session information
+4. Ability to perform authenticated actions on behalf of victims
+5. Bypass of same-origin policy protections</div>
+                    </div>
+                  
                 
                   
                   
                   
+                  
+                    <div class="section-content" style="margin-top:12px;">
+                      <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">GET, POST, PUT, DELETE, PATCH, OPTIONS
+          -The server allows more HTTP methods than necessary, increasing exposure.</div>
+                      <div style="padding-left:0px;">1. Unauthorized access to sensitive API endpoints from malicious origins
+2. Data exfiltration to attacker-controlled domains
+3. Theft of authentication tokens and session information
+4. Ability to perform authenticated actions on behalf of victims
+5. Bypass of same-origin policy protections</div>
+                    </div>
+                  
                 
                   
                   
                   
+                  
+                    <div class="section-content" style="margin-top:12px;">
+                      <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">Origin header.</div>
+                      <div style="padding-left:0px;">1. Unauthorized access to sensitive API endpoints from malicious origins
+2. Data exfiltration to attacker-controlled domains
+3. Theft of authentication tokens and session information
+4. Ability to perform authenticated actions on behalf of victims
+5. Bypass of same-origin policy protections</div>
+                    </div>
+                  
                 
                   
                   
+                  
+                  
+                    <div class="section-content" style="margin-top:12px;">
+                      <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">When the scanner sends an OPTIONS request with an untrusted Origin, the server still responds with full permissions, including credentials and multiple allowed methods.</div>
+                      <div style="padding-left:0px;">1. Unauthorized access to sensitive API endpoints from malicious origins
+2. Data exfiltration to attacker-controlled domains
+3. Theft of authentication tokens and session information
+4. Ability to perform authenticated actions on behalf of victims
+5. Bypass of same-origin policy protections</div>
+                    </div>
                   
                 
               </div>
@@ -1318,17 +1302,39 @@ An overly permissive CORS policy (especially using wildcards with credentials) c
                     
                     
                     
-                  
-                    
-                    
-                    
-                  
-                    
-                    
+                      <div class="section-content" style="margin-top:12px;">
+                        <div style="font-weight:600;color:#856404;margin-bottom:4px;">https://evil-attacker.com
+          -The server reflects whatever Origin the request sends, meaning it trusts unknown domains.</div>
+                        <div style="padding-left:0px;">Replace dynamic origin reflection with a fixed whitelist of allowed origins. Reject unexpected or untrusted origins.</div>
+                      </div>
                     
                   
                     
                     
+                    
+                      <div class="section-content" style="margin-top:12px;">
+                        <div style="font-weight:600;color:#856404;margin-bottom:4px;">GET, POST, PUT, DELETE, PATCH, OPTIONS
+          -The server allows more HTTP methods than necessary, increasing exposure.</div>
+                        <div style="padding-left:0px;">Restrict allowed methods to only the application requires (eg. GET, POST).</div>
+                      </div>
+                    
+                  
+                    
+                    
+                    
+                      <div class="section-content" style="margin-top:12px;">
+                        <div style="font-weight:600;color:#856404;margin-bottom:4px;">Origin header.</div>
+                        <div style="padding-left:0px;">Add Vary: Origin when the server returns different CORS responses depending on the request&#39;s Origin.</div>
+                      </div>
+                    
+                  
+                    
+                    
+                    
+                      <div class="section-content" style="margin-top:12px;">
+                        <div style="font-weight:600;color:#856404;margin-bottom:4px;">When the scanner sends an OPTIONS request with an untrusted Origin, the server still responds with full permissions, including credentials and multiple allowed methods.</div>
+                        <div style="padding-left:0px;">Update the preflight validation to reject unapproved origins before responding with CORS permissions.</div>
+                      </div>
                     
                   
                 </div>
@@ -1347,6 +1353,10 @@ An overly permissive CORS policy (especially using wildcards with credentials) c
         
         
         
+        
+          
+          
+            
           
         
 
@@ -1361,17 +1371,20 @@ An overly permissive CORS policy (especially using wildcards with credentials) c
           <div class="vuln-content">
               <div class="vuln-section">
                 <div class="section-title">Description</div>
-                                <div class="section-content">
-                  Directory exposure occurs when web servers are misconfigured to display directory listings or when sensitive files and directories are accessible without proper authentication. This can reveal the application&#39;s file structure, backup files, configuration files, and other sensitive information.
-
-Common exposed items include .git directories, backup files, configuration files, and development/testing resources that should not be publicly accessible.
-                </div>
+                  
+                  <div class="section-content">
+                    
+                      <p>Directory exposure occurs when web servers are misconfigured to display directory listings or when sensitive files and directories are accessible without proper authentication. This can reveal the application's file structure, backup files, configuration files, and other sensitive information.</p>
+                    
+                      <p>Common exposed items include .git directories, backup files, configuration files, and development/testing resources that should not be publicly accessible.</p>
+                    
+                  </div>
               </div>
 
               <div class="vuln-section">
                 <div class="section-title">Risk Rating</div>
                 <div class="risk-rating">
-                                    
+                  
                   
                   
                   
@@ -1390,7 +1403,7 @@ Common exposed items include .git directories, backup files, configuration files
                     <span class="risk-label">CVSS:</span>
                     
                     
-                    <span class="risk-value low">5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)</span>
+                    <span class="risk-value low">None</span>
                   </div>
                 </div>
               </div>
@@ -1453,7 +1466,9 @@ Common exposed items include .git directories, backup files, configuration files
                   
                   
                   
+                  
                 
+                  
                   
                   
                   
@@ -1489,6 +1504,10 @@ Common exposed items include .git directories, backup files, configuration files
         
         
         
+        
+          
+          
+            
           
         
 
@@ -1503,17 +1522,20 @@ Common exposed items include .git directories, backup files, configuration files
           <div class="vuln-content">
               <div class="vuln-section">
                 <div class="section-title">Description</div>
-                                <div class="section-content">
-                  SSL/TLS (Secure Sockets Layer/Transport Layer Security) provides encryption for data in transit between clients and servers. Weak SSL/TLS configurations, outdated protocols, weak ciphers, or certificate issues can expose communications to interception and manipulation.
-
-Common issues include expired certificates, self-signed certificates in production, support for deprecated protocols (SSLv3, TLS 1.0, TLS 1.1), weak cipher suites, and missing security features like HSTS.
-                </div>
+                  
+                  <div class="section-content">
+                    
+                      <p>SSL/TLS (Secure Sockets Layer/Transport Layer Security) provides encryption for data in transit between clients and servers. Weak SSL/TLS configurations, outdated protocols, weak ciphers, or certificate issues can expose communications to interception and manipulation.</p>
+                    
+                      <p>Common issues include expired certificates, self-signed certificates in production, support for deprecated protocols (SSLv3, TLS 1.0, TLS 1.1), weak cipher suites, and missing security features like HSTS.</p>
+                    
+                  </div>
               </div>
 
               <div class="vuln-section">
                 <div class="section-title">Risk Rating</div>
                 <div class="risk-rating">
-                                    
+                  
                   
                   
                   
@@ -1532,7 +1554,7 @@ Common issues include expired certificates, self-signed certificates in producti
                     <span class="risk-label">CVSS:</span>
                     
                     
-                    <span class="risk-value low">7.4 (AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N)</span>
+                    <span class="risk-value low">None</span>
                   </div>
                 </div>
               </div>
@@ -1582,6 +1604,7 @@ Common issues include expired certificates, self-signed certificates in producti
                   
                   
                   
+                  
                 
               </div>
 
@@ -1604,7 +1627,7 @@ Common issues include expired certificates, self-signed certificates in producti
     </section>
 
     <footer class="report-footer">
-      WebSecScan — Web Security Misconfiguration Analyzer · Generated 2025-12-09 13:50:02 · <span style="opacity:.85">Lee Zhi Hui</span>
+      WebSecScan — Web Security Misconfiguration Analyzer · Generated 2025-12-09 16:41:25 · <span style="opacity:.85">Lee Zhi Hui</span>
     </footer>
   </div>
 

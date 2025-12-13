@@ -481,15 +481,73 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
 
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
-    # === 5. Return findings for summary (all use category-level severity) ===
+    # === 5. Return findings for summary (category-level severity) ===
     cookie_findings: List[Dict[str, Any]] = []
-    for issue in server_issues + client_issues:
-        cookie_findings.append({
-            "Category": "Cookie Security",
-            "Name": issue.get("Name"),
-            "Severity": severity,  # Use category-level severity
-            "Description": f"Missing flags: {', '.join(issue.get('IssueTypes', []))}"
-        })
+
+    ISSUE_TITLES = {
+        "HttpOnly": "Missing HttpOnly Attribute",
+        "Secure": "Missing Secure Attribute",
+        "SameSite": "Missing SameSite Attribute",
+        "Path": "Overly Broad Path Attribute",
+        "Expires/Max-Age": "Missing Expires / Max-Age Attribute",
+        "Weak Session ID": "Weak Session ID",
+        "Domain": "Overly Broad Domain Attribute",
+        "Excessive Lifetime": "Excessive Cookie Lifetime",
+    }
+
+    ISSUE_TO_ITEM_KEY = {
+        "Missing HttpOnly Attribute": "HttpOnly",
+        "Missing Secure Attribute": "Secure",
+        "Missing SameSite Attribute": "SameSite",
+        "Overly Broad Path Attribute": "Path",
+        "Missing Expires / Max-Age Attribute": "Expires/Max-Age",
+        "Weak Session ID": "Weak Session ID",
+        "Overly Broad Domain Attribute": "Domain",
+        "Excessive Cookie Lifetime": "Excessive Lifetime",
+    }
+
+    # -------- Server-side cookies --------
+    for issue in server_issues:
+        cookie_name = issue.get("Name")
+
+        # find the cookie object
+        cookie = next((c for c in server_cookies if c.get("Name") == cookie_name), None)
+        if not cookie:
+            continue
+
+        for issue_type in issue.get("IssueTypes", []):
+            finding_title = ISSUE_TITLES.get(issue_type, issue_type)
+            item_key = ISSUE_TO_ITEM_KEY.get(finding_title, issue_type)
+
+            cookie_findings.append({
+                "Category": "Cookie Security (Server-Side)",
+                "Scope": "Server-Side",
+                "Finding": finding_title,
+                "_item_short": item_key,
+                "Evidence": _build_cookie_evidence(issue_type, cookie),
+                "Severity": severity
+            })
+
+    # -------- Client-side cookies --------
+    for issue in client_issues:
+        cookie_name = issue.get("Name")
+
+        cookie = next((c for c in client_cookies if c.get("Name") == cookie_name), None)
+        if not cookie:
+            continue
+
+        for issue_type in issue.get("IssueTypes", []):
+            finding_title = ISSUE_TITLES.get(issue_type, issue_type)
+            item_key = ISSUE_TO_ITEM_KEY.get(finding_title, issue_type)
+
+            cookie_findings.append({
+                "Category": "Cookie Security (Client-Side)",
+                "Scope": "Client-Side",
+                "Finding": finding_title,
+                "_item_short": item_key,
+                "Evidence": _build_cookie_evidence(issue_type, cookie),
+                "Severity": severity
+            })
 
     return cookie_findings
 
@@ -546,3 +604,27 @@ def _print_issues(issues: List[Dict[str, Any]], is_server_side: bool = True):
         title, recommendation = issue_map.get(issue_type, (issue_type, "Review cookie configuration."))
         print(f"{idx}. {title}")
         print(f"   Recommendation: {recommendation}\n")
+
+
+def _build_cookie_evidence(issue_type: str, cookie: dict) -> str:
+    raw = cookie.get("Raw")
+    name = cookie.get("Name")
+    value = cookie.get("Value")
+
+    # Missing flags → show full cookie
+    if issue_type in {"HttpOnly", "Secure", "SameSite"}:
+        if raw:
+            return f"Set-Cookie: {raw}"
+        return f"Cookie: {name}={value}"
+
+    # Attribute-specific evidence
+    if issue_type in {"Path", "Overly Broad Path"}:
+        return f"Path={cookie.get('Path', 'N/A')}"
+    if issue_type == "Domain":
+        return f"Domain={cookie.get('Domain', 'N/A')}"
+    if issue_type in {"Expires/Max-Age", "Excessive Lifetime"}:
+        return f"Expires={cookie.get('Expires', 'N/A')}, Max-Age={cookie.get('MaxAge', 'N/A')}"
+    if issue_type == "Weak Session ID":
+        return f"{name}={value}"
+
+    return f"Cookie: {name}"

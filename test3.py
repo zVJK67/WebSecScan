@@ -5,16 +5,159 @@ Vulnerability Definitions Database
 Contains detailed information (Description, Impact, CVSS) for each vulnerability category.
 This data enriches findings before report generation.
 """
+COOKIE_SECURITY_DEF= {
+    "DisplayName": "Improper Cookie and Session Security Configuration",
+
+    "Description": (
+        "Improper Cookie and Session Security Configuration occurs when cookies are set without essential "
+        "security attributes or are scoped too broadly. Missing or weak cookie attributes such as HttpOnly, "
+        "Secure, SameSite, and proper expiration increase the risk of session hijacking, cross-site scripting "
+        "(XSS), cross-site request forgery (CSRF), and unauthorized access to user sessions."
+    ),
+
+    "DefaultSeverity": "High",
+    "DefaultCVSS": "7.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N)",
+
+    "TableType": None,
+    "TableColumns": ["Scope", "Finding", "Evidence"],
+    "TableColumnMap": {
+        "Scope": ["Scope"],
+        "Finding": ["Finding"],
+        "Evidence": ["Evidence"]
+    },
+
+    "ItemDetails": {
+        "HttpOnly": {
+            "Impact": (
+                "Allows client-side scripts to access session cookies, increasing the risk of session theft "
+                "via Cross-Site Scripting (XSS) attacks."
+            ),
+            "Recommendation": (
+                "Set the HttpOnly flag in all session cookies "
+                "(e.g. Set-Cookie: sessionid=...; HttpOnly)."
+            )
+        },
+
+        "Secure": {
+            "Impact": (
+                "Cookies may be transmitted over unencrypted HTTP connections, exposing session data to "
+                "interception and man-in-the-middle (MITM) attacks."
+            ),
+            "Recommendation": (
+                "Add the Secure flag to ensure cookies are only delivered via HTTPS "
+                "(e.g. Set-Cookie: sessionid=...; Secure)."
+            )
+        },
+
+        "SameSite": {
+            "Impact": (
+                "Increases exposure to Cross-Site Request Forgery (CSRF) attacks by allowing cookies to be "
+                "sent with cross-site requests."
+            ),
+            "Recommendation": (
+                "Set SameSite=Lax or SameSite=Strict for session cookies to mitigate CSRF attacks."
+            )
+        },
+
+        "Path": {
+            "Impact": (
+                "Cookies are accessible across unnecessary application paths, increasing the attack surface "
+                "and the impact of potential cookie compromise."
+            ),
+            "Recommendation": (
+                "Restrict Path to required endpoints "
+                "(e.g. Set-Cookie: sessionid=...; Path=/admin)."
+            )
+        },
+
+        "Expires/Max-Age": {
+            "Impact": (
+                "Cookies may persist longer than intended, increasing the risk of session reuse and "
+                "unauthorized access if a session is stolen."
+            ),
+            "Recommendation": (
+                "Set a Max-Age or Expires attribute with an appropriate session lifetime."
+            )
+        },
+
+        "Weak Session ID": {
+            "Impact": (
+                "Predictable or short session identifiers can be brute-forced or guessed, allowing attackers "
+                "to hijack valid user sessions."
+            ),
+            "Recommendation": (
+                "Use long, cryptographically secure random session identifiers (>=128 bits, "
+                "e.g. sessionid=63b7c9f9f0a56edbcf9f1a31e9e1561c)."
+            )
+        },
+
+        "Domain": {
+            "Impact": (
+                "Cookies scoped to overly broad domains can be accessed by unintended subdomains, increasing "
+                "the risk of cross-subdomain session leakage."
+            ),
+            "Recommendation": (
+                "Restrict the Domain attribute to the minimal required scope "
+                "(e.g. auth.example.com)."
+            )
+        },
+
+        "Excessive Lifetime": {
+            "Impact": (
+                "Long-lived cookies extend the window of opportunity for attackers to reuse stolen session "
+                "tokens, increasing the likelihood of account compromise."
+            ),
+            "Recommendation": (
+                "Limit long-term cookies to less than 1 year; session cookies should expire when the browser "
+                "closes."
+            )
+        },
+
+        "Overly Broad Path Attribute": {
+            "Impact": (
+                "Allows cookies to be sent to endpoints that do not require them, increasing the risk of "
+                "unintended exposure and misuse."
+            ),
+            "Recommendation": (
+                "Restrict Path to only required endpoints (e.g., Path=/admin)."
+            )
+        },
+
+        "Overly Broad Domain Attribute": {
+            "Impact": (
+                "Cookies shared across multiple subdomains may be exposed to weaker or compromised "
+                "applications within the same domain."
+            ),
+            "Recommendation": (
+                "Restrict the Domain attribute to the specific subdomain that requires the cookie."
+            )
+        },
+
+        "JavaScript-Only Cookie": {
+            "Impact": (
+                "Cookies set via JavaScript are vulnerable to XSS attacks and cannot be protected with "
+                "HttpOnly, increasing the risk of session theft."
+            ),
+            "Recommendation": (
+                "Avoid setting security-sensitive cookies using JavaScript. Use server-side Set-Cookie "
+                "headers with proper attributes."
+            )
+        }
+    }
+}
 
 VULNERABILITY_DEFINITIONS = {
     "HTTP Security Headers": {
         "DisplayName": "Misconfigured HTTP Security Header",
-        "TableType": "headers",
+        
         "Description": """HTTP security headers provide yet another layer of security by helping to mitigate attacks and security vulnerabilities. Whenever a browser requests a page from a web server, the server responds with the content along with HTTP response headers. With the misconfigured or missing of HTTP security headers, the attackers may gain information from the data which may lead to various of attacks such as clickjacking, cross-site scripting (XSS) and others attacks as well.""",
-        "CVSS": "3.1 (AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N)",
 
-        # Per-header definitions used to build dynamic Impact/Recommendation
-        "HeaderDetails": {
+        "DefaultSeverity": "Low",
+        "DefaultCVSS": "3.1 (AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N)",
+
+        "TableType": "headers",
+
+        "ItemDetails": {
             "Strict-Transport-Security": {
                 "Impact": "Missing Strict-Transport-Security allows downgrade attacks and enables interception of traffic as this header lets a website tell browsers that it should only be accessed using HTTPS, instead of using HTTP.",
                 "Recommendation": "Enable HSTS with an appropriate max-age and includeSubDomains; consider preload where suitable."
@@ -58,12 +201,11 @@ VULNERABILITY_DEFINITIONS = {
         }
     },
     
-    "Unsafe HTTP Methods Enabled": {
+    "HTTP Methods": {
         "DisplayName": "Unsafe HTTP Methods Enabled",
-        "TableType": "methods",
+        
         "Description": (
-            "HTTP provides various methods to support development and debugging, but if misconfigured, "
-            "some of these methods can expose serious security risks. Attackers may exploit them to "
+            "HTTP provides various methods to support development and debugging, but if misconfigured, some of these methods can expose serious security risks. Attackers may exploit them to "
             "upload or delete files, retrieve sensitive information, or abuse server functionality.\n\n"
             "The following methods should be disabled:\n"
             "- OPTIONS: This method is a diagnostic method which is mainly used for debugging purpose. "
@@ -72,18 +214,17 @@ VULNERABILITY_DEFINITIONS = {
             "and is used mainly for debugging purposes.\n"
             "- PUT: This method allows a client to upload new files on the web server.\n"
             "- DELETE: This method allows a client to delete a file on the web server.\n"
-            "- DEBUG: This method is used for debugging purposes. It allows developers to diagnose and "
-            "troubleshoot issues by providing detailed information about the server's operation."
+            "- DEBUG: This method is used for debugging purposes. It allows developers to diagnose and troubleshoot issues by providing detailed information about the server's operation."
             ),
 
-        # Default CVSS (scanner may override per finding)
-        "CVSS": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)",
+        "DefaultSeverity": "Medium",
+        "DefaultCVSS": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)",
+        "RiskRule": "methods_options_only",
 
-        # Category-level recommendation (shown once)
-        "Recommendation": "Remove all unsafe HTTP methods.",
+        "TableType": "methods",
 
         # Only per-method IMPACT (no per-method recommendation)
-        "MethodDetails": {
+        "ItemDetails": {
             "OPTIONS": {
                 "Impact": "This method can be considered as a shortcut to find another hole."
             },
@@ -99,43 +240,59 @@ VULNERABILITY_DEFINITIONS = {
             "DEBUG": {
                 "Impact": "An attacker can leverage this method to gain insights into the server's configuration, potentially exposing sensitive information and aiding in the exploitation of other vulnerabilities."
             }
+        },
+
+        "Recommendation": "Remove all unsafe HTTP methods."
+    },
+    
+    
+    "Server Info": {
+        "DisplayName": "Server Information Disclosure",
+        
+        "Description": (
+            "Server Information Disclosure occurs when a web server exposes details about its software, technologies, or behavior through HTTP headers or error responses. These "
+            "details help attackers fingerprint the environment and identify version-specific vulnerabilities.\n\n"
+            "Exposing server, technology, or framework details increases the chance attackers can find and use known exploits against specific versions. Error responses that reveal "
+            "internal details further aid fingerprinting and targeted attacks."
+        ),
+
+        "DefaultSeverity": "Low",
+        "DefaultCVSS": "3.1 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)",
+
+        "TableType": None,
+        "TableColumns": ["Finding", "Evidence"],    # visible column titles
+        "TableColumnMap": {
+            "Finding": ["Header", "_item_short", "Context"],
+            "Evidence": ["CurrentValue", "Current Value", "Value", "Detail"]
+        },
+
+        "ItemDetails": {
+            "Server Header Exposed": {
+                "Impact": "Reveals server software and version (for example: gunicorn/19.9.0), which enables attackers to search for version-specific vulnerabilities and targeted exploits.",
+                "Recommendation": "Disable or mask the Server header at the web server level (or via a reverse proxy) so it does not disclose product names or versions."
+            },
+            "Technology Header Exposed": {
+                "Impact": "Discloses backend technology (for example: PHP/8.2), allowing attackers to focus on technology-specific attack vectors and known vulnerabilities.",
+                "Recommendation": "Remove or obfuscate the X-Powered-By header in application or server configuration so implementation details are not disclosed."
+            },
+            "Framework/Generator Header Exposed": {
+                "Impact": "Exposes framework or CMS versions (for example: WordPress, Laravel), helping attackers identify framework-specific exploits, vulnerable plugins, or misconfigurations.",
+                "Recommendation": "Disable framework-identifying response headers in the application or CMS configuration and ensure plugins/modules do not leak version information."
+            },
+            "Error Pages Reveal Server Details": {
+                "Impact": "Default/error pages or verbose error responses may reveal internal paths, server versions, stack traces, or other internal details that aid attacker fingerprinting and exploitation.",
+                "Recommendation": "Replace default error pages with custom, generic error pages that do not disclose implementation details or stack traces. Log detailed errors server-side only."
+            },
+            "Server Behavioral Fingerprinting": {
+                "Impact": "Distinctive response patterns (timing, header order, cookie formats) can allow attackers to infer the server type (e.g., Apache) or components even when headers are hidden, enabling tailored attacks.",
+                "Recommendation": "Use a reverse proxy or WAF to normalize responses, unify headers, and reduce fingerprinting signals. Review and harden middleware behavior to avoid leaking identifiable patterns."
+            }
         }
     },
-    
-    
-    "Server Information": {
-        "Description": """Web servers often expose detailed version information in HTTP response headers (Server, X-Powered-By) or error pages. This information disclosure can help attackers identify known vulnerabilities specific to the software versions in use.
 
-Exposing server software versions, framework details, or technology stack information provides attackers with valuable reconnaissance data to craft targeted exploits.""",
-        "CVSS": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)",
-        "Impact": """1. Attackers can identify specific software versions and search for known vulnerabilities
-2. Technology stack information helps in crafting targeted attacks
-3. Reduces the effort required for reconnaissance phase of attacks
-4. May reveal end-of-life or outdated software in use""",
-        "Recommendation": """1. Remove or obfuscate the Server header
-2. Remove X-Powered-By and similar headers
-3. Customize error pages to avoid exposing version information
-4. Use reverse proxies or web application firewalls to mask backend technologies
-5. Regularly update server software to latest secure versions"""
-    },
-    
-    "Cookie Security": {
-        "Description": """Cookies are small pieces of data stored by the browser that can contain sensitive information like session tokens, user preferences, and authentication data. Improperly configured cookies can be intercepted, manipulated, or stolen by attackers.
-
-Cookie security attributes (Secure, HttpOnly, SameSite) are critical defenses against common web attacks including session hijacking, cross-site scripting (XSS), and cross-site request forgery (CSRF).""",
-        "CVSS": "6.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N)",
-        "Impact": """1. Session hijacking through cookie theft
-2. Cross-site scripting (XSS) attacks can access sensitive cookies
-3. Man-in-the-middle attacks can intercept cookies over insecure connections
-4. Cross-site request forgery (CSRF) attacks
-5. Unauthorized access to user accounts and sensitive data""",
-        "Recommendation": """Set appropriate cookie attributes:
-- Secure: Ensure cookies are only transmitted over HTTPS
-- HttpOnly: Prevent JavaScript access to cookies
-- SameSite: Set to 'Strict' or 'Lax' to prevent CSRF attacks
-- Domain and Path: Scope cookies appropriately
-- Expiration: Set reasonable expiration times for session cookies"""
-    },
+    # Cookie Security (shared definition)
+    "Cookie Security (Server-Side)": COOKIE_SECURITY_DEF,
+    "Cookie Security (Client-Side)": COOKIE_SECURITY_DEF,
     
     "CORS Security": {
         "Description": """Cross-Origin Resource Sharing (CORS) is a mechanism that allows restricted resources on a web page to be requested from another domain. Misconfigured CORS policies can allow malicious websites to access sensitive data or perform actions on behalf of authenticated users.
@@ -220,82 +377,140 @@ Common issues include expired certificates, self-signed certificates in producti
     }
 }
 
+def _normalize_item_key(s: str) -> str:
+    """
+    Normalize finding item names so they match ItemDetails keys.
+    Removes parentheses and extra suffixes.
+    """
+    if not s:
+        return ""
+    s = str(s).strip()
+    # remove text in parentheses
+    if "(" in s:
+        s = s.split("(", 1)[0].strip()
+    return s
 
 def enrich_finding_with_details(finding: dict) -> dict:
     """
     Enrich a finding dictionary with detailed information from the definitions database.
-    
-    Args:
-        finding: A finding dict with at least 'Category' field
-        
-    Returns:
-        Enriched finding dict with Description, CVSS, Impact, and Recommendation
+
+    - Safely reads CVSS (supports either 'CVSS' or 'DefaultCVSS' in definitions).
+    - Supports per-item detail blocks named 'ItemDetails', 'HeaderDetails' or 'MethodDetails'.
+    - Does not overwrite fields that are already present in the finding.
     """
-    category = finding.get("Category", "")
-    
-    # Try exact match first
+    category = finding.get("Category", "") or ""
+
+    # try exact match first
     vuln_def = VULNERABILITY_DEFINITIONS.get(category)
-    
-    # If no exact match, try partial matching for common cases
+
+    # if no exact match, try best-effort substring matching
     if not vuln_def:
         for def_category, details in VULNERABILITY_DEFINITIONS.items():
-            if category.lower() in def_category.lower() or def_category.lower() in category.lower():
+            if category and (category.lower() in def_category.lower() or def_category.lower() in category.lower()):
                 vuln_def = details
                 break
-    
-    # If still no match, provide generic information
+
+    # fallback to a minimal definition if nothing found
     if not vuln_def:
         vuln_def = {
             "Description": finding.get("Description", "Security misconfiguration detected."),
-            "CVSS": "N/A",
+            "CVSS": finding.get("CVSS") or "N/A",
             "Impact": "This configuration may pose a security risk to the application.",
             "Recommendation": finding.get("Recommendation", "Review and remediate this security issue.")
         }
-    
-    # Create enriched finding
+
+    # start with a shallow copy so we don't mutate original input
     enriched = finding.copy()
-    
-    # Add missing fields from definitions (don't override existing ones)
-    if "Description" not in enriched or not enriched["Description"]:
-        enriched["Description"] = vuln_def["Description"]
-    
-    if "CVSS" not in enriched or not enriched["CVSS"]:
-        enriched["CVSS"] = vuln_def["CVSS"]
-    
-    # Special handling for HTTP Security Headers category
-    if "HTTP Security Headers" in category or "Security Headers" in category:
-        header_name = finding.get("Header", finding.get("Context", ""))
-        
-        # Check if we have specific header details
-        if "HeaderDetails" in vuln_def and header_name in vuln_def["HeaderDetails"]:
-            header_info = vuln_def["HeaderDetails"][header_name]
-            enriched["Impact"] = header_info.get("Impact", vuln_def.get("Impact", ""))
-            enriched["Recommendation"] = header_info.get("Recommendation", vuln_def.get("Recommendation", ""))
-        else:
-            # Use general category impact/recommendation if no specific header details
-            if "Impact" not in enriched or not enriched["Impact"]:
-                enriched["Impact"] = vuln_def.get("Impact", "")
-            if "Recommendation" not in enriched or not enriched["Recommendation"]:
-                enriched["Recommendation"] = vuln_def.get("Recommendation", "")
-    else:
-        # For non-header categories, use standard enrichment
-        if "Impact" not in enriched or not enriched["Impact"]:
+
+    # Description: prefer finding value, otherwise use vuln_def Description (if present)
+    if not enriched.get("Description"):
+        enriched["Description"] = vuln_def.get("Description", "")
+
+    # CVSS: check multiple possible keys in the definitions, then fall back to any finding value, then 'N/A'
+    enriched_cvss = enriched.get("CVSS") or vuln_def.get("CVSS") or vuln_def.get("DefaultCVSS") or "N/A"
+    enriched["CVSS"] = enriched_cvss
+
+    # Determine which per-item details map to use (support multiple legacy names)
+    per_item_keys = []
+    for key_name in ("ItemDetails", "HeaderDetails", "MethodDetails"):
+        if isinstance(vuln_def.get(key_name), dict):
+            per_item_keys.append(key_name)
+
+    # Normalize item identifier for lookup (e.g., "HTTP Method: OPTIONS" -> "OPTIONS")
+    item_name = (
+        finding.get("_item_short")
+        or finding.get("Header")
+        or finding.get("Method")
+        or finding.get("Context")
+        or finding.get("Detail")
+        or finding.get("name")
+        or ""
+    )
+    short_name = ""
+    if item_name:
+        try:
+            s = str(item_name).strip()
+            if ":" in s:
+                s = s.split(":", 1)[1].strip()
+            short_name = s
+        except Exception:
+            short_name = str(item_name)
+
+    # If we have per-item detail maps, try to attach Impact/Recommendation for the item
+    attached = False
+    for key_name in per_item_keys:
+        item_map = vuln_def.get(key_name, {}) or {}
+        # prefer short_name lookup, fallback to raw item_name
+        raw_key = short_name if short_name else item_name
+        norm_key = _normalize_item_key(raw_key)
+
+        candidates = [
+            norm_key,
+            norm_key.upper(),
+            norm_key.lower(),
+        ]
+
+        item_def = {}
+        for k in candidates:
+            if k in item_map:
+                item_def = item_map[k] or {}
+                break
+
+        if item_def:
+            # Impact
+            if item_def.get("Impact") and not enriched.get("Impact"):
+                enriched["Impact"] = item_def.get("Impact")
+            # Recommendation
+            if item_def.get("Recommendation") and not enriched.get("Recommendation"):
+                enriched["Recommendation"] = item_def.get("Recommendation")
+            attached = True
+            break
+
+    # If nothing attached above, fall back to category-level Impact/Recommendation if finding lacks them
+    if not attached:
+        if not enriched.get("Impact"):
             enriched["Impact"] = vuln_def.get("Impact", "")
-        
-        if "Recommendation" not in enriched or not enriched["Recommendation"]:
-            enriched["Recommendation"] = vuln_def.get("Recommendation", "")
-    
+        if not enriched.get("Recommendation"):
+            # support both 'Recommendation' and 'Recommendations' variants (just in case)
+            enriched["Recommendation"] = vuln_def.get("Recommendation") or vuln_def.get("Recommendations") or ""
+
     return enriched
 
 
 def enrich_all_findings(findings: list) -> list:
     """
     Enrich all findings in a list with detailed vulnerability information.
-    
-    Args:
-        findings: List of finding dicts
-        
-    Returns:
-        List of enriched finding dicts
+    Returns list of enriched finding dicts.
     """
-    return [enrich_finding_with_details(f) for f in findings]
+    if not findings:
+        return []
+    enriched_list = []
+    for f in findings:
+        try:
+            enriched_list.append(enrich_finding_with_details(f))
+        except Exception:
+            # defensive: if a particular finding enrichment fails, include original but don't crash
+            import traceback
+            traceback.print_exc()
+            enriched_list.append(f)
+    return enriched_list

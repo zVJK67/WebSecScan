@@ -124,7 +124,7 @@ def _send_malformed_requests(url: str, session: requests.Session, timeout: int =
             "headers": {"X-Invalid": "value\r\nInjected: header"}
         },
         {
-            "name": "Non-existent page (404)",
+            "name": "Non-existent Page",
             "path": "/this-page-does-not-exist-12345.html"
         }
     ]
@@ -267,14 +267,10 @@ def get_server_info(target_url: str, timeout: int = 10, session: Optional[reques
       info: dict (url, hostname, ips, status_code, reason, elapsed, headers, header_order, status_line, error_responses)
       findings: list of findings with keys Header, Detail, Recommendation
     """
-    session = session or _get_retry_session()
-    target_url = _normalize_url(target_url)
-    parsed = urlparse(target_url)
-    hostname = parsed.hostname
-
+    # Initialize return values at the top
     info: Dict[str, Any] = {
         "url": target_url,
-        "hostname": hostname,
+        "hostname": None,
         "ips": [],
         "status_code": None,
         "reason": None,
@@ -286,134 +282,178 @@ def get_server_info(target_url: str, timeout: int = 10, session: Optional[reques
     }
     findings: List[Dict[str, Any]] = []
 
-    if not hostname:
-        findings.append({
-            "Header": "Server Info",
-            "Detail": "Invalid URL",
-            "Recommendation": "Provide a valid URL (including scheme, e.g., https://example.com)."
-        })
-        return info, findings
+    try:
+        session = session or _get_retry_session()
+        target_url = _normalize_url(target_url)
+        parsed = urlparse(target_url)
+        hostname = parsed.hostname
 
-    # Resolve IP(s)
-    info["ips"] = _resolve_hostname(hostname)
+        info["url"] = target_url
+        info["hostname"] = hostname
 
-    # Perform HEAD/GET request
-    resp, elapsed = _safe_head_get(target_url, session=session, timeout=timeout)
-    if resp is None:
-        findings.append({
-            "Header": "Server Info",
-            "Detail": "No response - Target did not respond to HTTP requests or timed out.",
-            "Recommendation": "Verify the target URL is accessible and responding to HTTP requests."
-        })
-        return info, findings
-
-    # Fill basic info
-    info["status_code"] = resp.status_code
-    info["reason"] = resp.reason
-    info["elapsed"] = elapsed
-
-    # Analyze status line formatting
-    info["status_line"] = _analyze_status_line(resp)
-
-    # Analyze header order for fingerprinting
-    info["header_order_analysis"] = _analyze_header_order(resp.headers)
-
-    # Send malformed requests to check error pages
-    info["error_responses"] = _send_malformed_requests(target_url, session, timeout)
-
-    # Normalize headers to lowercase keys for consistent analysis
-    headers = {k.lower(): v for k, v in resp.headers.items() if v is not None}
-    # subset only fingerprint headers (if present)
-    headers_subset = {h: headers.get(h) for h in COMMON_LEAK_HEADERS if headers.get(h)}
-    info["headers"] = headers_subset
-
-    # ----- Analyze exposures (ONLY report when exposed) -----
-
-    # 1) Server header presence
-    server_hdr = headers.get("server")
-    if server_hdr:
-        parsed_server = parse_server_header(server_hdr)
-        findings.append({
-            "Header": "Server Header Exposed",
-            "Detail": f"server: {server_hdr}",
-            "Recommendation": "Disable or mask the Server header through server configuration or by using a reverse proxy."
-        })
-
-    # 2) X-Powered-By
-    xpby = headers.get("x-powered-by")
-    if xpby:
-        findings.append({
-            "Header": "Technology Header Exposed",
-            "Detail": f"X-Powered-By: {xpby}",
-            "Recommendation": "Remove or obfuscate the X-Powered-By header to prevent unnecessary information disclosure."
-        })
-
-    # 3) Framework/Generator headers
-    framework_headers = []
-    for h in ("x-aspnet-version", "x-aspnetmvc-version", "x-powered-by-plesk", "x-generator"):
-        val = headers.get(h)
-        if val:
-            framework_headers.append(f"{h}: {val}")
-    
-    if framework_headers:
-        findings.append({
-            "Header": "Framework/Generator Header Exposed",
-            "Detail": ", ".join(framework_headers),
-            "Recommendation": "Disable framework-identifying headers within application configuration."
-        })
-
-    # 4) Via header — indicates intermediate proxies / gateways
-    via = headers.get("via")
-    if via:
-        findings.append({
-            "Header": "Proxy Header Exposed",
-            "Detail": f"Via: {via}",
-            "Recommendation": "Via header present; it may reveal proxy topology or intermediaries. Consider normalizing at the edge."
-        })
-
-    # 5) X-Cache / X-Backend-Server / X-CF-Powered-By — backend/proxy info
-    backend_headers = []
-    for proxy_hdr in ("x-cache", "x-backend-server", "x-cf-powered-by", "x-drupal-cache"):
-        v = headers.get(proxy_hdr)
-        if v:
-            backend_headers.append(f"{proxy_hdr}: {v}")
-    
-    if backend_headers:
-        findings.append({
-            "Header": "Backend/Cache Header Exposed",
-            "Detail": ", ".join(backend_headers),
-            "Recommendation": "Consider removing or normalizing these headers to avoid exposing infrastructure details."
-        })
-
-    # 6) Header order analysis (fingerprinting) - Show matching headers instead of percentage
-    header_order_result = info.get("header_order_analysis", {})
-    potential_matches = header_order_result.get("potential_matches", {})
-    if potential_matches:
-        for server_type, match_info in potential_matches.items():
-            matching_hdrs = match_info['matching_headers']
+        if not hostname:
             findings.append({
-                "Header": "Server Behavior Fingerprinting",
-                "Detail": f"The server's unique response patterns match known fingerprints -> {server_type}\n   Matching headers: {', '.join(matching_hdrs)}",
-                "Recommendation": "Add a reverse proxy or WAF to normalize responses and reduce fingerprinting accuracy."
+                "Header": "Server Info",
+                "Detail": "Invalid URL",
+                "Recommendation": "Provide a valid URL (including scheme, e.g., https://example.com)."
+            })
+            return info, findings
+
+        # Resolve IP(s)
+        info["ips"] = _resolve_hostname(hostname)
+
+        # Perform HEAD/GET request
+        resp, elapsed = _safe_head_get(target_url, session=session, timeout=timeout)
+        if resp is None:
+            findings.append({
+                "Header": "Server Info",
+                "Detail": "No response - Target did not respond to HTTP requests or timed out.",
+                "Recommendation": "Verify the target URL is accessible and responding to HTTP requests."
+            })
+            return info, findings
+
+        # Fill basic info
+        info["status_code"] = resp.status_code
+        info["reason"] = resp.reason
+        info["elapsed"] = elapsed
+
+        # Analyze status line formatting
+        info["status_line"] = _analyze_status_line(resp)
+
+        # Analyze header order for fingerprinting
+        info["header_order_analysis"] = _analyze_header_order(resp.headers)
+
+        # Send malformed requests to check error pages
+        info["error_responses"] = _send_malformed_requests(target_url, session, timeout)
+
+        # Normalize headers to lowercase keys for consistent analysis
+        headers = {k.lower(): v for k, v in resp.headers.items() if v is not None}
+        # subset only fingerprint headers (if present)
+        headers_subset = {h: headers.get(h) for h in COMMON_LEAK_HEADERS if headers.get(h)}
+        info["headers"] = headers_subset
+
+        # ----- Analyze exposures (ONLY report when exposed) -----
+
+        # 1) Server header presence
+        server_hdr = headers.get("server")
+        if server_hdr:
+            parsed_server = parse_server_header(server_hdr)
+            findings.append({
+                "Header": "Server Header Exposed",
+                "Detail": f"server: {server_hdr}",
+                "Recommendation": "Disable or mask the Server header through server configuration or by using a reverse proxy."
             })
 
-    # 7) Error page analysis (Option B: Separate findings for each error test)
-    error_responses = info.get("error_responses", [])
-    for err in error_responses:
-        if err.get("server_header") or err.get("mentions_in_body"):
-            detail_parts = [f"HTTP {err['status_code']} response exposed server information"]
-            if err.get("server_header"):
-                detail_parts.append(f"Server header: {err['server_header']}")
-            if err.get("mentions_in_body"):
-                detail_parts.append(f"Body mentions: {', '.join(err['mentions_in_body'])}")
-            
+        # 2) X-Powered-By
+        xpby = headers.get("x-powered-by")
+        if xpby:
             findings.append({
-                "Header": f"Error Page Reveals Server Details ({err['test']})",
-                "Detail": "\n   ".join(detail_parts),
-                "Recommendation": "Replace default error pages with custom ones that do not reveal server details."
+                "Header": "Technology Header Exposed",
+                "Detail": f"X-Powered-By: {xpby}",
+                "Recommendation": "Remove or obfuscate the X-Powered-By header to prevent unnecessary information disclosure."
             })
 
-    return info, findings
+        # 3) Framework/Generator headers
+        framework_headers = []
+        for h in ("x-aspnet-version", "x-aspnetmvc-version", "x-powered-by-plesk", "x-generator"):
+            val = headers.get(h)
+            if val:
+                framework_headers.append(f"{h}: {val}")
+        
+        if framework_headers:
+            findings.append({
+                "Header": "Framework/Generator Header Exposed",
+                "Detail": ", ".join(framework_headers),
+                "Recommendation": "Disable framework-identifying headers within application configuration."
+            })
+
+        # 4) Via header — indicates intermediate proxies / gateways
+        via = headers.get("via")
+        if via:
+            findings.append({
+                "Header": "Proxy Header Exposed",
+                "Detail": f"Via: {via}",
+                "Recommendation": "Via header present; it may reveal proxy topology or intermediaries. Consider normalizing at the edge."
+            })
+
+        # 5) X-Cache / X-Backend-Server / X-CF-Powered-By — backend/proxy info
+        backend_headers = []
+        for proxy_hdr in ("x-cache", "x-backend-server", "x-cf-powered-by", "x-drupal-cache"):
+            v = headers.get(proxy_hdr)
+            if v:
+                backend_headers.append(f"{proxy_hdr}: {v}")
+        
+        if backend_headers:
+            findings.append({
+                "Header": "Backend/Cache Header Exposed",
+                "Detail": ", ".join(backend_headers),
+                "Recommendation": "Consider removing or normalizing these headers to avoid exposing infrastructure details."
+            })
+
+        # 6) Header order analysis (fingerprinting)
+        header_order_result = info.get("header_order_analysis", {})
+        potential_matches = header_order_result.get("potential_matches", {})
+        if potential_matches:
+            for server_type, match_info in potential_matches.items():
+                matching_hdrs = match_info['matching_headers']
+                findings.append({
+                    "Header": "Server Behavior Fingerprinting",
+                    "Detail": f"The server's unique response patterns match known fingerprints -> {server_type}\n   Matching headers: {', '.join(matching_hdrs)}",
+                    "Recommendation": "Add a reverse proxy or WAF to normalize responses and reduce fingerprinting accuracy."
+                })
+
+        # 7) Error page analysis - Combined approach
+        SAFE_ERROR_CODES = {"404", "405"}
+
+        error_responses = info.get("error_responses", [])
+        if error_responses:
+            exposed_status_codes = set()
+            server_headers_found = set()
+
+            for err in error_responses:
+                status = str(err.get("status_code"))
+
+                if status not in SAFE_ERROR_CODES:
+                    continue
+
+                if err.get("server_header") or err.get("mentions_in_body"):
+                    exposed_status_codes.add(status)
+
+                    if err.get("server_header"):
+                        server_headers_found.add(err["server_header"])
+
+            if exposed_status_codes:
+                parts = [
+                    f"Error responses ({', '.join(sorted(exposed_status_codes))}) disclosed server information"
+                ]
+
+                if server_headers_found:
+                    parts.append(
+                        f"including the server header {', '.join(sorted(server_headers_found))}"
+                    )
+
+                detail = ", ".join(parts) + "."
+
+                findings.append({
+                    "Header": "Error Pages Reveal Server Details",
+                    "Detail": detail,
+                    "Recommendation": (
+                        "Replace default error pages with custom error pages that do not "
+                        "expose server or framework information."
+                    )
+                })
+
+        return info, findings
+
+    
+    except Exception as e:
+        # Catch any unexpected errors and return safe defaults
+        findings.append({
+            "Header": "Server Info Check Error",
+            "Detail": f"An error occurred during server information gathering: {str(e)}",
+            "Recommendation": "Check the target URL and try again. If the issue persists, review the scanner logs."
+        })
+        return info, findings
 
 def print_server_info(info: Dict[str, Any], findings: List[Dict[str, Any]]) -> None:
     """

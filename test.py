@@ -354,6 +354,32 @@ REPORT_TEMPLATE = r"""
             {% set cat_def = category_defs.get(cat_name, {}) %}
             {% set display_title = (first_finding.get('DisplayName') if first_finding else None) or cat_def.get('DisplayName') or cat_name %}
             <div class="vuln-title">{{ display_title }}</div>
+
+            {% if "Server-Side" in cat_name %}
+              <span style="
+                display:inline-block;
+                margin-top:6px;
+                padding:4px 10px;
+                font-size:12px;
+                font-weight:700;
+                background:#e7f1ff;
+                color:#1c4ed8;
+                border-radius:999px;">
+                SERVER-SIDE
+              </span>
+            {% elif "Client-Side" in cat_name %}
+              <span style="
+                display:inline-block;
+                margin-top:6px;
+                padding:4px 10px;
+                font-size:12px;
+                font-weight:700;
+                background:#fff3cd;
+                color:#92400e;
+                border-radius:999px;">
+                CLIENT-SIDE
+              </span>
+            {% endif %}
           </div>
 
           <div class="vuln-content">
@@ -370,10 +396,10 @@ REPORT_TEMPLATE = r"""
               <div class="vuln-section">
                 <div class="section-title">Risk Rating</div>
                 <div class="risk-rating">
-                                    {# use computed category_stats for severity/cvss per your rule #}
+                  {# use computed category_stats for severity/cvss per your rule #}
                   {% set stats = category_stats.get(cat_name, {}) %}
                   {% set sev = stats.get('severity') %}
-                  {% set cvss_label = stats.get('cvss') or (first_finding.get('CVSS') if first_finding else 'N/A') %}
+                  {% set cvss_label = stats.get('cvss') %}
 
                   <div class="risk-item">
                     <span class="risk-label">Severity:</span>
@@ -405,7 +431,7 @@ REPORT_TEMPLATE = r"""
                 </div>
               </div>
 
-                            <div class="vuln-section">
+              <div class="vuln-section">
                 <div class="section-title">Findings</div>
 
                 {# Get schema and rows for this category #}
@@ -422,46 +448,51 @@ REPORT_TEMPLATE = r"""
                   </thead>
                   <tbody>
                     {% for row in rows %}
+                      {# last element of row is the enriched finding dict we appended in row builder #}
+                      {% set finding_obj = row[-1] if row|length > 0 else {} %}
+                      {% set visible = row[:-1] %}
                       <tr>
-                        {# For method-style tables: row == [method, status, finding] #}
-                        {% if schema|length == 2 %}
-                          <td style="font-weight:600;">{{ row[0] }}</td>
-                          <td>
-                            {# status should be shown as blue code pattern per your request #}
-                            <code>{{ row[1] }}</code>
-                          </td>
-                        {% else %}
-                          {# default header-style: row == [header, status, cur, finding] #}
-                          <td style="font-weight:600;">{{ row[0] }}</td>
-                          <td>{{ row[1] }}</td>
-                          <td>
-                            {%- set cur = row[2] -%}
-                            {%- set cur_str = (cur|string).strip() -%}
-                            {% if cur is none or cur_str == "" or cur_str == "-" %}
-                              -
+                        {# render visible cells (first cell bold) #}
+                        {% for cell in visible %}
+                          <td {% if loop.index0 == 0 %} style="font-weight:600;" {% endif %}>
+                            {# If column header is "Status" display as inline code for visual parity #}
+                            {% set col_name = schema[loop.index0] if schema and schema|length > loop.index0 else "" %}
+                            {% if col_name == "Status" %}
+                              <code>{{ cell }}</code>
                             {% else %}
-                              <code>{{ cur }}</code>
+                              {{ cell }}
                             {% endif %}
                           </td>
-                        {% endif %}
+                        {% endfor %}
                       </tr>
                     {% endfor %}
                   </tbody>
                 </table>
               </div>
 
-              {# IMPACT/CONSEQUENCE SECTION - Show specific impacts for each item (method/header) #}
+              {# IMPACT/CONSEQUENCE SECTION - use rows so we have the exact finding dict appended by builders #}
               <div class="vuln-section" style="margin-top:24px;">
-                <div class="section-title" style="font-size:15px;text-transform:uppercase;letter-spacing:0.8px;color:#495057;">Impact / Consequence:</div>
-                {% for f in findings %}
-                  {# prefer the normalized short name we prepared earlier, then fallback #}
-                  {% set item_name = f.get('_item_short') or f.get('Method') or f.get('Header') or f.get('Context') or '' %}
-                  {% set impact_text = f.get('Impact') %}
-                  {% if impact_text and item_name %}
-                    <div class="section-content" style="margin-top:12px;">
-                      <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">{{ item_name }}</div>
-                      <div style="padding-left:0px;">{{ impact_text }}</div>
-                    </div>
+                <div class="section-title"
+                    style="font-size:15px;text-transform:uppercase;letter-spacing:0.8px;color:#495057;">
+                  Impact / Consequence:
+                </div>
+
+                {% set rows_for_cat = table_rows.get(cat_name, []) %}
+                {% set seen = [] %}
+
+                {% for row in rows_for_cat %}
+                  {% set f = row[-1] %}
+                  {% set key = f.get('_item_short') %}
+                  {% if key and key not in seen %}
+                    {% do seen.append(key) %}
+                    {% if f.get('Impact') %}
+                      <div class="section-content" style="margin-top:12px;">
+                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                          {{ key }}
+                        </div>
+                        <div>{{ f.get('Impact') }}</div>
+                      </div>
+                    {% endif %}
                   {% endif %}
                 {% endfor %}
               </div>
@@ -469,15 +500,27 @@ REPORT_TEMPLATE = r"""
               {# REMEDIATION SECTION - Show specific remediations for each item (method/header) #}
               <div class="vuln-section" style="margin-top:24px;">
                 <div class="remediation-box">
-                  <div class="section-title" style="font-size:15px;text-transform:uppercase;letter-spacing:0.8px;">Remediation:</div>
-                  {% for f in findings %}
-                    {% set item_name = f.get('_item_short') or f.get('Method') or f.get('Header') or f.get('Context') or '' %}
-                    {% set recommendation_text = f.get('Recommendation', '') %}
-                    {% if recommendation_text and item_name %}
-                      <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#856404;margin-bottom:4px;">{{ item_name }}</div>
-                        <div style="padding-left:0px;">{{ recommendation_text }}</div>
-                      </div>
+                  <div class="section-title"
+                      style="font-size:15px;text-transform:uppercase;letter-spacing:0.8px;">
+                    Remediation:
+                  </div>
+
+                  {% set rows_for_cat = table_rows.get(cat_name, []) %}
+                  {% set seen = [] %}
+
+                  {% for row in rows_for_cat %}
+                    {% set f = row[-1] %}
+                    {% set key = f.get('_item_short') %}
+                    {% if key and key not in seen %}
+                      {% do seen.append(key) %}
+                      {% if f.get('Recommendation') %}
+                        <div class="section-content" style="margin-top:12px;">
+                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
+                            {{ key }}
+                          </div>
+                          <div>{{ f.get('Recommendation') }}</div>
+                        </div>
+                      {% endif %}
                     {% endif %}
                   {% endfor %}
                 </div>
@@ -647,6 +690,74 @@ def _match_vuln_def_for_category(cat_name: str, vuln_defs: Dict[str, Any]):
             return val
     return {}
 
+# ---------- Generic table builder helpers ----------
+def _first_non_empty(f: dict, keys):
+    """Return the first non-empty string-like value for keys from finding f."""
+    for k in keys:
+        if k is None:
+            continue
+        # allow tuple/list key => try each one
+        if isinstance(k, (list, tuple)):
+            for sub in k:
+                v = f.get(sub)
+                if v is not None and str(v).strip() != "":
+                    return v
+        else:
+            v = f.get(k)
+            if v is not None and str(v).strip() != "":
+                return v
+    return ""
+
+def _rows_generic(flist, col_map):
+    """
+    col_map: ordered list of (column_name, candidate_keys)
+      candidate_keys: list/tuple of field names to try (first non-empty wins).
+    Example:
+      col_map = [
+        ("Finding", ["_item_short","Header","name"]),
+        ("Evidence", ["CurrentValue","Current Value","Value"])
+      ]
+    Returns rows as list of [col1, col2, ..., finding_dict(optional?)]
+    """
+    rows = []
+    for f in flist:
+        row = []
+        for _, keys in col_map:
+            val = _first_non_empty(f, keys)
+            row.append(val if val is not None else "")
+        # append the original finding object as last cell if you need it later in template
+        # but your template expects only the visible columns; do NOT append f if template assumes n cols.
+        # For compatibility with current template (which expects a finding object sometimes),
+        # append the finding object as extra element:
+        row.append(f)
+        rows.append(row)
+    return rows
+
+def _make_col_map_from_def(cat_def):
+    """
+    Build col_map from category definition convenience keys:
+      - cat_def.get('TableColumns') -> ["Finding","Evidence"]
+      - cat_def.get('TableColumnMap') -> { "Finding": ["_item_short","Header"], "Evidence": ["CurrentValue"] }
+    Fallback common mapping if TableColumnMap not provided.
+    """
+    cols = cat_def.get("TableColumns") or []
+    explicit_map = cat_def.get("TableColumnMap") or {}
+    default_candidates = {
+        "Finding": ["_item_short", "Header", "Context", "name"],
+        "Status": ["Status", "state"],
+        "Evidence": ["CurrentValue", "Current Value", "Value", "Detail"],
+        "Current Value": ["CurrentValue", "Current Value", "Value", "Detail"]
+    }
+    col_map = []
+    for col_name in cols:
+        candidates = explicit_map.get(col_name) or default_candidates.get(col_name) or [col_name]
+        # ensure list
+        if isinstance(candidates, (str,)):
+            candidates = [candidates]
+        col_map.append((col_name, candidates))
+    return col_map
+
+
 # ---------- Utility / Table builders ----------
 def _rows_for_methods(flist):
     """Return rows for methods table: [Method, Status, finding]"""
@@ -671,6 +782,7 @@ def _rows_for_headers(flist):
 _TABLETYPE_BUILDERS = {
     "methods": (["Method", "Status"], _rows_for_methods),
     "headers": (["Header", "Status", "Current Value"], _rows_for_headers),
+    "server": (["Finding", "Evidence"], _rows_for_methods),
 }
 
 # ---------- Risk rule helpers (pluggable) ----------
@@ -745,10 +857,8 @@ def generate_interactive_html_report(findings: List[Dict[str, Any]],
 
             # figure out per-item key if present
             item_key = None
-            for k in ("HeaderDetails", "MethodDetails", "ItemDetails"):
-                if k in vuln_def:
-                    item_key = k
-                    break
+            if "ItemDetails" in vuln_def: 
+                item_key = "ItemDetails"
 
             for finding in flist:
                 if vuln_def.get("DisplayName") and not finding.get("DisplayName"):
@@ -785,6 +895,13 @@ def generate_interactive_html_report(findings: List[Dict[str, Any]],
                 # save back
                 category_defs[cat_name] = cat_def
 
+        name_to_def = {k: v or {} for k, v in category_defs.items()}
+        for c in categories:
+            catname = c.get("name")
+            c_def = name_to_def.get(catname, {})
+            # prefer explicit DisplayName from definition; fallback to existing or category name
+            c["display_name"] = c_def.get("DisplayName") or c.get("display_name") or catname
+
         # Totals
         total_high = sum(c["high"] for c in categories)
         total_medium = sum(c["medium"] for c in categories)
@@ -799,8 +916,11 @@ def generate_interactive_html_report(findings: List[Dict[str, Any]],
         # Build table schema + rows
         table_schema: Dict[str, List[str]] = {}
         table_rows: Dict[str, List[List[Any]]] = {}
+        # inside generate_interactive_html_report, while building table_schema/table_rows
         for cat_name, flist in findings_by_category.items():
             cat_def = category_defs.get(cat_name, {}) or {}
+
+            # 1) explicit TableType standard builders (methods/headers)
             tt = cat_def.get("TableType")
             entry = _TABLETYPE_BUILDERS.get(tt)
             if entry:
@@ -809,6 +929,17 @@ def generate_interactive_html_report(findings: List[Dict[str, Any]],
                 table_rows[cat_name] = builder(flist)
                 continue
 
+            # 2) category wants a custom column layout (recommended)
+            if cat_def.get("TableColumns"):
+                # build schema from TableColumns
+                schema = cat_def.get("TableColumns")
+                col_map = _make_col_map_from_def(cat_def)  # returns list of (name, candidates)
+                # create rows using generic builder
+                table_schema[cat_name] = schema
+                table_rows[cat_name] = _rows_generic(flist, col_map)
+                continue
+
+            # 3) fallback heuristics (existing logic)
             is_methods_like = any(
                 (f.get("Method") or f.get("_item_short") or "").upper() in ("OPTIONS","PUT","DELETE","TRACE","DEBUG")
                 for f in flist

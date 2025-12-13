@@ -5,7 +5,7 @@ Export Findings Module
 Exports security scan findings to HTML, JSON, and PDF formats.
 Generates interactive HTML reports with client-side export functionality.
 """
-
+'''
 import json
 from typing import List, Dict, Any
 from datetime import datetime
@@ -736,3 +736,130 @@ def export_to_html(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, 
                    filename: str = "security_scan_report.html", target_url: str = None) -> bool:
     """Legacy function - redirects to interactive HTML generation."""
     return generate_interactive_html_report(findings, summary, filename, target_url)
+'''
+
+from test3 import VULNERABILITY_DEFINITIONS
+sample_f = {
+    "Category": "Server Info",
+    "Header": "Server Header Exposed",
+    "CurrentValue": "server: gunicorn/19.9.0",
+    "Severity": "Low"
+}
+
+def _rows_for_headers(flist):
+    """Return rows for header-style table: [Header, Status, CurrentValue, finding]"""
+    rows = []
+    for f in flist:
+        header = f.get("Header") or f.get("Context") or f.get("Detail") or f.get("_item_short") or ""
+        status = f.get("Status") or f.get("state") or "Unsafe"
+        cur = (f.get("CurrentValue") or f.get("Current Value") or f.get("Value") or f.get("Detail") or f.get("detail"))
+        rows.append([header, status, cur, f])
+    return rows
+
+def enrich_finding_with_details(finding: dict) -> dict:
+    """
+    Enrich a finding dictionary with detailed information from the definitions database.
+
+    - Safely reads CVSS (supports either 'CVSS' or 'DefaultCVSS' in definitions).
+    - Supports per-item detail blocks named 'ItemDetails', 'HeaderDetails' or 'MethodDetails'.
+    - Does not overwrite fields that are already present in the finding.
+    """
+    category = finding.get("Category", "") or ""
+
+    # try exact match first
+    vuln_def = VULNERABILITY_DEFINITIONS.get(category)
+
+    # if no exact match, try best-effort substring matching
+    if not vuln_def:
+        for def_category, details in VULNERABILITY_DEFINITIONS.items():
+            if category and (category.lower() in def_category.lower() or def_category.lower() in category.lower()):
+                vuln_def = details
+                break
+
+    # fallback to a minimal definition if nothing found
+    if not vuln_def:
+        vuln_def = {
+            "Description": finding.get("Description", "Security misconfiguration detected."),
+            "CVSS": finding.get("CVSS") or "N/A",
+            "Impact": "This configuration may pose a security risk to the application.",
+            "Recommendation": finding.get("Recommendation", "Review and remediate this security issue.")
+        }
+
+    # start with a shallow copy so we don't mutate original input
+    enriched = finding.copy()
+
+    # Description: prefer finding value, otherwise use vuln_def Description (if present)
+    if not enriched.get("Description"):
+        enriched["Description"] = vuln_def.get("Description", "")
+
+    # CVSS: check multiple possible keys in the definitions, then fall back to any finding value, then 'N/A'
+    enriched_cvss = enriched.get("CVSS") or vuln_def.get("CVSS") or vuln_def.get("DefaultCVSS") or "N/A"
+    enriched["CVSS"] = enriched_cvss
+
+    # Determine which per-item details map to use (support multiple legacy names)
+    per_item_keys = []
+    for key_name in ("ItemDetails", "HeaderDetails", "MethodDetails"):
+        if isinstance(vuln_def.get(key_name), dict):
+            per_item_keys.append(key_name)
+
+    # Normalize item identifier for lookup (e.g., "HTTP Method: OPTIONS" -> "OPTIONS")
+    item_name = (
+        finding.get("Header")
+        or finding.get("Method")
+        or finding.get("Context")
+        or finding.get("Detail")
+        or finding.get("name")
+        or ""
+    )
+    short_name = ""
+    if item_name:
+        try:
+            s = str(item_name).strip()
+            if ":" in s:
+                s = s.split(":", 1)[1].strip()
+            short_name = s
+        except Exception:
+            short_name = str(item_name)
+
+    # If we have per-item detail maps, try to attach Impact/Recommendation for the item
+    attached = False
+    for key_name in per_item_keys:
+        item_map = vuln_def.get(key_name, {}) or {}
+        # prefer short_name lookup, fallback to raw item_name
+        lookup_key = short_name if short_name else item_name
+        # some maps may use uppercase keys (e.g., "OPTIONS") - try both
+        candidates = [lookup_key, lookup_key.upper(), lookup_key.lower()]
+        item_def = {}
+        for k in candidates:
+            if k in item_map:
+                item_def = item_map[k] or {}
+                break
+
+        if item_def:
+            # Impact
+            if item_def.get("Impact") and not enriched.get("Impact"):
+                enriched["Impact"] = item_def.get("Impact")
+            # Recommendation
+            if item_def.get("Recommendation") and not enriched.get("Recommendation"):
+                enriched["Recommendation"] = item_def.get("Recommendation")
+            attached = True
+            break
+
+    # If nothing attached above, fall back to category-level Impact/Recommendation if finding lacks them
+    if not attached:
+        if not enriched.get("Impact"):
+            enriched["Impact"] = vuln_def.get("Impact", "")
+        if not enriched.get("Recommendation"):
+            # support both 'Recommendation' and 'Recommendations' variants (just in case)
+            enriched["Recommendation"] = vuln_def.get("Recommendation") or vuln_def.get("Recommendations") or ""
+
+    return enriched
+
+# simulate row builder
+rows = _rows_for_headers([sample_f])
+print("rows:", rows)
+print("_item_short:", sample_f.get("_item_short"))
+# then run enrichment (if you have enrich_finding_with_details loaded)
+en = enrich_finding_with_details(sample_f)
+print("Impact:", en.get("Impact"))
+print("Recommendation:", en.get("Recommendation"))
