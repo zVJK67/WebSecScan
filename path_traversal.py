@@ -315,7 +315,7 @@ def test_path_traversal(
     for endpoint, data in grouped.items():
         findings.append({
             "Category": "Path Traversal",
-            "Severity": data.get("Severity", "Medium"),
+            "_item_short": "Path Traversal",
             "Endpoint": endpoint,
             "Payloads": data.get("Payloads", []),  # Keep in discovery order
             "Behavior": data.get("Behavior", "Server behavior changed"),
@@ -360,7 +360,7 @@ def print_path_traversal_results(findings: List[Dict]) -> None:
         print("\n   Payloads Triggering:")
         for payload in payloads:
             print(f"     - {payload}")
-        print(f"\n   Behavior: {behavior}")
+        print(f"\n   Evidence: {behavior}")
         
         # Add separator between findings (but not after the last one)
         if idx < len(findings):

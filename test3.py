@@ -510,33 +510,56 @@ VULNERABILITY_DEFINITIONS = {
         },
 
         "Recommendation": (
-            "- Remove sensitive files and folders from the webroot\n"
-            "- Deny HTTP access to hidden or sensitive files at the server layer\n"
-            "- Disable directory listing\n"
-            "- Use strict file and folder permissions\n"
-            "- Review for exposed secrets and rotate them if necessary"
+            "1. Remove sensitive files and folders from the webroot\n"
+            "2. Deny HTTP access to hidden or sensitive files at the server layer\n"
+            "3. Disable directory listing\n"
+            "4. Use strict file and folder permissions\n"
+            "5. Review for exposed secrets and rotate them if necessary"
         )
     },
     
     "Path Traversal": {
-        "Description": """Path traversal (also known as directory traversal) is a vulnerability that allows attackers to access files and directories stored outside the web root folder. By manipulating file path references using sequences like '../', attackers can break out of the intended directory structure.
+        "DisplayName": "Path Traversal Vulnerability",
 
-This vulnerability typically occurs when user input is used to construct file paths without proper validation, allowing access to sensitive system files, application configuration, or other restricted resources.""",
-        "CVSS": "7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)",
-        "Impact": """1. Unauthorized access to sensitive files (passwords, configuration files, source code)
-2. Exposure of system files (/etc/passwd, web server configs)
-3. Access to application source code revealing business logic
-4. Potential for privilege escalation
-5. Information gathering for further attacks
-6. In severe cases, ability to read private keys or credentials""",
-        "Recommendation": """1. Validate and sanitize all user inputs used in file operations
-2. Use whitelist approach for allowed files/paths
-3. Implement proper access controls at the application level
-4. Use built-in framework functions for file operations that handle path normalization
-5. Run web server with minimal privileges
-6. Disable dangerous functions in production (if using PHP: disable readfile, file_get_contents for user input)
-7. Use chroot jails or containers to limit file system access
-8. Regularly test for path traversal vulnerabilities"""
+        "Description": (
+            "Path traversal is a vulnerability that allows attackers to access files and directories stored "
+            "outside the web root folder. By manipulating file path references using sequences such as '../' "
+            "or '..\\', attackers can break out of the intended directory structure and access unintended "
+            "resources on the server."
+        ),
+
+        "DefaultSeverity": "High",
+        "DefaultCVSS": "7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)",
+
+        "TableType": None,
+        "TableColumns": ["Endpoint", "Payloads Triggering", "Evidence"],
+        "TableColumnMap": {
+            "Endpoint": ["Endpoint"],
+            "Payloads Triggering": ["Payloads"],
+            "Evidence": ["Behavior"]
+        },
+
+        "Impact": (
+            "Exploitation of a path traversal vulnerability may allow attackers to read sensitive files "
+            "outside the intended application directory, including system files, application logs, and "
+            "configuration files. Such information disclosure can reveal credentials, internal paths, "
+            "software versions, and security mechanisms, which may facilitate further attacks such as "
+            "privilege escalation, remote code execution, or full system compromise. This significantly "
+            "undermines application confidentiality and increases the overall attack surface."
+        ),
+
+        
+        "Recommendation": """1. Validate and Sanitize Input
+                            Implement strict allowlist validation for file paths and filenames, rejecting any input containing traversal sequences (e.g., ../, ..\) or unexpected characters.
+
+                            2. Use Safe File Handling Mechanisms
+                            Resolve and normalize file paths on the server side and ensure access is restricted to a predefined base directory. Avoid directly using user-supplied input in file system operations.
+
+                            3. Apply Least Privilege Controls
+                            Run the application with minimal file system permissions so that even if traversal is attempted, access to sensitive system files is denied.
+
+                            4. Return Generic Error Messages
+                            Return generic error responses instead of detailed file system or path-related errors to avoid revealing internal directory structures or sensitive implementation details."""
     },
     
     "SSL/TLS": {

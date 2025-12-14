@@ -224,7 +224,8 @@ REPORT_TEMPLATE = r"""
 
     .remediation-box { background:#fff3cd; border-left:4px solid #ffc107; padding:14px 16px; border-radius:4px; }
     .remediation-box .section-title { color:#856404; margin-bottom:8px; }
-    .remediation-box .section-content { color:#664d03; }
+    .remediation-box .section-content { color:#664d03; line-height: 1.8; }
+    .remediation-box .section-content > div { margin-bottom: 16px; }
 
     .report-footer { background:#f8fafc; padding:14px 32px; color:#5b6b7a; font-size:13px; border-top:1px solid #eef2fb; text-align:center; }
 
@@ -457,24 +458,37 @@ REPORT_TEMPLATE = r"""
                           <td {% if loop.index0 == 0 %} style="font-weight:600;" {% endif %}>
                             {% set col_name = schema[loop.index0] if schema and schema|length > loop.index0 else "" %}
 
-                            {# --- Status column --- #}
+                            {# --- Status column (plain text, no code styling) --- #}
                             {% if col_name == "Status" %}
-                              <code>{{ cell }}</code>
+                              {{ cell }}
 
-                            {# --- Evidence / Current Value column --- #}
-                            {% elif col_name in ["Evidence", "Current Value"] %}
-                              {% if finding_obj.get("CurrentValue") %}
-                                <code style="color:#0d6efd;">{{ finding_obj.get("CurrentValue") }}</code>
-                              {% endif %}
+                            {# --- Evidence / Current Value / Payloads column (with blue code styling) --- #}
+                            {% elif col_name in ["Evidence", "Current Value", "Payloads Triggering", "Payloads"] %}
 
-                              {% if finding_obj.get("Detail") %}
-                                <div style="margin-top:4px;">
-                                  {{ finding_obj.get("Detail") }}
-                                </div>
-                              {% endif %}
+                              {# Case 1: Payloads list (Path Traversal) #}
+                              {% if cell is iterable and cell is not string %}
+                                <ul style="margin:0; padding-left:18px;">
+                                  {% for item in cell %}
+                                    <li><code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">{{ item }}</code></li>
+                                  {% endfor %}
+                                </ul>
 
-                              {# fallback if neither exists #}
-                              {% if not finding_obj.get("CurrentValue") and not finding_obj.get("Detail") %}
+                              {# Case 2: CurrentValue (CORS, headers, etc.) #}
+                              {% elif finding_obj.get("CurrentValue") %}
+                                <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">{{ finding_obj.get("CurrentValue") }}</code>
+
+                                {% if finding_obj.get("Detail") %}
+                                  <div style="margin-top:4px;">
+                                    {{ finding_obj.get("Detail") }}
+                                  </div>
+                                {% endif %}
+
+                              {# Case 3: Detail only #}
+                              {% elif finding_obj.get("Detail") %}
+                                {{ finding_obj.get("Detail") }}
+
+                              {# Fallback #}
+                              {% else %}
                                 {{ cell }}
                               {% endif %}
 
@@ -507,9 +521,11 @@ REPORT_TEMPLATE = r"""
                     {% do seen.append(key) %}
                     {% if f.get('Impact') %}
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          {{ key }}
-                        </div>
+                        {% if key and rows_for_cat|length > 1 %}
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            {{ key }}
+                          </div>
+                        {% endif %}
                         <div>{{ f.get('Impact') }}</div>
                       </div>
                     {% endif %}
@@ -527,11 +543,29 @@ REPORT_TEMPLATE = r"""
 
                   {% set rows_for_cat = table_rows.get(cat_name, []) %}
 
-                  {# ---- 1) CATEGORY-LEVEL RECOMMENDATION (Directory Exposure, HTTP Methods) ---- #}
-                  {% if rows_for_cat and rows_for_cat[0][-1].get('Recommendation') and not rows_for_cat[0][-1].get('_item_short') %}
-                    <div class="section-content" style="margin-top:12px;">
-                      {{ rows_for_cat[0][-1].get('Recommendation') | replace('\n','<br>') | safe }}
-                    </div>
+                  {# ---- 1) CATEGORY-LEVEL RECOMMENDATION (Path Traversal, etc.) ---- #}
+                  {% if rows_for_cat and rows_for_cat[0][-1].get('Recommendation') %}
+                    {% set rec_text = rows_for_cat[0][-1].get('Recommendation') %}
+                    
+                    {# Check if it's a structured numbered list (contains "1. " pattern) #}
+                    {% if '1. ' in rec_text or '1.' in rec_text[:10] %}
+                      <div class="section-content" style="margin-top:12px;">
+                        {% for item in rec_text.split('\n\n') %}
+                          {% if item.strip() %}
+                            <div style="margin-bottom:16px;">
+                              {{ item | trim | replace('\n', '<br>') | safe }}
+                            </div>
+                          {% endif %}
+                        {% endfor %}
+                      </div>
+                    {% else %}
+                      {# Fallback for non-numbered recommendations #}
+                      <div class="section-content" style="margin-top:12px;">
+                        {% for para in rec_text.split('\n\n') %}
+                          <p style="margin-bottom:8px;">{{ para | trim | replace('\n', '<br>') | safe }}</p>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
 
                   {# ---- 2) PER-ITEM RECOMMENDATIONS (Cookies, CORS, Headers) ---- #}
                   {% else %}
@@ -542,9 +576,11 @@ REPORT_TEMPLATE = r"""
                       {% if key and key not in seen and f.get('Recommendation') %}
                         {% do seen.append(key) %}
                         <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            {{ key }}
-                          </div>
+                          {% if key and rows_for_cat|length > 1 %}
+                            <div style="font-weight:600;color:#856404;margin-bottom:4px;">
+                              {{ key }}
+                            </div>
+                          {% endif %}
                           <div>{{ f.get('Recommendation') }}</div>
                         </div>
                       {% endif %}

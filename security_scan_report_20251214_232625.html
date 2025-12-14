@@ -161,7 +161,8 @@
 
     .remediation-box { background:#fff3cd; border-left:4px solid #ffc107; padding:14px 16px; border-radius:4px; }
     .remediation-box .section-title { color:#856404; margin-bottom:8px; }
-    .remediation-box .section-content { color:#664d03; }
+    .remediation-box .section-content { color:#664d03; line-height: 1.8; }
+    .remediation-box .section-content > div { margin-bottom: 16px; }
 
     .report-footer { background:#f8fafc; padding:14px 32px; color:#5b6b7a; font-size:13px; border-top:1px solid #eef2fb; text-align:center; }
 
@@ -198,7 +199,7 @@
     <!-- META -->
     <div class="meta">
       <div class="meta-item"><strong>Target:</strong> <code>http://127.0.0.1:4000</code></div>
-      <div class="meta-item"><strong>Scan Time:</strong> 2025-12-14 19:02:25</div>
+      <div class="meta-item"><strong>Scan Time:</strong> 2025-12-14 23:26:25</div>
     </div>
 
     <!-- SUMMARY -->
@@ -206,7 +207,7 @@
       <div class="left-summary">
         <div class="stat-cards">
           <div class="card">
-            <div class="num">45</div>
+            <div class="num">46</div>
             <div class="label">Total Findings</div>
           </div>
           <div class="card">
@@ -218,7 +219,7 @@
             <div class="label">Medium</div>
           </div>
           <div class="card">
-            <div class="num" style="color:Green;">14</div>
+            <div class="num" style="color:Green;">15</div>
             <div class="label">Low</div>
           </div>
         </div>
@@ -267,6 +268,14 @@
               <td style="font-weight:700; color:Orange">15</td>
               <td style="font-weight:700; color:Green">0</td>
               <td style="font-weight:800; color:#452829">27</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Path Traversal Vulnerability</td>
+              <td style="font-weight:700; color:Red">0</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">1</td>
+              <td style="font-weight:800; color:#452829">1</td>
             </tr>
             
             <tr>
@@ -398,7 +407,7 @@
 
                             
                             
-                              <code>Missing</code>
+                              Missing
 
                             
                             
@@ -409,9 +418,6 @@
 
                             
                             
-                              
-
-                              
 
                               
                               
@@ -444,7 +450,7 @@
 
                             
                             
-                              <code>Missing</code>
+                              Missing
 
                             
                             
@@ -455,9 +461,6 @@
 
                             
                             
-                              
-
-                              
 
                               
                               
@@ -490,7 +493,7 @@
 
                             
                             
-                              <code>Missing</code>
+                              Missing
 
                             
                             
@@ -501,9 +504,6 @@
 
                             
                             
-                              
-
-                              
 
                               
                               
@@ -536,7 +536,7 @@
 
                             
                             
-                              <code>Misconfigured</code>
+                              Misconfigured
 
                             
                             
@@ -547,11 +547,12 @@
 
                             
                             
-                              
-                                <code style="color:#0d6efd;">public, max-age=0</code>
-                              
 
                               
+                              
+                                <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">public, max-age=0</code>
+
+                                
 
                               
                               
@@ -582,7 +583,7 @@
 
                             
                             
-                              <code>Missing</code>
+                              Missing
 
                             
                             
@@ -593,9 +594,6 @@
 
                             
                             
-                              
-
-                              
 
                               
                               
@@ -628,7 +626,7 @@
 
                             
                             
-                              <code>Missing</code>
+                              Missing
 
                             
                             
@@ -639,9 +637,6 @@
 
                             
                             
-                              
-
-                              
 
                               
                               
@@ -674,7 +669,7 @@
 
                             
                             
-                              <code>Missing</code>
+                              Missing
 
                             
                             
@@ -685,9 +680,6 @@
 
                             
                             
-                              
-
-                              
 
                               
                               
@@ -720,7 +712,7 @@
 
                             
                             
-                              <code>Missing</code>
+                              Missing
 
                             
                             
@@ -731,9 +723,6 @@
 
                             
                             
-                              
-
-                              
 
                               
                               
@@ -767,9 +756,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          Content-Security-Policy
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            Content-Security-Policy
+                          </div>
+                        
                         <div>Missing Content-Security-Policy significantly increases exploitability of XSS vulnerabilities.</div>
                       </div>
                     
@@ -781,9 +772,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          Strict-Transport-Security
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            Strict-Transport-Security
+                          </div>
+                        
                         <div>Missing Strict-Transport-Security allows downgrade attacks and enables interception of traffic as this header lets a website tell browsers that it should only be accessed using HTTPS, instead of using HTTP.</div>
                       </div>
                     
@@ -795,9 +788,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          X-XSS-Protection
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            X-XSS-Protection
+                          </div>
+                        
                         <div>Missing X-XSS-Protection increases exposure to reflected XSS attacks in older browsers.</div>
                       </div>
                     
@@ -809,9 +804,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          Cache-Control
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            Cache-Control
+                          </div>
+                        
                         <div>Missing or weak Cache-Control may expose sensitive information stored in browser cache.</div>
                       </div>
                     
@@ -823,9 +820,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          Referrer-Policy
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            Referrer-Policy
+                          </div>
+                        
                         <div>Missing Referrer-Policy may cause the browser to leak sensitive URL information to external sites during navigation.</div>
                       </div>
                     
@@ -837,9 +836,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          Cross-Origin-Opener-Policy
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            Cross-Origin-Opener-Policy
+                          </div>
+                        
                         <div>Missing COOP allows external sites to open and interact with the browsing context, increasing risks such as cross-origin attacks and tab-nabbing.</div>
                       </div>
                     
@@ -851,9 +852,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          Cross-Origin-Embedder-Policy
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            Cross-Origin-Embedder-Policy
+                          </div>
+                        
                         <div>Missing COEP may allow the application to load untrusted cross-origin resources that are not opt-in, reducing the protection against cross-site data leaks.</div>
                       </div>
                     
@@ -865,9 +868,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          Cross-Origin-Resource-Policy
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            Cross-Origin-Resource-Policy
+                          </div>
+                        
                         <div>Missing CORP may allow other websites to load the resources cross-origin, potentially exposing sensitive data.</div>
                       </div>
                     
@@ -889,102 +894,17 @@
                   
                     
                     
-                      
-                      
-                      
-                        
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Content-Security-Policy
-                          </div>
-                          <div>Content-Security-Policy: default-src &#39;self&#39;; frame-ancestors &#39;none&#39;</div>
-                        </div>
-                      
+                    
                     
                       
-                      
-                      
+                      <div class="section-content" style="margin-top:12px;">
                         
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Strict-Transport-Security
-                          </div>
-                          <div>Strict-Transport-Security: max-age=31536000; includeSubDomains</div>
-                        </div>
-                      
-                    
-                      
-                      
-                      
+                          <p style="margin-bottom:8px;">Content-Security-Policy: default-src 'self'; frame-ancestors 'none'</p>
                         
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            X-XSS-Protection
-                          </div>
-                          <div>X-XSS-Protection: 0</div>
-                        </div>
-                      
+                      </div>
                     
-                      
-                      
-                      
-                        
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Cache-Control
-                          </div>
-                          <div>Cache-Control: no-store, no-cache</div>
-                        </div>
-                      
-                    
-                      
-                      
-                      
-                        
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Referrer-Policy
-                          </div>
-                          <div>Referrer-Policy: strict-origin-when-cross-origin</div>
-                        </div>
-                      
-                    
-                      
-                      
-                      
-                        
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Cross-Origin-Opener-Policy
-                          </div>
-                          <div>Cross-Origin-Opener-Policy: same-origin</div>
-                        </div>
-                      
-                    
-                      
-                      
-                      
-                        
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Cross-Origin-Embedder-Policy
-                          </div>
-                          <div>Cross-Origin-Embedder-Policy: require-corp</div>
-                        </div>
-                      
-                    
-                      
-                      
-                      
-                        
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Cross-Origin-Resource-Policy
-                          </div>
-                          <div>Cross-Origin-Resource-Policy: same-site</div>
-                        </div>
-                      
-                    
+
+                  
                   
                 </div>
               </div>
@@ -1092,14 +1012,11 @@
 
                             
                             
-                              
 
                               
-                                <div style="margin-top:4px;">
-                                  The server&#39;s unique response patterns match known fingerprints -&gt; lighttpd
-   Matching headers: content-type, content-length, date
-                                </div>
                               
+                                The server&#39;s unique response patterns match known fingerprints -&gt; lighttpd
+   Matching headers: content-type, content-length, date
 
                               
                               
@@ -1148,18 +1065,17 @@
                   
                     
                     
-                      
-                      
-                      
-                        
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Server Behavior Fingerprinting
-                          </div>
-                          <div>Add a reverse proxy or WAF to normalize responses and reduce fingerprinting accuracy.</div>
-                        </div>
-                      
                     
+                    
+                      
+                      <div class="section-content" style="margin-top:12px;">
+                        
+                          <p style="margin-bottom:8px;">Add a reverse proxy or WAF to normalize responses and reduce fingerprinting accuracy.</p>
+                        
+                      </div>
+                    
+
+                  
                   
                 </div>
               </div>
@@ -1277,9 +1193,6 @@
 
                             
                             
-                              
-
-                              
 
                               
                               
@@ -1321,9 +1234,6 @@
 
                             
                             
-                              
-
-                              
 
                               
                               
@@ -1365,9 +1275,6 @@
 
                             
                             
-                              
-
-                              
 
                               
                               
@@ -1401,9 +1308,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          HttpOnly
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            HttpOnly
+                          </div>
+                        
                         <div>Allows client-side scripts to access session cookies, increasing the risk of session theft via Cross-Site Scripting (XSS) attacks.</div>
                       </div>
                     
@@ -1415,9 +1324,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          Secure
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            Secure
+                          </div>
+                        
                         <div>Cookies may be transmitted over unencrypted HTTP connections, exposing session data to interception and man-in-the-middle (MITM) attacks.</div>
                       </div>
                     
@@ -1429,9 +1340,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          Path
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            Path
+                          </div>
+                        
                         <div>Cookies are accessible across unnecessary application paths, increasing the attack surface and the impact of potential cookie compromise.</div>
                       </div>
                     
@@ -1453,42 +1366,17 @@
                   
                     
                     
-                      
-                      
-                      
-                        
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            HttpOnly
-                          </div>
-                          <div>Set the HttpOnly flag in all session cookies (e.g. Set-Cookie: sessionid=...; HttpOnly).</div>
-                        </div>
-                      
+                    
                     
                       
-                      
-                      
+                      <div class="section-content" style="margin-top:12px;">
                         
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Secure
-                          </div>
-                          <div>Add the Secure flag to ensure cookies are only delivered via HTTPS (e.g. Set-Cookie: sessionid=...; Secure).</div>
-                        </div>
-                      
-                    
-                      
-                      
-                      
+                          <p style="margin-bottom:8px;">Set the HttpOnly flag in all session cookies (e.g. Set-Cookie: sessionid=...; HttpOnly).</p>
                         
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Path
-                          </div>
-                          <div>Restrict Path to required endpoints (e.g. Set-Cookie: sessionid=...; Path=/admin).</div>
-                        </div>
-                      
+                      </div>
                     
+
+                  
                   
                 </div>
               </div>
@@ -1601,11 +1489,12 @@
 
                             
                             
-                              
-                                <code style="color:#0d6efd;">Access-Control-Allow-Origin: *</code>
-                              
 
                               
+                              
+                                <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">Access-Control-Allow-Origin: *</code>
+
+                                
 
                               
                               
@@ -1636,15 +1525,16 @@
 
                             
                             
-                              
-                                <code style="color:#0d6efd;">Access-Control-Allow-Methods: GET,HEAD,PUT,PATCH,POST,DELETE</code>
-                              
 
                               
-                                <div style="margin-top:4px;">
-                                  The server allows more HTTP methods than necessary, increasing exposure.
-                                </div>
                               
+                                <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">Access-Control-Allow-Methods: GET,HEAD,PUT,PATCH,POST,DELETE</code>
+
+                                
+                                  <div style="margin-top:4px;">
+                                    The server allows more HTTP methods than necessary, increasing exposure.
+                                  </div>
+                                
 
                               
                               
@@ -1675,13 +1565,10 @@
 
                             
                             
-                              
 
                               
-                                <div style="margin-top:4px;">
-                                  The server does not include the Access-Control-Max-Age header.
-                                </div>
                               
+                                The server does not include the Access-Control-Max-Age header.
 
                               
                               
@@ -1712,13 +1599,10 @@
 
                             
                             
-                              
 
                               
-                                <div style="margin-top:4px;">
-                                  The server appears to return CORS headers even for endpoints that do not require cross-origin access.
-                                </div>
                               
+                                The server appears to return CORS headers even for endpoints that do not require cross-origin access.
 
                               
                               
@@ -1749,13 +1633,10 @@
 
                             
                             
-                              
 
                               
-                                <div style="margin-top:4px;">
-                                  When the scanner sends an OPTIONS request with an untrusted Origin, the server still responds with full permissions, including credentials and multiple allowed methods.
-                                </div>
                               
+                                When the scanner sends an OPTIONS request with an untrusted Origin, the server still responds with full permissions, including credentials and multiple allowed methods.
 
                               
                               
@@ -1787,9 +1668,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          Wildcard Origin (*) Allowed
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            Wildcard Origin (*) Allowed
+                          </div>
+                        
                         <div>Allowing Access-Control-Allow-Origin: * permits any external website to read cross-origin responses. This significantly increases the attack surface and may allow attackers to access sensitive API responses or application data from untrusted origins.</div>
                       </div>
                     
@@ -1801,9 +1684,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          Excessive Allowed Methods
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            Excessive Allowed Methods
+                          </div>
+                        
                         <div>Allowing unnecessary HTTP methods increases the attack surface by exposing endpoints to methods that may not be securely implemented. Attackers can exploit unused or unsafe methods to manipulate server resources or bypass access controls.</div>
                       </div>
                     
@@ -1815,9 +1700,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          Missing Access-Control-Max-Age Header
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            Missing Access-Control-Max-Age Header
+                          </div>
+                        
                         <div>The absence of Access-Control-Max-Age causes browsers to repeatedly perform preflight requests. While not directly exploitable, this can degrade performance and increase server load.</div>
                       </div>
                     
@@ -1829,9 +1716,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          CORS Enabled on Endpoints That Don&#39;t Need It
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            CORS Enabled on Endpoints That Don&#39;t Need It
+                          </div>
+                        
                         <div>Enabling CORS on endpoints that do not require cross-origin access increases the risk of data leakage, CSRF-like abuse, and unauthorized interaction from external domains.</div>
                       </div>
                     
@@ -1843,9 +1732,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          Preflight (OPTIONS) Accepts Untrusted Origins
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            Preflight (OPTIONS) Accepts Untrusted Origins
+                          </div>
+                        
                         <div>Accepting preflight requests from untrusted origins grants attackers visibility into allowed methods and permissions, enabling malicious domains to perform fully authorized cross-origin requests.</div>
                       </div>
                     
@@ -1867,66 +1758,17 @@
                   
                     
                     
-                      
-                      
-                      
-                        
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Wildcard Origin (*) Allowed
-                          </div>
-                          <div>Specify only trusted, legitimate domains instead of using a wildcard *.</div>
-                        </div>
-                      
+                    
                     
                       
-                      
-                      
+                      <div class="section-content" style="margin-top:12px;">
                         
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Excessive Allowed Methods
-                          </div>
-                          <div>Restrict allowed methods to only the application requires (eg. GET, POST).</div>
-                        </div>
-                      
-                    
-                      
-                      
-                      
+                          <p style="margin-bottom:8px;">Specify only trusted, legitimate domains instead of using a wildcard *.</p>
                         
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Missing Access-Control-Max-Age Header
-                          </div>
-                          <div>Set a reasonable Access-Control-Max-Age (eg. 300–600 seconds) to help browsers reuse valid preflight results without adding performance overhead.</div>
-                        </div>
-                      
+                      </div>
                     
-                      
-                      
-                      
-                        
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            CORS Enabled on Endpoints That Don&#39;t Need It
-                          </div>
-                          <div>Only enable CORS for specific API endpoints that truly require cross-origin requests. Disable it for login pages or sensitive routes.</div>
-                        </div>
-                      
-                    
-                      
-                      
-                      
-                        
-                        <div class="section-content" style="margin-top:12px;">
-                          <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                            Preflight (OPTIONS) Accepts Untrusted Origins
-                          </div>
-                          <div>Update the preflight validation to reject unapproved origins before responding with CORS permissions.</div>
-                        </div>
-                      
-                    
+
+                  
                   
                 </div>
               </div>
@@ -2034,7 +1876,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2071,7 +1913,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2108,7 +1950,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2145,7 +1987,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2182,7 +2024,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2219,7 +2061,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2256,7 +2098,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2293,7 +2135,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2330,7 +2172,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2367,7 +2209,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2404,7 +2246,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2441,7 +2283,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2478,7 +2320,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2515,7 +2357,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2552,7 +2394,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2589,7 +2431,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2626,7 +2468,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2663,7 +2505,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2700,7 +2542,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2737,7 +2579,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2774,7 +2616,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2811,7 +2653,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2848,7 +2690,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2885,7 +2727,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2922,7 +2764,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2959,7 +2801,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -2996,7 +2838,7 @@
 
                             
                             
-                              <code>200</code>
+                              200
 
                             
                             
@@ -3038,9 +2880,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          robots.txt
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            robots.txt
+                          </div>
+                        
                         <div>Robots.txt may reveal paths that are hidden from crawlers but still accessible to attackers.</div>
                       </div>
                     
@@ -3059,9 +2903,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          .git
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            .git
+                          </div>
+                        
                         <div>Exposed Git repository data can reveal source code, commit history, and sensitive information.</div>
                       </div>
                     
@@ -3073,9 +2919,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          .env
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            .env
+                          </div>
+                        
                         <div>Environment variables and application secrets may be exposed, leading to credential leakage or system compromise.</div>
                       </div>
                     
@@ -3087,9 +2935,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          .htaccess
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            .htaccess
+                          </div>
+                        
                         <div>Apache configuration files may reveal security rules, access controls, or internal paths.</div>
                       </div>
                     
@@ -3136,9 +2986,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          admin
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            admin
+                          </div>
+                        
                         <div>Administrative interfaces accessible to unauthenticated users may allow unauthorized control.</div>
                       </div>
                     
@@ -3192,9 +3044,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          .DS_Store
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            .DS_Store
+                          </div>
+                        
                         <div>macOS metadata files may reveal directory structure and internal file names.</div>
                       </div>
                     
@@ -3213,9 +3067,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          logs
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            logs
+                          </div>
+                        
                         <div>Log files may contain sensitive information such as credentials, tokens, or system paths.</div>
                       </div>
                     
@@ -3227,9 +3083,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          error_log
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            error_log
+                          </div>
+                        
                         <div>Error logs may reveal internal system paths, stack traces, or exploitable vulnerabilities.</div>
                       </div>
                     
@@ -3241,9 +3099,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          .htpasswd
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            .htpasswd
+                          </div>
+                        
                         <div>Password files may expose authentication credentials or hashed passwords.</div>
                       </div>
                     
@@ -3255,9 +3115,11 @@
                     
                     
                       <div class="section-content" style="margin-top:12px;">
-                        <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                          README
-                        </div>
+                        
+                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
+                            README
+                          </div>
+                        
                         <div>Documentation files may reveal software versions, configurations, or deployment details.</div>
                       </div>
                     
@@ -3298,9 +3160,244 @@
 
                   
                   
-                    <div class="section-content" style="margin-top:12px;">
-                      - Remove sensitive files and folders from the webroot<br>- Deny HTTP access to hidden or sensitive files at the server layer<br>- Disable directory listing<br>- Use strict file and folder permissions<br>- Review for exposed secrets and rotate them if necessary
-                    </div>
+                    
+                    
+                    
+                    
+                      <div class="section-content" style="margin-top:12px;">
+                        
+                          
+                            <div style="margin-bottom:16px;">
+                              1. Remove sensitive files and folders from the webroot<br>2. Deny HTTP access to hidden or sensitive files at the server layer<br>3. Disable directory listing<br>4. Use strict file and folder permissions<br>5. Review for exposed secrets and rotate them if necessary
+                            </div>
+                          
+                        
+                      </div>
+                    
+
+                  
+                  
+                </div>
+              </div>
+
+            
+          </div>
+        </div>
+      
+        
+        
+        
+
+        
+
+        
+        
+        
+        
+          
+        
+
+        <a id="anchor-5" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-high" data-category="Path Traversal">
+          <div class="vuln-header">
+            
+            
+            <div class="vuln-title">Path Traversal Vulnerability</div>
+
+            
+          </div>
+
+          <div class="vuln-content">
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                  
+                  <div class="section-content">
+                    
+                      <p>Path traversal is a vulnerability that allows attackers to access files and directories stored outside the web root folder. By manipulating file path references using sequences such as '../' or '..\', attackers can break out of the intended directory structure and access unintended resources on the server.</p>
+                    
+                  </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  
+                  
+                  
+                  
+
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value high">High</span>
+                    
+                  </div>
+
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    
+                    
+                    
+                    <span class="risk-value high">7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+
+                
+                
+                
+
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      
+                        <th>Endpoint</th>
+                      
+                        <th>Payloads Triggering</th>
+                      
+                        <th>Evidence</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /ftp
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <ul style="margin:0; padding-left:18px;">
+                                  
+                                    <li><code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">../etc/passwd</code></li>
+                                  
+                                    <li><code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">../../etc/passwd</code></li>
+                                  
+                                    <li><code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">../../../etc/passwd</code></li>
+                                  
+                                    <li><code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">../../../../../../etc/passwd</code></li>
+                                  
+                                    <li><code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">../..\..\windows\win.ini</code></li>
+                                  
+                                </ul>
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                Response size increased significantly (possible file access attempt)
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                  </tbody>
+                </table>
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title"
+                    style="font-size:15px;text-transform:uppercase;letter-spacing:0.8px;color:#495057;">
+                  Impact / Consequence:
+                </div>
+
+                
+                
+
+                
+                  
+                  
+                  
+                    
+                    
+                      <div class="section-content" style="margin-top:12px;">
+                        
+                        <div>Exploitation of a path traversal vulnerability may allow attackers to read sensitive files outside the intended application directory, including system files, application logs, and configuration files. Such information disclosure can reveal credentials, internal paths, software versions, and security mechanisms, which may facilitate further attacks such as privilege escalation, remote code execution, or full system compromise. This significantly undermines application confidentiality and increases the overall attack surface.</div>
+                      </div>
+                    
+                  
+                
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title"
+                      style="font-size:15px;text-transform:uppercase;letter-spacing:0.8px;">
+                    Remediation:
+                  </div>
+
+                  
+
+                  
+                  
+                    
+                    
+                    
+                    
+                      <div class="section-content" style="margin-top:12px;">
+                        
+                          
+                            <div style="margin-bottom:16px;">
+                              1. Validate and Sanitize Input<br>                            Implement strict allowlist validation for file paths and filenames, rejecting any input containing traversal sequences (e.g., ../, ..\) or unexpected characters.
+                            </div>
+                          
+                        
+                          
+                            <div style="margin-bottom:16px;">
+                              2. Use Safe File Handling Mechanisms<br>                            Resolve and normalize file paths on the server side and ensure access is restricted to a predefined base directory. Avoid directly using user-supplied input in file system operations.
+                            </div>
+                          
+                        
+                          
+                            <div style="margin-bottom:16px;">
+                              3. Apply Least Privilege Controls<br>                            Run the application with minimal file system permissions so that even if traversal is attempted, access to sensitive system files is denied.
+                            </div>
+                          
+                        
+                          
+                            <div style="margin-bottom:16px;">
+                              4. Return Generic Error Messages<br>                            Return generic error responses instead of detailed file system or path-related errors to avoid revealing internal directory structures or sensitive implementation details.
+                            </div>
+                          
+                        
+                      </div>
+                    
 
                   
                   
@@ -3327,7 +3424,7 @@
           
         
 
-        <a id="anchor-5" class="anchor" aria-hidden="true"></a>
+        <a id="anchor-6" class="anchor" aria-hidden="true"></a>
         <div class="category-section risk-high" data-category="SSL/TLS">
           <div class="vuln-header">
             
@@ -3418,7 +3515,7 @@
 
                             
                             
-                              <code>Unsafe</code>
+                              Unsafe
 
                             
                             
@@ -3429,9 +3526,6 @@
 
                             
                             
-                              
-
-                              
 
                               
                               
@@ -3477,9 +3571,20 @@
 
                   
                   
-                    <div class="section-content" style="margin-top:12px;">
-                      1. Use valid certificates from trusted Certificate Authorities<br>2. Disable SSLv3, TLS 1.0, and TLS 1.1 - use TLS 1.2 or TLS 1.3<br>3. Configure strong cipher suites and disable weak ciphers<br>4. Implement HTTP Strict Transport Security (HSTS)<br>5. Enable Perfect Forward Secrecy (PFS)<br>6. Regularly monitor certificate expiration dates<br>7. Implement certificate pinning for mobile applications<br>8. Use tools like SSL Labs to test configuration<br>9. Keep OpenSSL/TLS libraries updated
-                    </div>
+                    
+                    
+                    
+                    
+                      <div class="section-content" style="margin-top:12px;">
+                        
+                          
+                            <div style="margin-bottom:16px;">
+                              1. Use valid certificates from trusted Certificate Authorities<br>2. Disable SSLv3, TLS 1.0, and TLS 1.1 - use TLS 1.2 or TLS 1.3<br>3. Configure strong cipher suites and disable weak ciphers<br>4. Implement HTTP Strict Transport Security (HSTS)<br>5. Enable Perfect Forward Secrecy (PFS)<br>6. Regularly monitor certificate expiration dates<br>7. Implement certificate pinning for mobile applications<br>8. Use tools like SSL Labs to test configuration<br>9. Keep OpenSSL/TLS libraries updated
+                            </div>
+                          
+                        
+                      </div>
+                    
 
                   
                   
@@ -3493,7 +3598,7 @@
     </section>
 
     <footer class="report-footer">
-      WebSecScan — Web Security Misconfiguration Analyzer · Generated 2025-12-14 19:02:25 · <span style="opacity:.85">Lee Zhi Hui</span>
+      WebSecScan — Web Security Misconfiguration Analyzer · Generated 2025-12-14 23:26:25 · <span style="opacity:.85">Lee Zhi Hui</span>
     </footer>
   </div>
 
@@ -3511,6 +3616,8 @@
           { name: "CORS Security", high: 0, medium: 0, low: 5 },
         
           { name: "Directory Exposure", high: 12, medium: 15, low: 0 },
+        
+          { name: "Path Traversal", high: 0, medium: 0, low: 1 },
         
           { name: "SSL/TLS", high: 1, medium: 0, low: 0 }
         
