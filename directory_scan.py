@@ -121,13 +121,14 @@ def scan_common_paths(base_url: str, timeout: int = 6, max_results: int = 50) ->
                 risk_explanation = _get_risk_explanation(rel)
                 
                 findings.append({
-                    "Category": "Directory/File Exposure",
+                    "Category": "Directory Exposure",
                     "Severity": sev,
                     "Description": f"Path {rel} returned HTTP {status}.",
                     "RelPath": rel,
                     "URL": full,
                     "Status": status,
                     "Risk": risk_explanation,
+                    "_item_short": rel.strip("/"),
                 })
         except requests.RequestException:
             # ignore transient network errors and continue scanning

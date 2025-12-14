@@ -445,23 +445,77 @@ VULNERABILITY_DEFINITIONS = {
     },
     
     "Directory Exposure": {
-        "Description": """Directory exposure occurs when web servers are misconfigured to display directory listings or when sensitive files and directories are accessible without proper authentication. This can reveal the application's file structure, backup files, configuration files, and other sensitive information.
+        "DisplayName": "Sensitive Directory and File Exposure",
 
-Common exposed items include .git directories, backup files, configuration files, and development/testing resources that should not be publicly accessible.""",
-        "CVSS": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)",
-        "Impact": """1. Exposure of source code and sensitive configuration data
-2. Discovery of backup files containing sensitive information
-3. Revelation of application structure aiding further attacks
-4. Access to credentials, API keys, or database connection strings
-5. Discovery of hidden administrative interfaces
-6. Information useful for social engineering attacks""",
-        "Recommendation": """1. Disable directory listing in web server configuration
-2. Remove or restrict access to .git, .svn, and other version control directories
-3. Delete backup files, old code, and testing resources from production
-4. Implement proper access controls for administrative areas
-5. Use robots.txt carefully (does not provide security)
-6. Regularly scan for exposed sensitive files
-7. Implement proper file permissions on the server"""
+        "Description": (
+            "Directory exposure occurs when web servers are misconfigured to display directory listings or when "
+            "sensitive files and directories are accessible without proper authentication. This can reveal the "
+            "application's file structure, backup files, configuration files, and other sensitive information."
+        ),
+
+        "DefaultSeverity": "Medium",
+        "DefaultCVSS": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)",
+
+        "TableType": None,
+        "TableColumns": ["Finding", "Status", "URL"],
+        "TableColumnMap": {
+            "Finding": ["RelPath"],
+            "Status": ["Status"],
+            "URL": ["URL"]
+        },
+
+        "ItemDetails": {
+            ".env": {
+                "Impact": "Environment variables and application secrets may be exposed, leading to credential leakage or system compromise."
+            },
+            "config": {
+                "Impact": "Configuration files may reveal sensitive settings such as database credentials or API keys."
+            },
+            "backup": {
+                "Impact": "Backup files may contain sensitive data, credentials, or full source code copies."
+            },
+            ".git": {
+                "Impact": "Exposed Git repository data can reveal source code, commit history, and sensitive information."
+            },
+            "phpinfo": {
+                "Impact": "PHP configuration disclosure reveals server details, installed modules, and environment settings."
+            },
+            ".htaccess": {
+                "Impact": "Apache configuration files may reveal security rules, access controls, or internal paths."
+            },
+            ".htpasswd": {
+                "Impact": "Password files may expose authentication credentials or hashed passwords."
+            },
+            "admin": {
+                "Impact": "Administrative interfaces accessible to unauthenticated users may allow unauthorized control."
+            },
+            ".DS_Store": {
+                "Impact": "macOS metadata files may reveal directory structure and internal file names."
+            },
+            "logs": {
+                "Impact": "Log files may contain sensitive information such as credentials, tokens, or system paths."
+            },
+            "error_log": {
+                "Impact": "Error logs may reveal internal system paths, stack traces, or exploitable vulnerabilities."
+            },
+            "readme": {
+                "Impact": "Documentation files may reveal software versions, configurations, or deployment details."
+            },
+            "sitemap": {
+                "Impact": "Site structure disclosure aids reconnaissance and helps attackers identify sensitive endpoints."
+            },
+            "robots.txt": {
+                "Impact": "Robots.txt may reveal paths that are hidden from crawlers but still accessible to attackers."
+            }
+        },
+
+        "Recommendation": (
+            "- Remove sensitive files and folders from the webroot\n"
+            "- Deny HTTP access to hidden or sensitive files at the server layer\n"
+            "- Disable directory listing\n"
+            "- Use strict file and folder permissions\n"
+            "- Review for exposed secrets and rotate them if necessary"
+        )
     },
     
     "Path Traversal": {

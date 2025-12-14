@@ -517,7 +517,7 @@ REPORT_TEMPLATE = r"""
                 {% endfor %}
               </div>
 
-              {# REMEDIATION SECTION - Show specific remediations for each item #}
+              {# REMEDIATION SECTION #}
               <div class="vuln-section" style="margin-top:24px;">
                 <div class="remediation-box">
                   <div class="section-title"
@@ -526,14 +526,21 @@ REPORT_TEMPLATE = r"""
                   </div>
 
                   {% set rows_for_cat = table_rows.get(cat_name, []) %}
-                  {% set seen = [] %}
 
-                  {% for row in rows_for_cat %}
-                    {% set f = row[-1] %}
-                    {% set key = f.get('Type') or f.get('_item_short') %}
-                    {% if key and key not in seen %}
-                      {% do seen.append(key) %}
-                      {% if f.get('Recommendation') %}
+                  {# ---- 1) CATEGORY-LEVEL RECOMMENDATION (Directory Exposure, HTTP Methods) ---- #}
+                  {% if rows_for_cat and rows_for_cat[0][-1].get('Recommendation') and not rows_for_cat[0][-1].get('_item_short') %}
+                    <div class="section-content" style="margin-top:12px;">
+                      {{ rows_for_cat[0][-1].get('Recommendation') | replace('\n','<br>') | safe }}
+                    </div>
+
+                  {# ---- 2) PER-ITEM RECOMMENDATIONS (Cookies, CORS, Headers) ---- #}
+                  {% else %}
+                    {% set seen = [] %}
+                    {% for row in rows_for_cat %}
+                      {% set f = row[-1] %}
+                      {% set key = f.get('Type') or f.get('_item_short') %}
+                      {% if key and key not in seen and f.get('Recommendation') %}
+                        {% do seen.append(key) %}
                         <div class="section-content" style="margin-top:12px;">
                           <div style="font-weight:600;color:#856404;margin-bottom:4px;">
                             {{ key }}
@@ -541,8 +548,8 @@ REPORT_TEMPLATE = r"""
                           <div>{{ f.get('Recommendation') }}</div>
                         </div>
                       {% endif %}
-                    {% endif %}
-                  {% endfor %}
+                    {% endfor %}
+                  {% endif %}
                 </div>
               </div>
 
