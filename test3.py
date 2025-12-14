@@ -295,21 +295,153 @@ VULNERABILITY_DEFINITIONS = {
     "Cookie Security (Client-Side)": COOKIE_SECURITY_DEF,
     
     "CORS Security": {
-        "Description": """Cross-Origin Resource Sharing (CORS) is a mechanism that allows restricted resources on a web page to be requested from another domain. Misconfigured CORS policies can allow malicious websites to access sensitive data or perform actions on behalf of authenticated users.
+        "DisplayName": "Cross-Origin Resource Sharing (CORS) Misconfiguration",
 
-An overly permissive CORS policy (especially using wildcards with credentials) can expose the application to data theft and unauthorized actions.""",
-        "CVSS": "7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)",
-        "Impact": """1. Unauthorized access to sensitive API endpoints from malicious origins
-2. Data exfiltration to attacker-controlled domains
-3. Theft of authentication tokens and session information
-4. Ability to perform authenticated actions on behalf of victims
-5. Bypass of same-origin policy protections""",
-        "Recommendation": """1. Avoid using wildcard (*) in Access-Control-Allow-Origin with credentials
-2. Explicitly whitelist trusted origins
-3. Do not reflect Origin header without validation
-4. Use Access-Control-Allow-Credentials: true only when necessary
-5. Implement proper authentication and authorization checks server-side
-6. Regularly audit CORS configurations"""
+        "Description": (
+            "Cross-Origin Resource Sharing (CORS) controls how web applications allow cross-origin requests "
+            "from different origins. Improper CORS configuration can allow unauthorized websites to read "
+            "sensitive responses or perform authenticated actions on behalf of users.\n\n\n"
+            "The scanner evaluates CORS behavior by comparing server responses under different request "
+            "conditions, focusing on how CORS headers are handled when an Origin header is present or absent.\n\n "
+            "- Access-Control-Allow-Origin (ACAO): The scanner checks whether the server responds with a wildcard (*)" 
+            "or reflects arbitrary origins by sending requests with and without a malicious Origin (e.g., https://evil-attacker.com)."
+            " This identifies overly permissive or origin-reflection issues.\n"
+            "- Access-Control-Allow-Credentials (ACAC): The scanner verifies whether credentials are allowed in cross-origin requests and ensures "
+            "that ACAC is not improperly combined with a wildcard origin, which would violate CORS security best practices.\n"
+            "- Access-Control-Allow-Methods (ACAM): The scanner sends preflight OPTIONS requests to determine whether unnecessary or dangerous "
+            "HTTP methods like PUT are exposed cross-origin.\n"
+            "- Access-Control-Allow-Headers (ACAH): The scanner injects custom headers during preflight requests to observe whether the server allows"
+            " arbitrary request headers, which could enable malicious cross-origin requests.\n"
+            "- Access-Control-Max-Age (ACMA): The scanner checks whether preflight caching is enabled and evaluates if excessive caching could allow "
+            "long-lived abuse of insecure CORS decisions.\n"
+            "- Vary Header: The scanner inspects the Vary header to confirm whether responses are correctly varied based on Origin or preflight headers." 
+            "Missing or incorrect Vary values may cause cache poisoning or unintended cross-origin data exposure.\n\n"
+            "This multi-stage testing aligns with OWASP Origin Header Scrutiny recommendations."
+        ),
+
+        "DefaultSeverity": "High",
+        "DefaultCVSS": "8.3 (AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:L/A:N)",
+
+        "TableType": None,
+        "TableColumns": ["Finding", "Evidence"],
+        "TableColumnMap": {
+            "Finding": ["Type"],
+            "Evidence": ["CurrentValue", "Detail"]
+        },
+
+        "ItemDetails": {
+            "Wildcard Origin Allowed": {
+                "Impact": (
+                    "Allowing Access-Control-Allow-Origin: * permits any external website to read cross-origin "
+                    "responses. This significantly increases the attack surface and may allow attackers to "
+                    "access sensitive API responses or application data from untrusted origins."
+                ),
+                "Recommendation": (
+                    "Specify only trusted, legitimate domains instead of using a wildcard (*)."
+                )
+            },
+
+            "Credentials Allowed for All Origins": {
+                "Impact": (
+                    "Combining Access-Control-Allow-Credentials: true with a permissive origin policy enables "
+                    "attackers to perform authenticated cross-origin requests. This can lead to unauthorized "
+                    "access to user data, session hijacking, or account compromise."
+                ),
+                "Recommendation": (
+                    "Only enable credentials for specific trusted domains. Ensure "
+                    "Access-Control-Allow-Credentials: true is never used with Access-Control-Allow-Origin: *."
+                )
+            },
+
+            "Unsafe Origin Reflection": {
+                "Impact": (
+                    "Reflecting arbitrary Origin values effectively trusts all requesting domains. This allows "
+                    "malicious websites to bypass same-origin protections and read sensitive responses, enabling "
+                    "data theft and abuse of authenticated user sessions."
+                ),
+                "Recommendation": (
+                    "Replace dynamic origin reflection with a fixed whitelist of allowed origins. Reject "
+                    "unexpected or untrusted origins."
+                )
+            },
+
+            "Excessive Allowed Methods": {
+                "Impact": (
+                    "Allowing unnecessary HTTP methods increases the attack surface by exposing endpoints to "
+                    "methods that may not be securely implemented. Attackers can exploit unused or unsafe "
+                    "methods to manipulate server resources or bypass access controls."
+                ),
+                "Recommendation": (
+                    "Restrict allowed methods to only those required by the application (e.g., GET, POST)."
+                )
+            },
+
+            "Missing Vary Origin Header": {
+                "Impact": (
+                    "Without Vary: Origin, shared caches may serve CORS responses intended for one origin to "
+                    "another. This can result in unauthorized data exposure due to incorrect caching behavior."
+                ),
+                "Recommendation": (
+                    "Add Vary: Origin when the server returns different CORS responses based on the request Origin."
+                )
+            },
+
+            "Unsafe Vary Origin Usage": {
+                "Impact": (
+                    "When unsafe CORS policies are combined with Vary: Origin, insecure responses may be cached "
+                    "and reused. This amplifies the impact of misconfiguration by persistently serving permissive "
+                    "CORS responses to untrusted origins."
+                ),
+                "Recommendation": (
+                    "Fix the CORS policy first (proper whitelist, no wildcard with credentials). Only rely on "
+                    "Vary: Origin after the policy is secure."
+                )
+            },
+
+            "Missing Access-Control-Max-Age": {
+                "Impact": (
+                    "The absence of Access-Control-Max-Age causes browsers to repeatedly perform preflight "
+                    "requests. While not directly exploitable, this can degrade performance and increase server "
+                    "load."
+                ),
+                "Recommendation": (
+                    "Set a reasonable Access-Control-Max-Age value (e.g., 300–600 seconds)."
+                )
+            },
+
+            "Excessive Access-Control-Max-Age": {
+                "Impact": (
+                    "Excessively long CORS caching allows outdated or incorrect permissions to persist in "
+                    "browsers, prolonging exposure to unauthorized cross-origin access."
+                ),
+                "Recommendation": (
+                    "Avoid extremely long caching durations; use moderate values such as 300–600 seconds."
+                )
+            },
+
+            "CORS Enabled on Unnecessary Endpoints": {
+                "Impact": (
+                    "Enabling CORS on endpoints that do not require cross-origin access increases the risk of "
+                    "data leakage, CSRF-like abuse, and unauthorized interaction from external domains."
+                ),
+                "Recommendation": (
+                    "Only enable CORS for specific API endpoints that truly require cross-origin requests. "
+                    "Disable it for sensitive or internal routes."
+                )
+            },
+
+            "Preflight Accepts Untrusted Origins": {
+                "Impact": (
+                    "Accepting preflight requests from untrusted origins grants attackers visibility into "
+                    "allowed methods and permissions, enabling malicious domains to perform fully authorized "
+                    "cross-origin requests."
+                ),
+                "Recommendation": (
+                    "Update preflight validation to reject unapproved origins before responding with CORS "
+                    "permissions."
+                )
+            }
+        }
     },
     
     "Directory Exposure": {

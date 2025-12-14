@@ -455,10 +455,30 @@ REPORT_TEMPLATE = r"""
                         {# render visible cells (first cell bold) #}
                         {% for cell in visible %}
                           <td {% if loop.index0 == 0 %} style="font-weight:600;" {% endif %}>
-                            {# If column header is "Status" display as inline code for visual parity #}
                             {% set col_name = schema[loop.index0] if schema and schema|length > loop.index0 else "" %}
+
+                            {# --- Status column --- #}
                             {% if col_name == "Status" %}
                               <code>{{ cell }}</code>
+
+                            {# --- Evidence / Current Value column --- #}
+                            {% elif col_name in ["Evidence", "Current Value"] %}
+                              {% if finding_obj.get("CurrentValue") %}
+                                <code style="color:#0d6efd;">{{ finding_obj.get("CurrentValue") }}</code>
+                              {% endif %}
+
+                              {% if finding_obj.get("Detail") %}
+                                <div style="margin-top:4px;">
+                                  {{ finding_obj.get("Detail") }}
+                                </div>
+                              {% endif %}
+
+                              {# fallback if neither exists #}
+                              {% if not finding_obj.get("CurrentValue") and not finding_obj.get("Detail") %}
+                                {{ cell }}
+                              {% endif %}
+
+                            {# --- default rendering --- #}
                             {% else %}
                               {{ cell }}
                             {% endif %}
@@ -482,7 +502,7 @@ REPORT_TEMPLATE = r"""
 
                 {% for row in rows_for_cat %}
                   {% set f = row[-1] %}
-                  {% set key = f.get('_item_short') %}
+                  {% set key = f.get('Type') or f.get('_item_short') %}
                   {% if key and key not in seen %}
                     {% do seen.append(key) %}
                     {% if f.get('Impact') %}
@@ -497,7 +517,7 @@ REPORT_TEMPLATE = r"""
                 {% endfor %}
               </div>
 
-              {# REMEDIATION SECTION - Show specific remediations for each item (method/header) #}
+              {# REMEDIATION SECTION - Show specific remediations for each item #}
               <div class="vuln-section" style="margin-top:24px;">
                 <div class="remediation-box">
                   <div class="section-title"
@@ -510,7 +530,7 @@ REPORT_TEMPLATE = r"""
 
                   {% for row in rows_for_cat %}
                     {% set f = row[-1] %}
-                    {% set key = f.get('_item_short') %}
+                    {% set key = f.get('Type') or f.get('_item_short') %}
                     {% if key and key not in seen %}
                       {% do seen.append(key) %}
                       {% if f.get('Recommendation') %}
