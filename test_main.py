@@ -358,27 +358,11 @@ def main():
         pt_findings = []
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
-    # === Step 8: SSL/TLS Check ===
+     # === Step 8: SSL/TLS Check ===
     print(Fore.CYAN + "\n[8/8] Checking SSL/TLS configuration..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        run_ssl_check(url, verbose=verbose)  # Pass verbose parameter
-        # For summary table, still collect basic SSL findings
-        try:
-            ssl_data = check_ssl_tls(urllib.parse.urlparse(url).hostname)
-            if ssl_data.get("error"):
-                ssl_findings = [{"Category": "SSL/TLS", "Severity": "High", "Description": f"SSL/TLS error: {ssl_data.get('error')}"}]
-            elif not ssl_data.get("https_supported"):
-                ssl_findings = [{"Category": "SSL/TLS", "Severity": "High", "Description": "HTTPS not supported; site is served over plain HTTP."}]
-            elif not ssl_data.get("certificate_valid"):
-                ssl_findings = [{"Category": "SSL/TLS", "Severity": "High", "Description": "Invalid or expired TLS certificate detected."}]
-            elif ssl_data.get("days_until_expiry") is not None and ssl_data.get("days_until_expiry") < 30:
-                ssl_findings = [{"Category": "SSL/TLS", "Severity": "Medium", "Description": f"TLS certificate will expire in {ssl_data.get('days_until_expiry')} days."}]
-            else:
-                ssl_findings = []
-        except Exception as e:
-            print(Fore.RED + f"[DEBUG] Error collecting SSL summary findings: {e}" + Style.RESET_ALL)
-            ssl_findings = []
+        ssl_findings = run_ssl_check(url, verbose=verbose)
     except Exception as e:
         print(Fore.RED + f"[ERROR] SSL/TLS check failed: {e}" + Style.RESET_ALL)
         import traceback

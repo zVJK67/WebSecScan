@@ -1,0 +1,3369 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>WebSecScan Security Report</title>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* Global reset */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html,body { height:100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      color: #203040;
+      background: #f2f4f8;
+      padding: 20px;
+      -webkit-font-smoothing:antialiased;
+    }
+
+    /* A4 sizing for print and WeasyPrint */
+    .page {
+      width: 210mm;
+      margin: 0 auto;
+      background: white;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 8px 30px rgba(15,23,42,0.12);
+    }
+
+    /* Header */
+    .report-header {
+      background: linear-gradient(135deg,#ABE7B2 0%,#F7A5A5 100%);
+      color: white;
+      padding: 28px 32px;
+    }
+    .report-title { font-size: 28px; font-weight:800; margin-bottom:6px; }
+    .report-sub { color: rgba(255,255,255,0.92); opacity:0.95; font-size:14px; }
+
+    /* Meta */
+    .meta {
+      display:flex;
+      gap:20px;
+      padding:18px 32px;
+      align-items:center;
+      border-bottom: 1px solid #eef2fb;
+    }
+    .meta .meta-item { font-size:13px; color:#2f3a47; }
+    .meta code { background:#eef3ff; padding:3px 6px; border-radius:4px; font-family:monospace; }
+
+    /* Summary area */
+    .summary {
+      padding: 22px 32px 30px 32px;
+      display:flex;
+      gap:18px;
+      align-items:flex-start;
+      justify-content:flex-start;
+    }
+    /* left summary column width match screenshot */
+    .left-summary { width: 560px; min-width:360px; }
+    /* right summary is a fixed card */
+    .right-summary { width: 360px; flex: 0 0 360px; margin-left:18px; }
+
+    .stat-cards { display:flex; gap:12px; margin-bottom:14px; }
+    .card {
+      flex:1;
+      background:linear-gradient(180deg,#fff 0,#FFF5F2 150%);
+      border-radius:8px;
+      padding:12px;
+      border:1px solid #e7eefc;
+      text-align:center;
+    }
+    .card .num { font-size:22px; font-weight:800; color:#243140; }
+    .card .label { font-size:12px; color:#6b7280; margin-top:6px; text-transform:uppercase; letter-spacing:0.6px; }
+
+    /* Table summary */
+    table.summary-table { width:100%; border-collapse:collapse; margin-top:10px; background:#F9F8F6; }
+    table.summary-table th, table.summary-table td {
+      padding:10px 8px; text-align:center; border-bottom:1px solid #CBCBCB;
+      font-size:13px;
+    }
+    table.summary-table th { background:#11224E; color:#CBDCEB; font-weight:700; font-size:12px; text-transform:uppercase; }
+    table.summary-table tr:hover td { background:#EFE9E3; }
+
+    /* Chart container (right card) */
+    .chart-wrapper {
+      background: #FFF0EF;
+      border-radius: 12px;
+      padding: 20px 18px;
+      border: 2px solid rgba(0,0,0,0.08);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      min-height: 420px;
+      position: relative;
+    }
+
+    .chart-wrapper .card-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: #3f5f9a;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    /* Chart canvas container */
+    .chart-container {
+      position: relative;
+      width: 320px;
+      height: 320px;
+    }
+
+    #categoryChart {
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    /* Details */
+    .details { padding: 24px 32px 40px; }
+    .details h2 { font-size:23px; color:#243140; border-bottom:3px solid #eef3ff; padding-bottom:10px; margin-bottom:18px; }
+
+    /* Vulnerability category box */
+    .category-section {
+      margin-bottom:24px;
+      background: white;
+      border-radius:8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .category-section.risk-high { border-left: 6px solid #dc3545; }
+    .category-section.risk-medium { border-left: 6px solid #fd7e14; }
+    .category-section.risk-low { border-left: 6px solid #28a745; }
+
+    .vuln-header { background: #f8f9fa; padding: 16px 20px; border-bottom: 2px solid #e9ecef; }
+    .vuln-title { font-size: 18px; font-weight:700; color:#1a1a1a; margin-bottom:4px; }
+    .vuln-content { padding: 20px; }
+
+    .vuln-section { margin-bottom:20px; }
+    .section-title { font-size: 14px; font-weight:700; color:#495057; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px; }
+    .section-content { font-size:14px; line-height:1.6; color:#2f3a47; }
+
+    .risk-rating { display:flex; gap:20px; align-items:center; }
+    .risk-item { display:flex; align-items:center; gap:8px; }
+    .risk-label { font-weight:600; color:#495057; }
+    .risk-value { padding:4px 12px; border-radius:4px; font-weight:700; font-size:13px; color:white; }
+    .risk-value.high { background:#dc3545; }
+    .risk-value.medium { background:#fd7e14; }
+    .risk-value.low { background:#28a745; }
+
+    .instances-table { width:100%; border-collapse:collapse; margin-top:8px; border:1px solid #dee2e6; font-size:13px; }
+    .instances-table th { background:#f1f3f5; padding:10px 12px; text-align:left; font-weight:600; color:#495057; border-bottom:2px solid #dee2e6; }
+    .instances-table td { padding:10px 12px; border-bottom:1px solid #e9ecef; color:#2f3a47; }
+    .instances-table tr:last-child td { border-bottom:none; }
+    .instances-table tr:hover { background:#f8f9fa; }
+    .instances-table code { background:#e7f1ff; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px; }
+
+    .remediation-box { background:#fff3cd; border-left:4px solid #ffc107; padding:14px 16px; border-radius:4px; }
+    .remediation-box .section-title { color:#856404; margin-bottom:8px; }
+    .remediation-box .section-content { color:#664d03; line-height: 1.8; }
+    .remediation-box .section-content > div { margin-bottom: 16px; }
+
+    .report-footer { background:#f8fafc; padding:14px 32px; color:#5b6b7a; font-size:13px; border-top:1px solid #eef2fb; text-align:center; }
+
+    
+
+    /* responsive */
+    @media (max-width:900px) {
+      .page { width:calc(100% - 40px); }
+      .summary { flex-direction:column; }
+      .left-summary { width:100%; }
+      .right-summary { width:100%; flex: none; margin-left:0; }
+      .chart-container { width: 260px; height: 260px; }
+    }
+
+    /* print */
+    @page { size: A4 portrait; margin: 12mm; }
+    @media print {
+      body { background: white; }
+      .page { box-shadow:none; border-radius:0; width: auto; }
+      .chart-wrapper, .card, .summary-table { page-break-inside: avoid; }
+      .report-header, .meta, .report-footer { -webkit-print-color-adjust: exact; }
+      .no-print { display:none !important; }
+    }
+
+    .anchor { display:block; padding-top:40px; margin-top:-40px; }
+  </style>
+</head>
+<body>
+    <div class="page" role="document">
+    <!-- HEADER -->
+    <header class="report-header">
+      <div class="report-title">WebSecScan Security Report</div>
+      <div class="report-sub">Web Application Security Analysis</div>
+    </header>
+
+    <!-- META -->
+    <div class="meta">
+      <div class="meta-item"><strong>Target:</strong> <code>http://127.0.0.1:4000</code></div>
+      <div class="meta-item"><strong>Scan Time:</strong> 2025-12-15 21:55:36</div>
+    </div>
+
+    <!-- SUMMARY -->
+    <section class="summary" aria-label="Executive summary">
+      <div class="left-summary">
+        <div class="stat-cards">
+          <div class="card">
+            <div class="num">46</div>
+            <div class="label">Total Findings</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Red;">16</div>
+            <div class="label">High</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Orange;">15</div>
+            <div class="label">Medium</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Green;">15</div>
+            <div class="label">Low</div>
+          </div>
+        </div>
+
+        <table class="summary-table" role="table" aria-label="Findings summary by category">
+          <thead>
+            <tr><th>Category</th><th>High</th><th>Medium</th><th>Low</th><th>Total</th></tr>
+          </thead>
+          <tbody>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Misconfigured HTTP Security Header</td>
+              <td style="font-weight:700; color:Red">0</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">8</td>
+              <td style="font-weight:800; color:#452829">8</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Server Information Disclosure</td>
+              <td style="font-weight:700; color:Red">0</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">1</td>
+              <td style="font-weight:800; color:#452829">1</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Improper Cookie and Session Security Configuration</td>
+              <td style="font-weight:700; color:Red">3</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">0</td>
+              <td style="font-weight:800; color:#452829">3</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Cross-Origin Resource Sharing (CORS) Misconfiguration</td>
+              <td style="font-weight:700; color:Red">0</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">5</td>
+              <td style="font-weight:800; color:#452829">5</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Sensitive Directory and File Exposure</td>
+              <td style="font-weight:700; color:Red">12</td>
+              <td style="font-weight:700; color:Orange">15</td>
+              <td style="font-weight:700; color:Green">0</td>
+              <td style="font-weight:800; color:#452829">27</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Path Traversal Vulnerability</td>
+              <td style="font-weight:700; color:Red">0</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">1</td>
+              <td style="font-weight:800; color:#452829">1</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Weak or Misconfigured SSL/TLS</td>
+              <td style="font-weight:700; color:Red">1</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">0</td>
+              <td style="font-weight:800; color:#452829">1</td>
+            </tr>
+            
+          </tbody>
+        </table>
+      </div>
+
+      <div class="right-summary">
+        <div class="chart-wrapper" role="img" aria-label="Vulnerability categories chart">
+          <div class="card-title">Vulnerability Categories Chart</div>
+          <div class="chart-container">
+            <canvas id="categoryChart"></canvas>
+          </div>
+          <div style="margin-top:16px;font-size:13px;font-weight:700;color:#5b6b7a;">
+            Click a slice to jump to that details section.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DETAILED FINDINGS -->
+    <section class="details" id="details">
+      <h2>Detailed Findings</h2>
+
+      
+        
+        
+        
+
+        
+
+        
+        
+        
+        
+          
+        
+
+        <a id="anchor-0" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-low" data-category="Security Headers">
+          <div class="vuln-header">
+            
+            
+            <div class="vuln-title">Misconfigured HTTP Security Header</div>
+
+            
+          </div>
+
+          <div class="vuln-content">
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                  
+                  <div class="section-content">
+                    
+                      <p>HTTP security headers provide yet another layer of security by helping to mitigate attacks and security vulnerabilities. Whenever a browser requests a page from a web server, the server responds with the content along with HTTP response headers. With the misconfigured or missing of HTTP security headers, the attackers may gain information from the data which may lead to various of attacks such as clickjacking, cross-site scripting (XSS) and others attacks as well.</p>
+                    
+                  </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  
+                  
+                  
+                  
+
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value low">Low</span>
+                    
+                  </div>
+
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    
+                    
+                    <span class="risk-value low">3.1 (AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+
+                
+                
+                
+
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      
+                        <th>Header</th>
+                      
+                        <th>Status</th>
+                      
+                        <th>Current Value</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Content-Security-Policy
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <span style="color:#9ca3af;">-</span>
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Strict-Transport-Security
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <span style="color:#9ca3af;">-</span>
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              X-XSS-Protection
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <span style="color:#9ca3af;">-</span>
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Cache-Control
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Misconfigured
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">
+                                  public, max-age=0
+                                </code>
+
+                                
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Referrer-Policy
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <span style="color:#9ca3af;">-</span>
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Cross-Origin-Opener-Policy
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <span style="color:#9ca3af;">-</span>
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Cross-Origin-Embedder-Policy
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <span style="color:#9ca3af;">-</span>
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Cross-Origin-Resource-Policy
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <span style="color:#9ca3af;">-</span>
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                  </tbody>
+                </table>
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title">Impact / Consequence</div>
+
+                
+                
+                
+
+                
+                
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title">Remediation</div>
+
+                  
+                  
+                  
+
+                  
+                  
+                </div>
+              </div>
+
+            
+          </div>
+        </div>
+      
+        
+        
+        
+
+        
+
+        
+        
+        
+        
+          
+        
+
+        <a id="anchor-1" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-low" data-category="Server Information">
+          <div class="vuln-header">
+            
+            
+            <div class="vuln-title">Server Information Disclosure</div>
+
+            
+          </div>
+
+          <div class="vuln-content">
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                  
+                  <div class="section-content">
+                    
+                      <p>Server Information Disclosure occurs when a web server exposes details about its software, technologies, or behavior through HTTP headers or error responses. These details help attackers fingerprint the environment and identify version-specific vulnerabilities.</p>
+                    
+                      <p>Exposing server, technology, or framework details increases the chance attackers can find and use known exploits against specific versions. Error responses that reveal internal details further aid fingerprinting and targeted attacks.</p>
+                    
+                  </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  
+                  
+                  
+                  
+
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value low">Low</span>
+                    
+                  </div>
+
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    
+                    
+                    <span class="risk-value low">3.1 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+
+                
+                
+                
+
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      
+                        <th>Finding</th>
+                      
+                        <th>Evidence</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Server Behavior Fingerprinting
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                The server&#39;s unique response patterns match known fingerprints -&gt; lighttpd
+   Matching headers: content-type, content-length, date
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                  </tbody>
+                </table>
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title">Impact / Consequence</div>
+
+                
+                
+                
+
+                
+                
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title">Remediation</div>
+
+                  
+                  
+                  
+
+                  
+                  
+                </div>
+              </div>
+
+            
+          </div>
+        </div>
+      
+        
+        
+        
+
+        
+
+        
+        
+        
+        
+          
+        
+
+        <a id="anchor-2" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-high" data-category="Cookie Security">
+          <div class="vuln-header">
+            
+            
+            <div class="vuln-title">Improper Cookie and Session Security Configuration</div>
+
+            
+          </div>
+
+          <div class="vuln-content">
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                  
+                  <div class="section-content">
+                    
+                      <p>Improper Cookie and Session Security Configuration occurs when cookies are set without essential security attributes or are scoped too broadly. Missing or weak cookie attributes such as HttpOnly, Secure, SameSite, and proper expiration increase the risk of session hijacking, cross-site scripting (XSS), cross-site request forgery (CSRF), and unauthorized access to user sessions.</p>
+                    
+                  </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  
+                  
+                  
+                  
+
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value high">High</span>
+                    
+                  </div>
+
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    
+                    
+                    
+                    <span class="risk-value high">7.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+
+                
+                
+                
+
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      
+                        <th>Scope</th>
+                      
+                        <th>Finding</th>
+                      
+                        <th>Evidence</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Client-Side
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing HttpOnly Attribute
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                Cookie: language=en
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Client-Side
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing Secure Attribute
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                Cookie: language=en
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Client-Side
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Overly Broad Path Attribute
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                Path=/
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                  </tbody>
+                </table>
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title">Impact / Consequence</div>
+
+                
+                
+                
+
+                
+                
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title">Remediation</div>
+
+                  
+                  
+                  
+
+                  
+                  
+                </div>
+              </div>
+
+            
+          </div>
+        </div>
+      
+        
+        
+        
+
+        
+
+        
+        
+        
+        
+          
+        
+
+        <a id="anchor-3" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-high" data-category="CORS Security">
+          <div class="vuln-header">
+            
+            
+            <div class="vuln-title">Cross-Origin Resource Sharing (CORS) Misconfiguration</div>
+
+            
+          </div>
+
+          <div class="vuln-content">
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                  
+                  <div class="section-content">
+                    
+                      <p>Cross-Origin Resource Sharing (CORS) controls how web applications allow cross-origin requests from different origins. Improper CORS configuration can allow unauthorized websites to read sensitive responses or perform authenticated actions on behalf of users.</p>
+                    
+                      <p>The scanner evaluates CORS behavior by comparing server responses under different request conditions, focusing on how CORS headers are handled when an Origin header is present or absent.</p>
+                    
+                      <p>- Access-Control-Allow-Origin (ACAO): The scanner checks whether the server responds with a wildcard (*)or reflects arbitrary origins by sending requests with and without a malicious Origin (e.g., https://evil-attacker.com). This identifies overly permissive or origin-reflection issues.<br/>- Access-Control-Allow-Credentials (ACAC): The scanner verifies whether credentials are allowed in cross-origin requests and ensures that ACAC is not improperly combined with a wildcard origin, which would violate CORS security best practices.<br/>- Access-Control-Allow-Methods (ACAM): The scanner sends preflight OPTIONS requests to determine whether unnecessary or dangerous HTTP methods like PUT are exposed cross-origin.<br/>- Access-Control-Allow-Headers (ACAH): The scanner injects custom headers during preflight requests to observe whether the server allows arbitrary request headers, which could enable malicious cross-origin requests.<br/>- Access-Control-Max-Age (ACMA): The scanner checks whether preflight caching is enabled and evaluates if excessive caching could allow long-lived abuse of insecure CORS decisions.<br/>- Vary Header: The scanner inspects the Vary header to confirm whether responses are correctly varied based on Origin or preflight headers.Missing or incorrect Vary values may cause cache poisoning or unintended cross-origin data exposure.</p>
+                    
+                      <p>This multi-stage testing aligns with OWASP Origin Header Scrutiny recommendations.</p>
+                    
+                  </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  
+                  
+                  
+                  
+
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value high">High</span>
+                    
+                  </div>
+
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    
+                    
+                    
+                    <span class="risk-value high">8.3 (AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:L/A:N)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+
+                
+                
+                
+
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      
+                        <th>Finding</th>
+                      
+                        <th>Evidence</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Wildcard Origin (*) Allowed
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">
+                                  Access-Control-Allow-Origin: *
+                                </code>
+
+                                
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Excessive Allowed Methods
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">
+                                  Access-Control-Allow-Methods: GET,HEAD,PUT,PATCH,POST,DELETE
+                                </code>
+
+                                
+                                  <div style="margin-top:4px;">
+                                    The server allows more HTTP methods than necessary, increasing exposure.
+                                  </div>
+                                
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Missing Access-Control-Max-Age Header
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                The server does not include the Access-Control-Max-Age header.
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              CORS Enabled on Endpoints That Don&#39;t Need It
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                The server appears to return CORS headers even for endpoints that do not require cross-origin access.
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Preflight (OPTIONS) Accepts Untrusted Origins
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                When the scanner sends an OPTIONS request with an untrusted Origin, the server still responds with full permissions, including credentials and multiple allowed methods.
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                  </tbody>
+                </table>
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title">Impact / Consequence</div>
+
+                
+                
+                
+
+                
+                
+                  <div class="section-content">
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">Wildcard Origin (*) Allowed</div>
+                          <div style="color:#2f3a47; line-height:1.6;">Allowing Access-Control-Allow-Origin: * permits any external website to read cross-origin responses. This significantly increases the attack surface and may allow attackers to access sensitive API responses or application data from untrusted origins.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">Excessive Allowed Methods</div>
+                          <div style="color:#2f3a47; line-height:1.6;">Allowing unnecessary HTTP methods increases the attack surface by exposing endpoints to methods that may not be securely implemented. Attackers can exploit unused or unsafe methods to manipulate server resources or bypass access controls.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">Missing Access-Control-Max-Age Header</div>
+                          <div style="color:#2f3a47; line-height:1.6;">The absence of Access-Control-Max-Age causes browsers to repeatedly perform preflight requests. While not directly exploitable, this can degrade performance and increase server load.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">CORS Enabled on Endpoints That Don&#39;t Need It</div>
+                          <div style="color:#2f3a47; line-height:1.6;">Enabling CORS on endpoints that do not require cross-origin access increases the risk of data leakage, CSRF-like abuse, and unauthorized interaction from external domains.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">Preflight (OPTIONS) Accepts Untrusted Origins</div>
+                          <div style="color:#2f3a47; line-height:1.6;">Accepting preflight requests from untrusted origins grants attackers visibility into allowed methods and permissions, enabling malicious domains to perform fully authorized cross-origin requests.</div>
+                        </div>
+                      
+                    
+                  </div>
+
+                
+                
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title">Remediation</div>
+
+                  
+                  
+                  
+
+                  
+                  
+                    <div class="section-content">
+                      
+                        
+                        
+                          
+                          
+                          <div style="margin-bottom:20px;">
+                            <div style="font-weight:700; color:#856404; margin-bottom:6px;">Wildcard Origin (*) Allowed</div>
+                            <div style="color:#664d03; line-height:1.6;">Specify only trusted, legitimate domains instead of using a wildcard *.</div>
+                          </div>
+                        
+                      
+                        
+                        
+                          
+                          
+                          <div style="margin-bottom:20px;">
+                            <div style="font-weight:700; color:#856404; margin-bottom:6px;">Excessive Allowed Methods</div>
+                            <div style="color:#664d03; line-height:1.6;">Restrict allowed methods to only the application requires (eg. GET, POST).</div>
+                          </div>
+                        
+                      
+                        
+                        
+                          
+                          
+                          <div style="margin-bottom:20px;">
+                            <div style="font-weight:700; color:#856404; margin-bottom:6px;">Missing Access-Control-Max-Age Header</div>
+                            <div style="color:#664d03; line-height:1.6;">Set a reasonable Access-Control-Max-Age (eg. 300–600 seconds) to help browsers reuse valid preflight results without adding performance overhead.</div>
+                          </div>
+                        
+                      
+                        
+                        
+                          
+                          
+                          <div style="margin-bottom:20px;">
+                            <div style="font-weight:700; color:#856404; margin-bottom:6px;">CORS Enabled on Endpoints That Don&#39;t Need It</div>
+                            <div style="color:#664d03; line-height:1.6;">Only enable CORS for specific API endpoints that truly require cross-origin requests. Disable it for login pages or sensitive routes.</div>
+                          </div>
+                        
+                      
+                        
+                        
+                          
+                          
+                          <div style="margin-bottom:20px;">
+                            <div style="font-weight:700; color:#856404; margin-bottom:6px;">Preflight (OPTIONS) Accepts Untrusted Origins</div>
+                            <div style="color:#664d03; line-height:1.6;">Update the preflight validation to reject unapproved origins before responding with CORS permissions.</div>
+                          </div>
+                        
+                      
+                    </div>
+
+                  
+                  
+                </div>
+              </div>
+
+            
+          </div>
+        </div>
+      
+        
+        
+        
+
+        
+
+        
+        
+        
+        
+          
+        
+
+        <a id="anchor-4" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-medium" data-category="Directory Exposure">
+          <div class="vuln-header">
+            
+            
+            <div class="vuln-title">Sensitive Directory and File Exposure</div>
+
+            
+          </div>
+
+          <div class="vuln-content">
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                  
+                  <div class="section-content">
+                    
+                      <p>Directory exposure occurs when web servers are misconfigured to display directory listings or when sensitive files and directories are accessible without proper authentication. This can reveal the application's file structure, backup files, configuration files, and other sensitive information.</p>
+                    
+                  </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  
+                  
+                  
+                  
+
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value medium">Medium</span>
+                    
+                  </div>
+
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    
+                    
+                    <span class="risk-value medium">5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+
+                
+                
+                
+
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      
+                        <th>Finding</th>
+                      
+                        <th>Status</th>
+                      
+                        <th>URL</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /robots.txt
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/robots.txt
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /sitemap.xml
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/sitemap.xml
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /.git/
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/.git/
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /.env
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/.env
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /.htaccess
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/.htaccess
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /config.php
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/config.php
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /config.php.bak
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/config.php.bak
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /config.bak
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/config.bak
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /backup.zip
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/backup.zip
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /wp-config.php
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/wp-config.php
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /admin/
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/admin/
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /admin/index.php
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/admin/index.php
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /phpinfo.php
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/phpinfo.php
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /server-status
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/server-status
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /.well-known/security.txt
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/.well-known/security.txt
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /.well-known/change-password
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/.well-known/change-password
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /.git/config
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/.git/config
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /.DS_Store
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/.DS_Store
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /.gitignore
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/.gitignore
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /logs/
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/logs/
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /error_log
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/error_log
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /.htpasswd
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/.htpasswd
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /README
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/README
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /readme.html
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/readme.html
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /readme.txt
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/readme.txt
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /backup.tar.gz
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              http://127.0.0.1:4000/backup.tar.gz
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                  </tbody>
+                </table>
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title">Impact / Consequence</div>
+
+                
+                
+                
+
+                
+                
+                  <div class="section-content">
+                    
+                      
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">/robots.txt</div>
+                          <div style="color:#2f3a47; line-height:1.6;">Robots.txt may reveal paths that are hidden from crawlers but still accessible to attackers.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">/.git/</div>
+                          <div style="color:#2f3a47; line-height:1.6;">Exposed Git repository data can reveal source code, commit history, and sensitive information.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">/.env</div>
+                          <div style="color:#2f3a47; line-height:1.6;">Environment variables and application secrets may be exposed, leading to credential leakage or system compromise.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">/.htaccess</div>
+                          <div style="color:#2f3a47; line-height:1.6;">Apache configuration files may reveal security rules, access controls, or internal paths.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">/admin/</div>
+                          <div style="color:#2f3a47; line-height:1.6;">Administrative interfaces accessible to unauthenticated users may allow unauthorized control.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">/.DS_Store</div>
+                          <div style="color:#2f3a47; line-height:1.6;">macOS metadata files may reveal directory structure and internal file names.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">/logs/</div>
+                          <div style="color:#2f3a47; line-height:1.6;">Log files may contain sensitive information such as credentials, tokens, or system paths.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">/error_log</div>
+                          <div style="color:#2f3a47; line-height:1.6;">Error logs may reveal internal system paths, stack traces, or exploitable vulnerabilities.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">/.htpasswd</div>
+                          <div style="color:#2f3a47; line-height:1.6;">Password files may expose authentication credentials or hashed passwords.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">/README</div>
+                          <div style="color:#2f3a47; line-height:1.6;">Documentation files may reveal software versions, configurations, or deployment details.</div>
+                        </div>
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                    
+                      
+                      
+                    
+                  </div>
+
+                
+                
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title">Remediation</div>
+
+                  
+                  
+                  
+
+                  
+                  
+                    <div class="section-content">
+                      
+                        <p>1. Remove sensitive files and folders from the webroot<br>2. Deny HTTP access to hidden or sensitive files at the server layer<br>3. Disable directory listing<br>4. Use strict file and folder permissions<br>5. Review for exposed secrets and rotate them if necessary</p>
+                      
+                    </div>
+                  
+                </div>
+              </div>
+
+            
+          </div>
+        </div>
+      
+        
+        
+        
+
+        
+
+        
+        
+        
+        
+          
+        
+
+        <a id="anchor-5" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-high" data-category="Path Traversal">
+          <div class="vuln-header">
+            
+            
+            <div class="vuln-title">Path Traversal Vulnerability</div>
+
+            
+          </div>
+
+          <div class="vuln-content">
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                  
+                  <div class="section-content">
+                    
+                      <p>Path traversal is a vulnerability that allows attackers to access files and directories stored outside the web root folder. By manipulating file path references using sequences such as '../' or '..\', attackers can break out of the intended directory structure and access unintended resources on the server.</p>
+                    
+                  </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  
+                  
+                  
+                  
+
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value high">High</span>
+                    
+                  </div>
+
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    
+                    
+                    
+                    <span class="risk-value high">7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+
+                
+                
+                
+
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      
+                        <th>Endpoint</th>
+                      
+                        <th>Payloads Triggering</th>
+                      
+                        <th>Evidence</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /ftp
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <ul style="margin:0; padding-left:18px;">
+                                  
+                                    <li>
+                                      <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">
+                                        ../etc/passwd
+                                      </code>
+                                    </li>
+                                  
+                                    <li>
+                                      <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">
+                                        ../../etc/passwd
+                                      </code>
+                                    </li>
+                                  
+                                    <li>
+                                      <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">
+                                        ../../../etc/passwd
+                                      </code>
+                                    </li>
+                                  
+                                    <li>
+                                      <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">
+                                        ../../../../../../etc/passwd
+                                      </code>
+                                    </li>
+                                  
+                                    <li>
+                                      <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">
+                                        ../..\..\windows\win.ini
+                                      </code>
+                                    </li>
+                                  
+                                </ul>
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                Response size increased significantly (possible file access attempt)
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                  </tbody>
+                </table>
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title">Impact / Consequence</div>
+
+                
+                
+                
+
+                
+                
+                  <div class="section-content">
+                    
+                      <p>Exploitation of a path traversal vulnerability may allow attackers to read sensitive files outside the intended application directory, including system files, application logs, and configuration files. Such information disclosure can reveal credentials, internal paths, software versions, and security mechanisms, which may facilitate further attacks such as privilege escalation, remote code execution, or full system compromise. This significantly undermines application confidentiality and increases the overall attack surface.</p>
+                    
+                  </div>
+                
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title">Remediation</div>
+
+                  
+                  
+                  
+
+                  
+                  
+                    <div class="section-content">
+                      
+                        <p>1. Validate and Sanitize Input<br>                            Implement strict allowlist validation for file paths and filenames, rejecting any input containing traversal sequences (e.g., ../, ..\) or unexpected characters.</p>
+                      
+                        <p>                            2. Use Safe File Handling Mechanisms<br>                            Resolve and normalize file paths on the server side and ensure access is restricted to a predefined base directory. Avoid directly using user-supplied input in file system operations.</p>
+                      
+                        <p>                            3. Apply Least Privilege Controls<br>                            Run the application with minimal file system permissions so that even if traversal is attempted, access to sensitive system files is denied.</p>
+                      
+                        <p>                            4. Return Generic Error Messages<br>                            Return generic error responses instead of detailed file system or path-related errors to avoid revealing internal directory structures or sensitive implementation details.</p>
+                      
+                    </div>
+                  
+                </div>
+              </div>
+
+            
+          </div>
+        </div>
+      
+        
+        
+        
+
+        
+
+        
+        
+        
+        
+          
+        
+
+        <a id="anchor-6" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-high" data-category="SSL/TLS">
+          <div class="vuln-header">
+            
+            
+            <div class="vuln-title">Weak or Misconfigured SSL/TLS</div>
+
+            
+          </div>
+
+          <div class="vuln-content">
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                  
+                  <div class="section-content">
+                    
+                      <p>SSL/TLS (Secure Sockets Layer / Transport Layer Security) provides encryption for data in transit between clients and servers. Weak SSL/TLS configurations, outdated protocols, weak cipher suites, or certificate issues can expose communications to interception, tampering, and man-in-the-middle attacks.</p>
+                    
+                      <p>Common SSL/TLS weaknesses include missing HTTPS support, deprecated protocol versions, weak cryptographic algorithms, invalid or expired certificates, and missing security headers such as HTTP Strict Transport Security (HSTS).</p>
+                    
+                  </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  
+                  
+                  
+                  
+
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value high">High</span>
+                    
+                  </div>
+
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    
+                    
+                    
+                    <span class="risk-value high">9.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+
+                
+                
+                
+
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      
+                        <th>Finding</th>
+                      
+                        <th>Current Value</th>
+                      
+                        <th>Evidence</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              HTTPS Not Supported
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                No TLS listener detected on 127.0.0.1:4000.
+                              
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                [SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:1006)
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                  </tbody>
+                </table>
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title">Impact / Consequence</div>
+
+                
+                
+                
+
+                
+                
+                  <div class="section-content">
+                    
+                      
+                      
+                        
+                        
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">HTTPS Not Supported</div>
+                          <div style="color:#2f3a47; line-height:1.6;">All data is transmitted in plaintext, allowing attackers to intercept credentials, session data, and sensitive information through man-in-the-middle attacks.</div>
+                        </div>
+                      
+                    
+                  </div>
+
+                
+                
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title">Remediation</div>
+
+                  
+                  
+                  
+
+                  
+                  
+                    <div class="section-content">
+                      
+                        
+                        
+                          
+                          
+                          <div style="margin-bottom:20px;">
+                            <div style="font-weight:700; color:#856404; margin-bottom:6px;">HTTPS Not Supported</div>
+                            <div style="color:#664d03; line-height:1.6;">Enable HTTPS and configure a valid certificate. Ensure a TLS listener is present on port 443 (or the configured port).</div>
+                          </div>
+                        
+                      
+                    </div>
+
+                  
+                  
+                </div>
+              </div>
+
+            
+          </div>
+        </div>
+      
+    </section>
+
+    <footer class="report-footer">
+      WebSecScan — Web Security Misconfiguration Analyzer · Generated 2025-12-15 21:55:36 · <span style="opacity:.85">Lee Zhi Hui</span>
+    </footer>
+  </div>
+
+  <!-- Chart.js script -->
+  <script>
+    (function(){
+      const categories = [
+        
+          { name: "Security Headers", high: 0, medium: 0, low: 8 },
+        
+          { name: "Server Information", high: 0, medium: 0, low: 1 },
+        
+          { name: "Cookie Security", high: 3, medium: 0, low: 0 },
+        
+          { name: "CORS Security", high: 0, medium: 0, low: 5 },
+        
+          { name: "Directory Exposure", high: 12, medium: 15, low: 0 },
+        
+          { name: "Path Traversal", high: 0, medium: 0, low: 1 },
+        
+          { name: "SSL/TLS", high: 1, medium: 0, low: 0 }
+        
+      ];
+      const labels = categories.map(c => c.name);
+      const values = categories.map(c => (c.high + c.medium + c.low));
+      const palette = ['#FF6B6B','#FF9F43','#FFD43B','#6BCB77','#4D96FF','#845EC2','#00C9A7','#FF9671'];
+      const colors = labels.map((_,i)=>palette[i%palette.length]);
+
+      const ctx = document.getElementById('categoryChart').getContext('2d');
+      const categoryChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: colors,
+            borderWidth: 2,
+            borderColor: '#fff',
+            hoverOffset: 8,
+            spacing: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { 
+                boxWidth: 14, 
+                padding: 10, 
+                usePointStyle: true,
+                font: {
+                  size: 12
+                }
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.label}: ${ctx.raw} findings`
+              }
+            }
+          },
+          onClick(evt) {
+            const points = categoryChart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+            if (!points.length) return;
+            const idx = points[0].index;
+            const anchorId = 'anchor-' + idx;
+            const el = document.getElementById(anchorId);
+            if (el) { 
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' }); 
+              return; 
+            }
+            const catName = labels[idx];
+            const sec = document.querySelector(`[data-category="${catName}"]`);
+            if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+      });
+
+      // keyboard accessibility for chart wrapper
+      const chartWrapper = document.querySelector('.chart-wrapper');
+      if (chartWrapper) {
+        chartWrapper.setAttribute('tabindex','0');
+        chartWrapper.addEventListener('keydown', (e)=>{
+          if (e.key === 'Enter' || e.key === ' ') {
+            const details = document.getElementById('details');
+            if (details) details.scrollIntoView({ behavior: 'smooth' });
+            e.preventDefault();
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

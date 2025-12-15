@@ -247,3 +247,24 @@ def print_findings(findings: List[Dict[str, Any]], raw_headers: Dict[str, str], 
 
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
+def get_findings_for_export(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Convert header findings to export format with correct _item_short keys.
+    """
+    export_findings = []
+    
+    for f in findings:
+        header_name = f.get("Header", "")
+        
+        export_findings.append({
+            "Category": "HTTP Security Headers",
+            "Header": header_name,
+            "Finding": f.get("Status", ""),
+            "_item_short": header_name,  # KEY: Use header name directly (matches ItemDetails keys)
+            "Status": f.get("Status", ""),
+            "CurrentValue": f.get("CurrentValue"),
+            "Recommendation": f.get("Recommendation"),
+            "Severity": "Low"
+        })
+    
+    return export_findings

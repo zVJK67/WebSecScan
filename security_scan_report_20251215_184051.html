@@ -1,0 +1,2137 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>WebSecScan Security Report</title>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* Global reset */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html,body { height:100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      color: #203040;
+      background: #f2f4f8;
+      padding: 20px;
+      -webkit-font-smoothing:antialiased;
+    }
+
+    /* A4 sizing for print and WeasyPrint */
+    .page {
+      width: 210mm;
+      margin: 0 auto;
+      background: white;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 8px 30px rgba(15,23,42,0.12);
+    }
+
+    /* Header */
+    .report-header {
+      background: linear-gradient(135deg,#ABE7B2 0%,#F7A5A5 100%);
+      color: white;
+      padding: 28px 32px;
+    }
+    .report-title { font-size: 28px; font-weight:800; margin-bottom:6px; }
+    .report-sub { color: rgba(255,255,255,0.92); opacity:0.95; font-size:14px; }
+
+    /* Meta */
+    .meta {
+      display:flex;
+      gap:20px;
+      padding:18px 32px;
+      align-items:center;
+      border-bottom: 1px solid #eef2fb;
+    }
+    .meta .meta-item { font-size:13px; color:#2f3a47; }
+    .meta code { background:#eef3ff; padding:3px 6px; border-radius:4px; font-family:monospace; }
+
+    /* Summary area */
+    .summary {
+      padding: 22px 32px 30px 32px;
+      display:flex;
+      gap:18px;
+      align-items:flex-start;
+      justify-content:flex-start;
+    }
+    /* left summary column width match screenshot */
+    .left-summary { width: 560px; min-width:360px; }
+    /* right summary is a fixed card */
+    .right-summary { width: 360px; flex: 0 0 360px; margin-left:18px; }
+
+    .stat-cards { display:flex; gap:12px; margin-bottom:14px; }
+    .card {
+      flex:1;
+      background:linear-gradient(180deg,#fff 0,#FFF5F2 150%);
+      border-radius:8px;
+      padding:12px;
+      border:1px solid #e7eefc;
+      text-align:center;
+    }
+    .card .num { font-size:22px; font-weight:800; color:#243140; }
+    .card .label { font-size:12px; color:#6b7280; margin-top:6px; text-transform:uppercase; letter-spacing:0.6px; }
+
+    /* Table summary */
+    table.summary-table { width:100%; border-collapse:collapse; margin-top:10px; background:#F9F8F6; }
+    table.summary-table th, table.summary-table td {
+      padding:10px 8px; text-align:center; border-bottom:1px solid #CBCBCB;
+      font-size:13px;
+    }
+    table.summary-table th { background:#11224E; color:#CBDCEB; font-weight:700; font-size:12px; text-transform:uppercase; }
+    table.summary-table tr:hover td { background:#EFE9E3; }
+
+    /* Chart container (right card) */
+    .chart-wrapper {
+      background: #FFF0EF;
+      border-radius: 12px;
+      padding: 20px 18px;
+      border: 2px solid rgba(0,0,0,0.08);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      min-height: 420px;
+      position: relative;
+    }
+
+    .chart-wrapper .card-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: #3f5f9a;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    /* Chart canvas container */
+    .chart-container {
+      position: relative;
+      width: 320px;
+      height: 320px;
+    }
+
+    #categoryChart {
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    /* Details */
+    .details { padding: 24px 32px 40px; }
+    .details h2 { font-size:23px; color:#243140; border-bottom:3px solid #eef3ff; padding-bottom:10px; margin-bottom:18px; }
+
+    /* Vulnerability category box */
+    .category-section {
+      margin-bottom:24px;
+      background: white;
+      border-radius:8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .category-section.risk-high { border-left: 6px solid #dc3545; }
+    .category-section.risk-medium { border-left: 6px solid #fd7e14; }
+    .category-section.risk-low { border-left: 6px solid #28a745; }
+
+    .vuln-header { background: #f8f9fa; padding: 16px 20px; border-bottom: 2px solid #e9ecef; }
+    .vuln-title { font-size: 18px; font-weight:700; color:#1a1a1a; margin-bottom:4px; }
+    .vuln-content { padding: 20px; }
+
+    .vuln-section { margin-bottom:20px; }
+    .section-title { font-size: 14px; font-weight:700; color:#495057; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px; }
+    .section-content { font-size:14px; line-height:1.6; color:#2f3a47; }
+
+    .risk-rating { display:flex; gap:20px; align-items:center; }
+    .risk-item { display:flex; align-items:center; gap:8px; }
+    .risk-label { font-weight:600; color:#495057; }
+    .risk-value { padding:4px 12px; border-radius:4px; font-weight:700; font-size:13px; color:white; }
+    .risk-value.high { background:#dc3545; }
+    .risk-value.medium { background:#fd7e14; }
+    .risk-value.low { background:#28a745; }
+
+    .instances-table { width:100%; border-collapse:collapse; margin-top:8px; border:1px solid #dee2e6; font-size:13px; }
+    .instances-table th { background:#f1f3f5; padding:10px 12px; text-align:left; font-weight:600; color:#495057; border-bottom:2px solid #dee2e6; }
+    .instances-table td { padding:10px 12px; border-bottom:1px solid #e9ecef; color:#2f3a47; }
+    .instances-table tr:last-child td { border-bottom:none; }
+    .instances-table tr:hover { background:#f8f9fa; }
+    .instances-table code { background:#e7f1ff; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px; }
+
+    .remediation-box { background:#fff3cd; border-left:4px solid #ffc107; padding:14px 16px; border-radius:4px; }
+    .remediation-box .section-title { color:#856404; margin-bottom:8px; }
+    .remediation-box .section-content { color:#664d03; line-height: 1.8; }
+    .remediation-box .section-content > div { margin-bottom: 16px; }
+
+    .report-footer { background:#f8fafc; padding:14px 32px; color:#5b6b7a; font-size:13px; border-top:1px solid #eef2fb; text-align:center; }
+
+    /* responsive */
+    @media (max-width:900px) {
+      .page { width:calc(100% - 40px); }
+      .summary { flex-direction:column; }
+      .left-summary { width:100%; }
+      .right-summary { width:100%; flex: none; margin-left:0; }
+      .chart-container { width: 260px; height: 260px; }
+    }
+
+    /* print */
+    @page { size: A4 portrait; margin: 12mm; }
+    @media print {
+      body { background: white; }
+      .page { box-shadow:none; border-radius:0; width: auto; }
+      .chart-wrapper, .card, .summary-table { page-break-inside: avoid; }
+      .report-header, .meta, .report-footer { -webkit-print-color-adjust: exact; }
+      .no-print { display:none !important; }
+    }
+
+    .anchor { display:block; padding-top:40px; margin-top:-40px; }
+  </style>
+</head>
+<body>
+    <div class="page" role="document">
+    <!-- HEADER -->
+    <header class="report-header">
+      <div class="report-title">WebSecScan Security Report</div>
+      <div class="report-sub">Web Application Security Analysis</div>
+    </header>
+
+    <!-- META -->
+    <div class="meta">
+      <div class="meta-item"><strong>Target:</strong> <code>https://example.com</code></div>
+      <div class="meta-item"><strong>Scan Time:</strong> 2025-12-15 18:40:52</div>
+    </div>
+
+    <!-- SUMMARY -->
+    <section class="summary" aria-label="Executive summary">
+      <div class="left-summary">
+        <div class="stat-cards">
+          <div class="card">
+            <div class="num">19</div>
+            <div class="label">Total Findings</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Red;">0</div>
+            <div class="label">High</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Orange;">5</div>
+            <div class="label">Medium</div>
+          </div>
+          <div class="card">
+            <div class="num" style="color:Green;">14</div>
+            <div class="label">Low</div>
+          </div>
+        </div>
+
+        <table class="summary-table" role="table" aria-label="Findings summary by category">
+          <thead>
+            <tr><th>Category</th><th>High</th><th>Medium</th><th>Low</th><th>Total</th></tr>
+          </thead>
+          <tbody>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Misconfigured HTTP Security Header</td>
+              <td style="font-weight:700; color:Red">0</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">12</td>
+              <td style="font-weight:800; color:#452829">12</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Server Information Disclosure</td>
+              <td style="font-weight:700; color:Red">0</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">1</td>
+              <td style="font-weight:800; color:#452829">1</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Cross-Origin Resource Sharing (CORS) Misconfiguration</td>
+              <td style="font-weight:700; color:Red">0</td>
+              <td style="font-weight:700; color:Orange">0</td>
+              <td style="font-weight:700; color:Green">1</td>
+              <td style="font-weight:800; color:#452829">1</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Sensitive Directory and File Exposure</td>
+              <td style="font-weight:700; color:Red">0</td>
+              <td style="font-weight:700; color:Orange">1</td>
+              <td style="font-weight:700; color:Green">0</td>
+              <td style="font-weight:800; color:#452829">1</td>
+            </tr>
+            
+            <tr>
+              <td style="font-weight:700; color:#452829">Weak or Misconfigured SSL/TLS</td>
+              <td style="font-weight:700; color:Red">0</td>
+              <td style="font-weight:700; color:Orange">4</td>
+              <td style="font-weight:700; color:Green">0</td>
+              <td style="font-weight:800; color:#452829">4</td>
+            </tr>
+            
+          </tbody>
+        </table>
+      </div>
+
+      <div class="right-summary">
+        <div class="chart-wrapper" role="img" aria-label="Vulnerability categories chart">
+          <div class="card-title">Vulnerability Categories Chart</div>
+          <div class="chart-container">
+            <canvas id="categoryChart"></canvas>
+          </div>
+          <div style="margin-top:16px;font-size:13px;font-weight:700;color:#5b6b7a;">
+            Click a slice to jump to that details section.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DETAILED FINDINGS -->
+    <section class="details" id="details">
+      <h2>Detailed Findings</h2>
+
+      
+        
+        
+        
+
+        
+
+        
+        
+        
+        
+          
+        
+
+        <a id="anchor-0" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-low" data-category="Security Headers">
+          <div class="vuln-header">
+            
+            
+            <div class="vuln-title">Misconfigured HTTP Security Header</div>
+
+            
+          </div>
+
+          <div class="vuln-content">
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                  
+                  <div class="section-content">
+                    
+                      <p>HTTP security headers provide yet another layer of security by helping to mitigate attacks and security vulnerabilities. Whenever a browser requests a page from a web server, the server responds with the content along with HTTP response headers. With the misconfigured or missing of HTTP security headers, the attackers may gain information from the data which may lead to various of attacks such as clickjacking, cross-site scripting (XSS) and others attacks as well.</p>
+                    
+                  </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  
+                  
+                  
+                  
+
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value low">Low</span>
+                    
+                  </div>
+
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    
+                    
+                    <span class="risk-value low">3.1 (AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+
+                
+                
+                
+
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      
+                        <th>Header</th>
+                      
+                        <th>Status</th>
+                      
+                        <th>Current Value</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Content-Security-Policy
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Strict-Transport-Security
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              X-Frame-Options
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              X-XSS-Protection
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              X-Content-Type-Options
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Cache-Control
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Misconfigured
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">max-age=86000</code>
+
+                                
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Referrer-Policy
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Content-Type
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Misconfigured
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">text/html</code>
+
+                                
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Cross-Origin-Opener-Policy
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Cross-Origin-Embedder-Policy
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Cross-Origin-Resource-Policy
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Permissions-Policy
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              Missing
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                  </tbody>
+                </table>
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title">Impact</div>
+
+                
+                
+
+                
+                
+                  
+                  
+                    
+                  
+                
+                  
+                  
+                    
+                  
+                
+                  
+                  
+                    
+                  
+                
+                  
+                  
+                    
+                  
+                
+                  
+                  
+                    
+                  
+                
+                  
+                  
+                    
+                  
+                
+                  
+                  
+                    
+                  
+                
+                  
+                  
+                
+                  
+                  
+                    
+                  
+                
+                  
+                  
+                    
+                  
+                
+                  
+                  
+                    
+                  
+                
+                  
+                  
+                
+
+                
+                
+                  <ol class="section-content">
+                    
+                      <li style="margin-bottom:12px;">
+                        <strong>Content-Security-Policy</strong><br/>
+                        Missing Content-Security-Policy significantly increases exploitability of XSS vulnerabilities.
+                      </li>
+                    
+                      <li style="margin-bottom:12px;">
+                        <strong>Strict-Transport-Security</strong><br/>
+                        Missing Strict-Transport-Security allows downgrade attacks and enables interception of traffic as this header lets a website tell browsers that it should only be accessed using HTTPS, instead of using HTTP.
+                      </li>
+                    
+                      <li style="margin-bottom:12px;">
+                        <strong>X-Frame-Options</strong><br/>
+                        Missing X-Frame-Options allows clickjacking attacks.
+                      </li>
+                    
+                      <li style="margin-bottom:12px;">
+                        <strong>X-XSS-Protection</strong><br/>
+                        Missing X-XSS-Protection increases exposure to reflected XSS attacks in older browsers.
+                      </li>
+                    
+                      <li style="margin-bottom:12px;">
+                        <strong>X-Content-Type-Options</strong><br/>
+                        Missing or insecure X-Content-Type-Options allows MIME-sniffing attacks, increasing XSS risk.
+                      </li>
+                    
+                      <li style="margin-bottom:12px;">
+                        <strong>Cache-Control</strong><br/>
+                        Missing or weak Cache-Control may expose sensitive information stored in browser cache.
+                      </li>
+                    
+                      <li style="margin-bottom:12px;">
+                        <strong>Referrer-Policy</strong><br/>
+                        Missing Referrer-Policy may cause the browser to leak sensitive URL information to external sites during navigation.
+                      </li>
+                    
+                      <li style="margin-bottom:12px;">
+                        <strong>Cross-Origin-Opener-Policy</strong><br/>
+                        Missing COOP allows external sites to open and interact with the browsing context, increasing risks such as cross-origin attacks and tab-nabbing.
+                      </li>
+                    
+                      <li style="margin-bottom:12px;">
+                        <strong>Cross-Origin-Embedder-Policy</strong><br/>
+                        Missing COEP may allow the application to load untrusted cross-origin resources that are not opt-in, reducing the protection against cross-site data leaks.
+                      </li>
+                    
+                      <li style="margin-bottom:12px;">
+                        <strong>Cross-Origin-Resource-Policy</strong><br/>
+                        Missing CORP may allow other websites to load the resources cross-origin, potentially exposing sensitive data.
+                      </li>
+                    
+                  </ol>
+
+                
+                
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title">Remediation</div>
+
+                  
+                  
+
+                  
+                  
+                    
+                    
+                      
+                    
+                  
+                    
+                    
+                      
+                    
+                  
+                    
+                    
+                      
+                    
+                  
+                    
+                    
+                      
+                    
+                  
+                    
+                    
+                      
+                    
+                  
+                    
+                    
+                      
+                    
+                  
+                    
+                    
+                      
+                    
+                  
+                    
+                    
+                      
+                    
+                  
+                    
+                    
+                      
+                    
+                  
+                    
+                    
+                      
+                    
+                  
+                    
+                    
+                      
+                    
+                  
+                    
+                    
+                      
+                    
+                  
+
+                  
+                  
+                    <ol class="section-content">
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>Content-Security-Policy</strong><br/>
+                          Content-Security-Policy: default-src &#39;self&#39;; frame-ancestors &#39;none&#39;
+                        </li>
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>Strict-Transport-Security</strong><br/>
+                          Strict-Transport-Security: max-age=31536000; includeSubDomains
+                        </li>
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>X-Frame-Options</strong><br/>
+                          X-Frame-Options: SAMEORIGIN / DENY
+                        </li>
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>X-XSS-Protection</strong><br/>
+                          X-XSS-Protection: 0
+                        </li>
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>X-Content-Type-Options</strong><br/>
+                          X-Content-Type-Options: nosniff
+                        </li>
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>Cache-Control</strong><br/>
+                          Cache-Control: no-store, no-cache
+                        </li>
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>Referrer-Policy</strong><br/>
+                          Referrer-Policy: strict-origin-when-cross-origin
+                        </li>
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>Content-Type</strong><br/>
+                          Content-Type: text/html; charset=UTF-8
+                        </li>
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>Cross-Origin-Opener-Policy</strong><br/>
+                          Cross-Origin-Opener-Policy: same-origin
+                        </li>
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>Cross-Origin-Embedder-Policy</strong><br/>
+                          Cross-Origin-Embedder-Policy: require-corp
+                        </li>
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>Cross-Origin-Resource-Policy</strong><br/>
+                          Cross-Origin-Resource-Policy: same-site
+                        </li>
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>Permissions-Policy</strong><br/>
+                          Add Permissions-Policy to control access to powerful features (camera, microphone, geolocation).
+                        </li>
+                      
+                    </ol>
+
+                  
+                  
+                </div>
+              </div>
+
+            
+          </div>
+        </div>
+      
+        
+        
+        
+
+        
+
+        
+        
+        
+        
+          
+        
+
+        <a id="anchor-1" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-low" data-category="Server Information">
+          <div class="vuln-header">
+            
+            
+            <div class="vuln-title">Server Information Disclosure</div>
+
+            
+          </div>
+
+          <div class="vuln-content">
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                  
+                  <div class="section-content">
+                    
+                      <p>Server Information Disclosure occurs when a web server exposes details about its software, technologies, or behavior through HTTP headers or error responses. These details help attackers fingerprint the environment and identify version-specific vulnerabilities.</p>
+                    
+                      <p>Exposing server, technology, or framework details increases the chance attackers can find and use known exploits against specific versions. Error responses that reveal internal details further aid fingerprinting and targeted attacks.</p>
+                    
+                  </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  
+                  
+                  
+                  
+
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value low">Low</span>
+                    
+                  </div>
+
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    
+                    
+                    <span class="risk-value low">3.1 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+
+                
+                
+                
+
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      
+                        <th>Finding</th>
+                      
+                        <th>Evidence</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Error Pages Reveal Server Details
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                Error responses (404) disclosed server information, including the server header AkamaiNetStorage.
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                  </tbody>
+                </table>
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title">Impact</div>
+
+                
+                
+
+                
+                
+                  
+                  
+                    
+                  
+                
+
+                
+                
+                  <ol class="section-content">
+                    
+                      <li style="margin-bottom:12px;">
+                        <strong>Error Pages Reveal Server Details</strong><br/>
+                        Default/error pages or verbose error responses may reveal internal paths, server versions, stack traces, or other internal details that aid attacker fingerprinting and exploitation.
+                      </li>
+                    
+                  </ol>
+
+                
+                
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title">Remediation</div>
+
+                  
+                  
+
+                  
+                  
+                    
+                    
+                      
+                    
+                  
+
+                  
+                  
+                    <ol class="section-content">
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>Error Pages Reveal Server Details</strong><br/>
+                          Replace default error pages with custom error pages that do not expose server or framework information.
+                        </li>
+                      
+                    </ol>
+
+                  
+                  
+                </div>
+              </div>
+
+            
+          </div>
+        </div>
+      
+        
+        
+        
+
+        
+
+        
+        
+        
+        
+          
+        
+
+        <a id="anchor-2" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-high" data-category="CORS Security">
+          <div class="vuln-header">
+            
+            
+            <div class="vuln-title">Cross-Origin Resource Sharing (CORS) Misconfiguration</div>
+
+            
+          </div>
+
+          <div class="vuln-content">
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                  
+                  <div class="section-content">
+                    
+                      <p>Cross-Origin Resource Sharing (CORS) controls how web applications allow cross-origin requests from different origins. Improper CORS configuration can allow unauthorized websites to read sensitive responses or perform authenticated actions on behalf of users.</p>
+                    
+                      <p>The scanner evaluates CORS behavior by comparing server responses under different request conditions, focusing on how CORS headers are handled when an Origin header is present or absent.</p>
+                    
+                      <p>- Access-Control-Allow-Origin (ACAO): The scanner checks whether the server responds with a wildcard (*)or reflects arbitrary origins by sending requests with and without a malicious Origin (e.g., https://evil-attacker.com). This identifies overly permissive or origin-reflection issues.<br/>- Access-Control-Allow-Credentials (ACAC): The scanner verifies whether credentials are allowed in cross-origin requests and ensures that ACAC is not improperly combined with a wildcard origin, which would violate CORS security best practices.<br/>- Access-Control-Allow-Methods (ACAM): The scanner sends preflight OPTIONS requests to determine whether unnecessary or dangerous HTTP methods like PUT are exposed cross-origin.<br/>- Access-Control-Allow-Headers (ACAH): The scanner injects custom headers during preflight requests to observe whether the server allows arbitrary request headers, which could enable malicious cross-origin requests.<br/>- Access-Control-Max-Age (ACMA): The scanner checks whether preflight caching is enabled and evaluates if excessive caching could allow long-lived abuse of insecure CORS decisions.<br/>- Vary Header: The scanner inspects the Vary header to confirm whether responses are correctly varied based on Origin or preflight headers.Missing or incorrect Vary values may cause cache poisoning or unintended cross-origin data exposure.</p>
+                    
+                      <p>This multi-stage testing aligns with OWASP Origin Header Scrutiny recommendations.</p>
+                    
+                  </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  
+                  
+                  
+                  
+
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value high">High</span>
+                    
+                  </div>
+
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    
+                    
+                    
+                    <span class="risk-value high">8.3 (AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:L/A:N)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+
+                
+                
+                
+
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      
+                        <th>Finding</th>
+                      
+                        <th>Evidence</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Missing Access-Control-Max-Age Header
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                The server does not include the Access-Control-Max-Age header.
+
+                              
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                  </tbody>
+                </table>
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title">Impact</div>
+
+                
+                
+
+                
+                
+                  
+                  
+                    
+                  
+                
+
+                
+                
+                  <ol class="section-content">
+                    
+                      <li style="margin-bottom:12px;">
+                        <strong>The server does not include the Access-Control-Max-Age header.</strong><br/>
+                        The absence of Access-Control-Max-Age causes browsers to repeatedly perform preflight requests. While not directly exploitable, this can degrade performance and increase server load.
+                      </li>
+                    
+                  </ol>
+
+                
+                
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title">Remediation</div>
+
+                  
+                  
+
+                  
+                  
+                    
+                    
+                      
+                    
+                  
+
+                  
+                  
+                    <ol class="section-content">
+                      
+                        <li style="margin-bottom:14px;">
+                          <strong>The server does not include the Access-Control-Max-Age header.</strong><br/>
+                          Set a reasonable Access-Control-Max-Age (eg. 300–600 seconds) to help browsers reuse valid preflight results without adding performance overhead.
+                        </li>
+                      
+                    </ol>
+
+                  
+                  
+                </div>
+              </div>
+
+            
+          </div>
+        </div>
+      
+        
+        
+        
+
+        
+
+        
+        
+        
+        
+          
+        
+
+        <a id="anchor-3" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-medium" data-category="Directory Exposure">
+          <div class="vuln-header">
+            
+            
+            <div class="vuln-title">Sensitive Directory and File Exposure</div>
+
+            
+          </div>
+
+          <div class="vuln-content">
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                  
+                  <div class="section-content">
+                    
+                      <p>Directory exposure occurs when web servers are misconfigured to display directory listings or when sensitive files and directories are accessible without proper authentication. This can reveal the application's file structure, backup files, configuration files, and other sensitive information.</p>
+                    
+                  </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  
+                  
+                  
+                  
+
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value medium">Medium</span>
+                    
+                  </div>
+
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    
+                    
+                    <span class="risk-value medium">5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+
+                
+                
+                
+
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      
+                        <th>Finding</th>
+                      
+                        <th>Status</th>
+                      
+                        <th>URL</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              /
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              200
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+                              https://example.com/
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                  </tbody>
+                </table>
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title">Impact</div>
+
+                
+                
+
+                
+                
+                  
+                  
+                
+
+                
+                
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title">Remediation</div>
+
+                  
+                  
+
+                  
+                  
+                    
+                    
+                  
+
+                  
+                  
+                    <div class="section-content">
+                      
+                        <p>1. Remove sensitive files and folders from the webroot<br>2. Deny HTTP access to hidden or sensitive files at the server layer<br>3. Disable directory listing<br>4. Use strict file and folder permissions<br>5. Review for exposed secrets and rotate them if necessary</p>
+                      
+                    </div>
+                  
+                </div>
+              </div>
+
+            
+          </div>
+        </div>
+      
+        
+        
+        
+
+        
+
+        
+        
+        
+        
+          
+        
+
+        <a id="anchor-4" class="anchor" aria-hidden="true"></a>
+        <div class="category-section risk-medium" data-category="SSL/TLS">
+          <div class="vuln-header">
+            
+            
+            <div class="vuln-title">Weak or Misconfigured SSL/TLS</div>
+
+            
+          </div>
+
+          <div class="vuln-content">
+              <div class="vuln-section">
+                <div class="section-title">Description</div>
+                  
+                  <div class="section-content">
+                    
+                      <p>SSL/TLS (Secure Sockets Layer / Transport Layer Security) provides encryption for data in transit between clients and servers. Weak SSL/TLS configurations, outdated protocols, weak cipher suites, or certificate issues can expose communications to interception, tampering, and man-in-the-middle attacks.</p>
+                    
+                      <p>Common SSL/TLS weaknesses include missing HTTPS support, deprecated protocol versions, weak cryptographic algorithms, invalid or expired certificates, and missing security headers such as HTTP Strict Transport Security (HSTS).</p>
+                    
+                  </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Risk Rating</div>
+                <div class="risk-rating">
+                  
+                  
+                  
+                  
+
+                  <div class="risk-item">
+                    <span class="risk-label">Severity:</span>
+                    
+                      <span class="risk-value medium">Medium</span>
+                    
+                  </div>
+
+                  <div class="risk-item">
+                    <span class="risk-label">CVSS:</span>
+                    
+                    
+                    <span class="risk-value medium">5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vuln-section">
+                <div class="section-title">Findings</div>
+
+                
+                
+                
+
+                <table class="instances-table" role="table" aria-label="Findings">
+                  <thead>
+                    <tr>
+                      
+                        <th>Finding</th>
+                      
+                        <th>Current Value</th>
+                      
+                        <th>Evidence</th>
+                      
+                    </tr>
+                  </thead>
+                  <tbody>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Use of Weak Cipher Suites
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                Weak DH (253 bits)
+                              
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                Weak ciphers detected: Weak DH (253 bits)
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Weak Diffie-Hellman Key Size
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                DH Key Size: 253 bits
+                              
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                Temporary DH key length reported: 253 bits
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              HTTPS Not Enforced (No HTTP → HTTPS Redirect)
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                Plain HTTP requests are not redirected to HTTPS (or redirect not observed).
+                              
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                no-redirect
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                      
+                      
+                      
+                      <tr>
+                        
+                        
+                          <td  style="font-weight:600;" >
+                            
+
+                            
+                            
+                              Missing HSTS (HTTP Strict Transport Security)
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                HSTS header not present
+                              
+
+                            
+                            
+                          </td>
+                        
+                          <td >
+                            
+
+                            
+                            
+
+                              
+                              
+                                no-hsts
+                              
+
+                            
+                            
+                          </td>
+                        
+                      </tr>
+                    
+                  </tbody>
+                </table>
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="section-title">Impact</div>
+
+                
+                
+
+                
+                
+                  
+                  
+                
+                  
+                  
+                
+                  
+                  
+                
+                  
+                  
+                
+
+                
+                
+              </div>
+
+              
+              <div class="vuln-section" style="margin-top:24px;">
+                <div class="remediation-box">
+                  <div class="section-title">Remediation</div>
+
+                  
+                  
+
+                  
+                  
+                    
+                    
+                  
+                    
+                    
+                  
+                    
+                    
+                  
+                    
+                    
+                  
+
+                  
+                  
+                </div>
+              </div>
+
+            
+          </div>
+        </div>
+      
+    </section>
+
+    <footer class="report-footer">
+      WebSecScan — Web Security Misconfiguration Analyzer · Generated 2025-12-15 18:40:52 · <span style="opacity:.85">Lee Zhi Hui</span>
+    </footer>
+  </div>
+
+  <!-- Chart.js script -->
+  <script>
+    (function(){
+      const categories = [
+        
+          { name: "Security Headers", high: 0, medium: 0, low: 12 },
+        
+          { name: "Server Information", high: 0, medium: 0, low: 1 },
+        
+          { name: "CORS Security", high: 0, medium: 0, low: 1 },
+        
+          { name: "Directory Exposure", high: 0, medium: 1, low: 0 },
+        
+          { name: "SSL/TLS", high: 0, medium: 4, low: 0 }
+        
+      ];
+      const labels = categories.map(c => c.name);
+      const values = categories.map(c => (c.high + c.medium + c.low));
+      const palette = ['#FF6B6B','#FF9F43','#FFD43B','#6BCB77','#4D96FF','#845EC2','#00C9A7','#FF9671'];
+      const colors = labels.map((_,i)=>palette[i%palette.length]);
+
+      const ctx = document.getElementById('categoryChart').getContext('2d');
+      const categoryChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: colors,
+            borderWidth: 2,
+            borderColor: '#fff',
+            hoverOffset: 8,
+            spacing: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { 
+                boxWidth: 14, 
+                padding: 10, 
+                usePointStyle: true,
+                font: {
+                  size: 12
+                }
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.label}: ${ctx.raw} findings`
+              }
+            }
+          },
+          onClick(evt) {
+            const points = categoryChart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+            if (!points.length) return;
+            const idx = points[0].index;
+            const anchorId = 'anchor-' + idx;
+            const el = document.getElementById(anchorId);
+            if (el) { 
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' }); 
+              return; 
+            }
+            const catName = labels[idx];
+            const sec = document.querySelector(`[data-category="${catName}"]`);
+            if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+      });
+
+      // keyboard accessibility for chart wrapper
+      const chartWrapper = document.querySelector('.chart-wrapper');
+      if (chartWrapper) {
+        chartWrapper.setAttribute('tabindex','0');
+        chartWrapper.addEventListener('keydown', (e)=>{
+          if (e.key === 'Enter' || e.key === ' ') {
+            const details = document.getElementById('details');
+            if (details) details.scrollIntoView({ behavior: 'smooth' });
+            e.preventDefault();
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

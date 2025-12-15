@@ -465,6 +465,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
             "Category": "SSL/TLS",
             "Severity": "High",
             "Description": "HTTPS Not Supported",
+            "_item_short": "HTTPS Not Supported",
             "Current Value": f"No TLS listener detected on {host}:{port}.",
             "Evidence": evidence,
             "Recommendation": "Enable HTTPS and configure a valid certificate. Ensure a TLS listener is present on port 443 (or the configured port)."
@@ -502,6 +503,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
             "Category": "SSL/TLS",
             "Severity": "High",
             "Description": "SSL Certificate Validity – Expired / Not Yet Valid / Mismatch",
+            "_item_short": "SSL Certificate Invalid",
             "Current Value": f"Status: validation error ({verification_error})",
             "Evidence": verification_error,
             "Recommendation": "Install a valid SSL certificate from a trusted CA and ensure the certificate matches the host name."
@@ -513,6 +515,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
             "Category": "SSL/TLS",
             "Severity": "Medium",
             "Description": "Use of Weak Protocol Version",
+            "_item_short": "Use of Weak Protocol Version",
             "Current Value": f"{', '.join(deprecated)}",
             "Evidence": f"Deprecated protocols detected: {', '.join(deprecated)}",
             "Recommendation": "Disable deprecated versions. Only allow TLS 1.2 and TLS 1.3."
@@ -524,6 +527,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
             "Category": "SSL/TLS",
             "Severity": "Medium",
             "Description": "Use of Weak Cipher Suites",
+            "_item_short": "Use of Weak Cipher Suites",
             "Current Value": ", ".join(weak_ciphers),
             "Evidence": f"Weak ciphers detected: {', '.join(weak_ciphers)}",
             "Recommendation": "Remove weak cipher suites and enable modern AEAD suites (AES-GCM, ChaCha20-Poly1305) with ECDHE."
@@ -537,6 +541,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
                 "Category": "SSL/TLS",
                 "Severity": "Medium",
                 "Description": "Missing Forward Secrecy",
+                "_item_short": "Missing Forward Secrecy",
                 "Current Value": f"Negotiated Cipher: {negotiated_cipher}\nForward Secrecy: No",
                 "Evidence": f"Negotiated cipher: {negotiated_cipher}",
                 "Recommendation": "Enable ECDHE/DHE cipher suites to provide forward secrecy (ECDHE preferred)."
@@ -546,6 +551,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
                 "Category": "SSL/TLS",
                 "Severity": "Medium",
                 "Description": "Weak Diffie-Hellman Key Size",
+                "_item_short": "Weak Diffie-Hellman Key Exchange",
                 "Current Value": f"DH Key Size: {dh_bits} bits",
                 "Evidence": f"Temporary DH key length reported: {dh_bits} bits",
                 "Recommendation": "Enforce DH >= 2048 bits or use ECDHE (X25519/P-256)."
@@ -564,6 +570,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
                 "Category": "SSL/TLS",
                 "Severity": "Medium",
                 "Description": "SSL Certificate Validity – Expiry",
+                "_item_short": "SSL Certificate Expired",
                 "Current Value": f"Expiry Date: {expiry_date}\nDays Until Expiry: {days_left}",
                 "Evidence": f"Days until expiry: {days_left}",
                 "Recommendation": "Renew certificate before expiry to avoid service interruption."
@@ -574,6 +581,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
                 "Category": "SSL/TLS",
                 "Severity": "Medium",
                 "Description": "SSL Certificate Validity – Duration Too Long",
+                "_item_short": "SSL Certificate Validity Too Long",
                 "Current Value": f"Certificate Validity: {total_days} days",
                 "Evidence": f"Total validity days: {total_days}",
                 "Recommendation": "Replace certificate with one valid for ≤ 397 days."
@@ -583,7 +591,8 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
             findings.append({
                 "Category": "SSL/TLS",
                 "Severity": "Medium",
-                "Description": "Weak Signature Algorithm",
+                "Description": "Weak Certificate Signature Algorithm",
+                "_item_short": "Weak Signature Algorithm",
                 "Current Value": str(sig_alg),
                 "Evidence": f"Signature algorithm: {sig_alg}",
                 "Recommendation": "Use certificates signed with SHA-256 or stronger."
@@ -596,6 +605,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
             "Category": "SSL/TLS",
             "Severity": "Medium",
             "Description": "HTTPS Not Enforced (No HTTP → HTTPS Redirect)",
+            "_item_short": "HTTPS Not Supported",
             "Current Value": "Plain HTTP requests are not redirected to HTTPS (or redirect not observed).",
             "Evidence": "no-redirect",
             "Recommendation": "Configure the server to redirect all HTTP traffic to HTTPS (301/307) and use HSTS."
@@ -606,6 +616,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
             "Category": "SSL/TLS",
             "Severity": "Medium",
             "Description": "Missing HSTS (HTTP Strict Transport Security)",
+            "_item_short": "Missing HSTS",
             "Current Value": "HSTS header not present",
             "Evidence": "no-hsts",
             "Recommendation": "Add Strict-Transport-Security: max-age=31536000; includeSubDomains; preload"

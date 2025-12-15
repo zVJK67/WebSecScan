@@ -53,11 +53,12 @@ def analyze_http_methods_from_list(methods_list: List[str]) -> List[Dict[str, An
         for m in risky:
             findings.append({
                 "Category": "HTTP Methods",
-                "Header": f"HTTP Method: {m}",
+                "Header": f"HTTP Method: {m}",  # For display in table - KEEP the prefix
+                "_item_short": m,  # For ItemDetails lookup - just the method name
+                "Method": m,
                 "Status": "Unsafe",
                 "Severity": "High",
                 "Recommendation": _METHOD_RISKS[m],
-                "Method": m,
                 "Methods": methods_list
             })
     

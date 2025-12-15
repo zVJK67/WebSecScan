@@ -220,6 +220,7 @@ def analyze_cors(
         findings.append({
             "Category": "CORS Security",
             "Type": "Wildcard Origin (*) Allowed",
+            "Header": "Wildcard Origin (*) Allowed",  # For table display
             "_item_short": "Wildcard Origin Allowed",
             "CurrentValue": f"Access-Control-Allow-Origin: {allow_origin}",
             "Recommendation": "Specify only trusted, legitimate domains instead of using a wildcard *."
@@ -230,6 +231,7 @@ def analyze_cors(
         findings.append({
             "Category": "CORS Security",
             "Type": "Credentials Allowed for All Origins",
+            "Header": "Credentials Allowed for All Origins",  # For table display
             "_item_short": "Credentials Allowed for All Origins",
             "CurrentValue": f"Access-Control-Allow-Credentials: true + Access-Control-Allow-Origin: *",
             "Recommendation": "Only enable credentials for specific trusted domains. Ensure Allow-Credentials: true is never used with Allow-Origin: *."
@@ -242,6 +244,7 @@ def analyze_cors(
             findings.append({
                 "Category": "CORS Security",
                 "Type": "Unsafe Origin Reflection",
+                "Header": "Unsafe Origin Reflection",  # For table display
                 "_item_short": "Unsafe Origin Reflection",
                 "CurrentValue": f"Access-Control-Allow-Origin: {allowed}",      
                 "Detail": "The server reflects whatever Origin the request sends, meaning it trusts unknown domains.",
@@ -259,6 +262,7 @@ def analyze_cors(
             findings.append({
                 "Category": "CORS Security",
                 "Type": "Excessive Allowed Methods",
+                "Header": "Excessive Allowed Methods",  # For table display
                 "_item_short": "Excessive Allowed Methods",
                 "CurrentValue": f"Access-Control-Allow-Methods: {allow_methods}",
                 "Detail": "The server allows more HTTP methods than necessary, increasing exposure.",
@@ -271,6 +275,7 @@ def analyze_cors(
             findings.append({
                 "Category": "CORS Security",
                 "Type": "Missing 'Vary: Origin' Header",
+                "Header": "Missing 'Vary: Origin' Header",  # For table display
                 "_item_short": "Missing Vary Origin Header",
                 "Detail": "The server does not include the Vary: Origin header.",
                 "Recommendation": "Add Vary: Origin when the server returns different CORS responses depending on the request's Origin."
@@ -281,6 +286,7 @@ def analyze_cors(
                 findings.append({
                     "Category": "CORS Security",
                     "Type": "Unsafe 'Vary: Origin' Usage",
+                    "Header": "Unsafe 'Vary: Origin' Usage",  # For table display
                     "_item_short": "Unsafe Vary Origin Usage",
                     "CurrentValue": f"Vary: Origin",
                     "Detail": "The header is present, but the overall CORS policy (allowed origins, credentials, reflection) is unsafe, causing the unsafe configuration to be cached.",
@@ -292,6 +298,7 @@ def analyze_cors(
         findings.append({
             "Category": "CORS Security",
             "Type": "Missing Access-Control-Max-Age Header",
+            "Header": "Missing Access-Control-Max-Age Header",  # For table display
             "_item_short": "Missing Access-Control-Max-Age",
             "Detail": "The server does not include the Access-Control-Max-Age header.",
             "Recommendation": "Set a reasonable Access-Control-Max-Age (eg. 300–600 seconds) to help browsers reuse valid preflight results without adding performance overhead."
@@ -303,6 +310,7 @@ def analyze_cors(
                 findings.append({
                     "Category": "CORS Security",
                     "Type": "Unsafe or Excessively Long Access-Control-Max-Age",
+                    "Header": "Unsafe or Excessively Long Access-Control-Max-Age",  # For table display
                     "_item_short": "Excessive Access-Control-Max-Age",
                     "CurrentValue": f"Access-Control-Max-Age: {max_age}",
                     "Detail": "The server caches CORS permissions for too long, causing outdated or incorrect policies to persist.",
@@ -319,6 +327,7 @@ def analyze_cors(
             findings.append({
                 "Category": "CORS Security",
                 "Type": "CORS Enabled on Endpoints That Don't Need It",
+                "Header": "CORS Enabled on Endpoints That Don't Need It",  # For table display
                 "_item_short": "CORS Enabled on Unnecessary Endpoints",
                 "Detail": "The server appears to return CORS headers even for endpoints that do not require cross-origin access.",
                 "Recommendation": "Only enable CORS for specific API endpoints that truly require cross-origin requests. Disable it for login pages or sensitive routes."
@@ -332,6 +341,7 @@ def analyze_cors(
                 findings.append({
                     "Category": "CORS Security",
                     "Type": "Preflight (OPTIONS) Accepts Untrusted Origins",
+                    "Header": "Preflight (OPTIONS) Accepts Untrusted Origins",  # For table display
                     "_item_short": "Preflight Accepts Untrusted Origins",
                     "Detail": "When the scanner sends an OPTIONS request with an untrusted Origin, the server still responds with full permissions, including credentials and multiple allowed methods.",
                     "Recommendation": "Update the preflight validation to reject unapproved origins before responding with CORS permissions."

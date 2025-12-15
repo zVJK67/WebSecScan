@@ -4,6 +4,7 @@ Export Findings Module
 
 Exports security scan findings to HTML, JSON, and PDF formats.
 Generates interactive HTML reports with client-side export functionality.
+Uses a unified table builder for all categories.
 """
 
 import json
@@ -59,7 +60,7 @@ def export_to_json(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, 
 
 
 # ---------------------------
-# Embedded Jinja2 HTML template
+# Embedded Jinja2 HTML template (unchanged)
 # ---------------------------
 REPORT_TEMPLATE = r"""
 <!doctype html>
@@ -228,6 +229,18 @@ REPORT_TEMPLATE = r"""
     .remediation-box .section-content > div { margin-bottom: 16px; }
 
     .report-footer { background:#f8fafc; padding:14px 32px; color:#5b6b7a; font-size:13px; border-top:1px solid #eef2fb; text-align:center; }
+
+    {% set CATEGORY_RULES = {
+      "Path Traversal":        {"impact": "category", "remediation": "category"},
+      "HTTP Methods":          {"impact": "item",     "remediation": "category"},
+      "Directory Exposure":    {"impact": "item",     "remediation": "category"},
+      "HTTP Security Headers": {"impact": "item",     "remediation": "item"},
+      "Server Info":           {"impact": "item",     "remediation": "item"},
+      "Cookie Security (Server-Side)": {"impact": "item", "remediation": "item"},
+      "Cookie Security (Client-Side)": {"impact": "item", "remediation": "item"},
+      "CORS Security":         {"impact": "item",     "remediation": "item"},
+      "SSL/TLS":               {"impact": "item",     "remediation": "item"}
+    } %}
 
     /* responsive */
     @media (max-width:900px) {
@@ -469,13 +482,19 @@ REPORT_TEMPLATE = r"""
                               {% if cell is iterable and cell is not string %}
                                 <ul style="margin:0; padding-left:18px;">
                                   {% for item in cell %}
-                                    <li><code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">{{ item }}</code></li>
+                                    <li>
+                                      <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">
+                                        {{ item }}
+                                      </code>
+                                    </li>
                                   {% endfor %}
                                 </ul>
 
-                              {# Case 2: CurrentValue (CORS, headers, etc.) #}
+                              {# Case 2: Explicit CurrentValue from finding_obj #}
                               {% elif finding_obj.get("CurrentValue") %}
-                                <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">{{ finding_obj.get("CurrentValue") }}</code>
+                                <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">
+                                  {{ finding_obj.get("CurrentValue") }}
+                                </code>
 
                                 {% if finding_obj.get("Detail") %}
                                   <div style="margin-top:4px;">
@@ -486,6 +505,10 @@ REPORT_TEMPLATE = r"""
                               {# Case 3: Detail only #}
                               {% elif finding_obj.get("Detail") %}
                                 {{ finding_obj.get("Detail") }}
+
+                              {# Case 4: Empty / None value #}
+                              {% elif cell is none or cell == "" %}
+                                <span style="color:#9ca3af;">-</span>
 
                               {# Fallback #}
                               {% else %}
@@ -506,85 +529,70 @@ REPORT_TEMPLATE = r"""
 
               {# IMPACT/CONSEQUENCE SECTION - use rows so we have the exact finding dict appended by builders #}
               <div class="vuln-section" style="margin-top:24px;">
-                <div class="section-title"
-                    style="font-size:15px;text-transform:uppercase;letter-spacing:0.8px;color:#495057;">
-                  Impact / Consequence:
-                </div>
+                <div class="section-title">Impact / Consequence</div>
 
+                {% set rule = CATEGORY_RULES.get(cat_name, {}) %}
                 {% set rows_for_cat = table_rows.get(cat_name, []) %}
-                {% set seen = [] %}
+                {% set schema = table_schema.get(cat_name, []) %}
 
-                {% for row in rows_for_cat %}
-                  {% set f = row[-1] %}
-                  {% set key = f.get('Type') or f.get('_item_short') %}
-                  {% if key and key not in seen %}
-                    {% do seen.append(key) %}
-                    {% if f.get('Impact') %}
-                      <div class="section-content" style="margin-top:12px;">
-                        {% if key and rows_for_cat|length > 1 %}
-                          <div style="font-weight:600;color:#1a1a1a;margin-bottom:4px;">
-                            {{ key }}
-                          </div>
-                        {% endif %}
-                        <div>{{ f.get('Impact') }}</div>
-                      </div>
-                    {% endif %}
-                  {% endif %}
-                {% endfor %}
+                {# ---------- PER-FINDING IMPACT ---------- #}
+                {% if rule.get("impact") == "item" %}
+                  <div class="section-content">
+                    {% for row in rows_for_cat %}
+                      {% set f = row[-1] %}
+                      {% if f.get("Impact") %}
+                        {# Get the actual finding name from the first column of the row #}
+                        {% set finding_name = row[0] if row|length > 0 else f.get("_item_short") %}
+                        <div style="margin-bottom:20px;">
+                          <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">{{ finding_name }}</div>
+                          <div style="color:#2f3a47; line-height:1.6;">{{ f.get("Impact") }}</div>
+                        </div>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+
+                {# ---------- CATEGORY-LEVEL IMPACT ---------- #}
+                {% elif rule.get("impact") == "category" and cat_def.get("Impact") %}
+                  <div class="section-content">
+                    {% for para in cat_def.get("Impact").split('\n\n') %}
+                      <p>{{ para | replace('\n','<br>') | safe }}</p>
+                    {% endfor %}
+                  </div>
+                {% endif %}
               </div>
 
               {# REMEDIATION SECTION #}
               <div class="vuln-section" style="margin-top:24px;">
                 <div class="remediation-box">
-                  <div class="section-title"
-                      style="font-size:15px;text-transform:uppercase;letter-spacing:0.8px;">
-                    Remediation:
-                  </div>
+                  <div class="section-title">Remediation</div>
 
+                  {% set rule = CATEGORY_RULES.get(cat_name, {}) %}
                   {% set rows_for_cat = table_rows.get(cat_name, []) %}
+                  {% set schema = table_schema.get(cat_name, []) %}
 
-                  {# ---- 1) CATEGORY-LEVEL RECOMMENDATION (Path Traversal, etc.) ---- #}
-                  {% if rows_for_cat and rows_for_cat[0][-1].get('Recommendation') %}
-                    {% set rec_text = rows_for_cat[0][-1].get('Recommendation') %}
-                    
-                    {# Check if it's a structured numbered list (contains "1. " pattern) #}
-                    {% if '1. ' in rec_text or '1.' in rec_text[:10] %}
-                      <div class="section-content" style="margin-top:12px;">
-                        {% for item in rec_text.split('\n\n') %}
-                          {% if item.strip() %}
-                            <div style="margin-bottom:16px;">
-                              {{ item | trim | replace('\n', '<br>') | safe }}
-                            </div>
-                          {% endif %}
-                        {% endfor %}
-                      </div>
-                    {% else %}
-                      {# Fallback for non-numbered recommendations #}
-                      <div class="section-content" style="margin-top:12px;">
-                        {% for para in rec_text.split('\n\n') %}
-                          <p style="margin-bottom:8px;">{{ para | trim | replace('\n', '<br>') | safe }}</p>
-                        {% endfor %}
-                      </div>
-                    {% endif %}
+                  {# ---------- PER-FINDING REMEDIATION ---------- #}
+                  {% if rule.get("remediation") == "item" %}
+                    <div class="section-content">
+                      {% for row in rows_for_cat %}
+                        {% set f = row[-1] %}
+                        {% if f.get("Recommendation") %}
+                          {# Get the actual finding name from the first column of the row #}
+                          {% set finding_name = row[0] if row|length > 0 else f.get("_item_short") %}
+                          <div style="margin-bottom:20px;">
+                            <div style="font-weight:700; color:#856404; margin-bottom:6px;">{{ finding_name }}</div>
+                            <div style="color:#664d03; line-height:1.6;">{{ f.get("Recommendation") }}</div>
+                          </div>
+                        {% endif %}
+                      {% endfor %}
+                    </div>
 
-                  {# ---- 2) PER-ITEM RECOMMENDATIONS (Cookies, CORS, Headers) ---- #}
-                  {% else %}
-                    {% set seen = [] %}
-                    {% for row in rows_for_cat %}
-                      {% set f = row[-1] %}
-                      {% set key = f.get('Type') or f.get('_item_short') %}
-                      {% if key and key not in seen and f.get('Recommendation') %}
-                        {% do seen.append(key) %}
-                        <div class="section-content" style="margin-top:12px;">
-                          {% if key and rows_for_cat|length > 1 %}
-                            <div style="font-weight:600;color:#856404;margin-bottom:4px;">
-                              {{ key }}
-                            </div>
-                          {% endif %}
-                          <div>{{ f.get('Recommendation') }}</div>
-                        </div>
-                      {% endif %}
-                    {% endfor %}
+                  {# ---------- CATEGORY-LEVEL REMEDIATION ---------- #}
+                  {% elif rule.get("remediation") == "category" and cat_def.get("Recommendation") %}
+                    <div class="section-content">
+                      {% for para in cat_def.get("Recommendation").split('\n\n') %}
+                        <p>{{ para | replace('\n','<br>') | safe }}</p>
+                      {% endfor %}
+                    </div>
                   {% endif %}
                 </div>
               </div>
@@ -753,7 +761,10 @@ def _match_vuln_def_for_category(cat_name: str, vuln_defs: Dict[str, Any]):
             return val
     return {}
 
-# ---------- Generic table builder helpers ----------
+# ---------------------------
+# UNIFIED TABLE BUILDER
+# ---------------------------
+
 def _first_non_empty(f: dict, keys):
     """Return the first non-empty string-like value for keys from finding f."""
     for k in keys:
@@ -771,16 +782,21 @@ def _first_non_empty(f: dict, keys):
                 return v
     return ""
 
+
 def _rows_generic(flist, col_map):
     """
+    UNIFIED table row builder - works for ALL categories.
+    
     col_map: ordered list of (column_name, candidate_keys)
       candidate_keys: list/tuple of field names to try (first non-empty wins).
+    
     Example:
       col_map = [
-        ("Finding", ["_item_short","Header","name"]),
-        ("Evidence", ["CurrentValue","Current Value","Value"])
+        ("Finding", ["_item_short","Header","Description"]),
+        ("Evidence", ["CurrentValue","Current Value","Evidence"])
       ]
-    Returns rows as list of [col1, col2, ..., finding_dict(optional?)]
+    
+    Returns rows as list of [col1, col2, ..., finding_dict]
     """
     rows = []
     for f in flist:
@@ -788,67 +804,99 @@ def _rows_generic(flist, col_map):
         for _, keys in col_map:
             val = _first_non_empty(f, keys)
             row.append(val if val is not None else "")
-        # append the original finding object as last cell if you need it later in template
-        # but your template expects only the visible columns; do NOT append f if template assumes n cols.
-        # For compatibility with current template (which expects a finding object sometimes),
-        # append the finding object as extra element:
+        # Append the original finding object as last element for template reference
         row.append(f)
         rows.append(row)
     return rows
 
+
 def _make_col_map_from_def(cat_def):
     """
-    Build col_map from category definition convenience keys:
+    Build col_map from category definition.
+    
+    Reads:
       - cat_def.get('TableColumns') -> ["Finding","Evidence"]
       - cat_def.get('TableColumnMap') -> { "Finding": ["_item_short","Header"], "Evidence": ["CurrentValue"] }
-    Fallback common mapping if TableColumnMap not provided.
+    
+    Returns list of (column_name, candidate_keys) tuples.
     """
     cols = cat_def.get("TableColumns") or []
     explicit_map = cat_def.get("TableColumnMap") or {}
+    
+    # Default fallback mappings for common column names
     default_candidates = {
-        "Finding": ["_item_short", "Header", "Context", "name"],
+        "Finding": ["_item_short", "Header", "Context", "Description", "name"],
+        "Method": ["Method", "_item_short", "Header"],
         "Status": ["Status", "state"],
-        "Evidence": ["CurrentValue", "Current Value", "Value", "Detail"],
-        "Current Value": ["CurrentValue", "Current Value", "Value", "Detail"]
+        "Evidence": ["Evidence", "CurrentValue", "Current Value", "Value", "Detail"],
+        "Current Value": ["CurrentValue", "Current Value", "Value", "Detail"],
+        "Endpoint": ["Endpoint", "Path", "URL"],
+        "Payloads Triggering": ["Payloads", "Payloads Triggering"],
+        "Payloads": ["Payloads", "Payloads Triggering"],
+        "Scope": ["Scope"],
+        "URL": ["URL", "Path"],
+        "RelPath": ["RelPath", "Path"]
     }
+    
     col_map = []
     for col_name in cols:
+        # Use explicit mapping from definition, or fallback to defaults
         candidates = explicit_map.get(col_name) or default_candidates.get(col_name) or [col_name]
-        # ensure list
-        if isinstance(candidates, (str,)):
+        
+        # Ensure candidates is always a list
+        if isinstance(candidates, str):
             candidates = [candidates]
+        
         col_map.append((col_name, candidates))
+    
     return col_map
 
 
-# ---------- Utility / Table builders ----------
-def _rows_for_methods(flist):
-    """Return rows for methods table: [Method, Status, finding]"""
-    rows = []
-    for f in flist:
-        method = f.get("_item_short") or f.get("Method") or f.get("Header") or f.get("Context") or ""
-        method_display = str(method).strip()
-        status_display = "Present"
-        rows.append([method_display, status_display, f])
-    return rows
+def _build_table_for_category(cat_name: str, flist: List[Dict], cat_def: Dict) -> tuple:
+    """
+    UNIFIED function to build table schema + rows for ANY category.
+    
+    Returns: (schema: List[str], rows: List[List[Any]])
+    """
+    # If category definition specifies TableColumns, use them
+    if cat_def.get("TableColumns"):
+        schema = cat_def.get("TableColumns")
+        col_map = _make_col_map_from_def(cat_def)
+        rows = _rows_generic(flist, col_map)
+        return schema, rows
+    
+    # Fallback: Auto-detect reasonable defaults based on available fields
+    # This handles cases where no explicit table config is provided
+    
+    # Check if this looks like HTTP methods
+    has_methods = any(
+        f.get("Method") or (f.get("_item_short") or "").upper() in ("OPTIONS","PUT","DELETE","TRACE","DEBUG")
+        for f in flist
+    )
+    
+    if has_methods:
+        schema = ["Method", "Status"]
+        col_map = [
+            ("Method", ["Method", "_item_short", "Header"]),
+            ("Status", ["Status", "state"])
+        ]
+        rows = _rows_generic(flist, col_map)
+        return schema, rows
+    
+    # Default fallback: Generic 3-column table
+    schema = ["Finding", "Status", "Current Value"]
+    col_map = [
+        ("Finding", ["_item_short", "Header", "Context", "Description"]),
+        ("Status", ["Status", "state"]),
+        ("Current Value", ["CurrentValue", "Current Value", "Value", "Detail"])
+    ]
+    rows = _rows_generic(flist, col_map)
+    return schema, rows
 
-def _rows_for_headers(flist):
-    """Return rows for header-style table: [Header, Status, CurrentValue, finding]"""
-    rows = []
-    for f in flist:
-        header = f.get("Header") or f.get("Context") or f.get("Detail") or f.get("_item_short") or ""
-        status = f.get("Status") or f.get("state") or "Unsafe"
-        cur = (f.get("CurrentValue") or f.get("Current Value") or f.get("Value") or f.get("Detail") or f.get("detail"))
-        rows.append([header, status, cur, f])
-    return rows
 
-_TABLETYPE_BUILDERS = {
-    "methods": (["Method", "Status"], _rows_for_methods),
-    "headers": (["Header", "Status", "Current Value"], _rows_for_headers),
-    "server": (["Finding", "Evidence"], _rows_for_methods),
-}
-
-# ---------- Risk rule helpers (pluggable) ----------
+# ---------------------------
+# Risk rule helpers (pluggable)
+# ---------------------------
 def _normalize_item_name(item):
     """Normalize item names for method rules (strip prefix like 'HTTP Method: OPTIONS')."""
     if not item:
@@ -857,6 +905,7 @@ def _normalize_item_name(item):
     if ":" in s:
         s = s.split(":", 1)[1].strip()
     return s.upper()
+
 
 def _rule_methods_options_only(cat_name, flist, cat_def):
     """Dynamic rule for Unsafe HTTP Methods."""
@@ -873,44 +922,85 @@ def _rule_methods_options_only(cat_name, flist, cat_def):
     else:
         return {"severity": "Medium", "cvss": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)"}
 
+
+def _rule_ssl_https_not_supported(cat_name, flist, cat_def):
+    """Dynamic rule for SSL/TLS: High if HTTPS not supported, Medium otherwise."""
+    if not flist:
+        return {"severity": None, "cvss": None}
+    
+    # Check if "HTTPS Not Supported" is present
+    has_https_not_supported = any(
+        "HTTPS Not Supported" in f.get("Description", "")
+        or "HTTPS not supported" in f.get("Description", "")
+        or "No TLS listener" in f.get("Current Value", "")
+        or "No TLS listener" in f.get("Evidence", "")
+        for f in flist
+    )
+    
+    if has_https_not_supported:
+        return {"severity": "High", "cvss": "9.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)"}
+    else:
+        return {"severity": "Medium", "cvss": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)"}
+
+
 _RISK_RULES = {
-    "methods_options_only": _rule_methods_options_only
+    "methods_options_only": _rule_methods_options_only,
+    "ssl_https_not_supported": _rule_ssl_https_not_supported
 }
+
 
 def _compute_category_risk_generic(cat_name, flist, category_defs):
     """Dispatcher for category-level dynamic risk rating. Falls back to definitions' defaults."""
     cat_def = category_defs.get(cat_name, {}) or {}
     rule_key = cat_def.get("RiskRule")
+    
     if rule_key and rule_key in _RISK_RULES:
         result = _RISK_RULES[rule_key](cat_name, flist, cat_def)
         return {
             "severity": result.get("severity") or cat_def.get("DefaultSeverity"),
             "cvss": result.get("cvss") or cat_def.get("DefaultCVSS")
         }
+    
     if flist:
         return {"severity": cat_def.get("DefaultSeverity"), "cvss": cat_def.get("DefaultCVSS")}
+    
     return {"severity": None, "cvss": None}
+
 
 # A4 enforcement helper (returns inline style)
 def _page_style_for_a4(force_a4: bool):
     return ' style="width:210mm;max-width:210mm;margin:0 auto;"' if force_a4 else ""
 
 
-def generate_interactive_html_report(findings: List[Dict[str, Any]],
-                                    summary: Dict[str, Dict[str, int]],
-                                    filename: str = "security_scan_report.html",
-                                    target_url: str = None,
-                                    force_a4: bool = False) -> bool:
+def generate_interactive_html_report(
+    findings: List[Dict[str, Any]],
+    summary: Dict[str, Dict[str, int]],
+    filename: str = "security_scan_report.html",
+    target_url: str = None,
+    force_a4: bool = False
+) -> bool:
     """
     Generate an interactive HTML report using the embedded Jinja2 template.
-    - force_a4: when True, the outer .page gets an inline style to force A4 width
+    Uses UNIFIED table builder for all categories.
     """
     try:
         enriched_findings = enrich_all_findings(findings)
         categories, findings_by_category = _prepare_report_data(enriched_findings, summary)
 
-        # Match defs and normalize some fields
+        # Categories that are PER-FINDING (allowed to have _item_short)
+        PER_ITEM_CATEGORIES = {
+            "HTTP Security Headers",
+            "Server Info",
+            "Cookie Security (Server-Side)",
+            "Cookie Security (Client-Side)",
+            "CORS Security",
+            "SSL/TLS",
+            "HTTP Methods"
+        }
+
+        # Match vulnerability definitions
         category_defs: Dict[str, Dict[str, Any]] = {}
+
         for cat, flist in findings_by_category.items():
             vuln_def = _match_vuln_def_for_category(cat, VULNERABILITY_DEFINITIONS) or {}
             category_defs[cat] = vuln_def
@@ -918,52 +1008,75 @@ def generate_interactive_html_report(findings: List[Dict[str, Any]],
             if not flist:
                 continue
 
-            # figure out per-item key if present
-            item_key = None
-            if "ItemDetails" in vuln_def: 
-                item_key = "ItemDetails"
+            item_key = "ItemDetails" if "ItemDetails" in vuln_def else None
 
             for finding in flist:
+                # Apply category display name
                 if vuln_def.get("DisplayName") and not finding.get("DisplayName"):
                     finding["DisplayName"] = vuln_def["DisplayName"]
 
-                item_name = finding.get("Method") or finding.get("Header") or finding.get("Context") or finding.get("Detail") or finding.get("name")
-                short_name = None
-                if item_name:
-                    if isinstance(item_name, str) and ":" in item_name:
-                        short_name = item_name.split(":", 1)[1].strip()
-                    else:
-                        short_name = str(item_name).strip()
-                    finding["_item_short"] = short_name
+                # ----------------------------
+                # FIX 1: ONLY set _item_short for PER-ITEM categories
+                # ----------------------------
+                if cat in PER_ITEM_CATEGORIES:
+                    item_name = (
+                        finding.get("Method")
+                        or finding.get("Header")
+                        or finding.get("Cookie")
+                        or finding.get("Context")
+                    )
 
-                # attach per-item Impact/Recommendation from defs
-                if item_key and item_name and isinstance(vuln_def.get(item_key, {}), dict):
-                    key = short_name if short_name else item_name
+                    if item_name:
+                        if isinstance(item_name, str) and ":" in item_name:
+                            finding["_item_short"] = item_name.split(":", 1)[1].strip()
+                        else:
+                            finding["_item_short"] = str(item_name).strip()
+
+                # ----------------------------
+                # Attach per-item Impact / Recommendation
+                # ONLY for per-item categories
+                # ----------------------------
+                if (
+                    cat in PER_ITEM_CATEGORIES
+                    and item_key
+                    and finding.get("_item_short")
+                    and isinstance(vuln_def.get(item_key, {}), dict)
+                ):
+                    key = finding["_item_short"]
                     item_def = vuln_def[item_key].get(key, {}) or {}
+
                     if item_def.get("Impact") and not finding.get("Impact"):
-                        finding["Impact"] = item_def.get("Impact")
+                        finding["Impact"] = item_def["Impact"]
+
                     if item_def.get("Recommendation") and not finding.get("Recommendation"):
-                        finding["Recommendation"] = item_def.get("Recommendation")
+                        finding["Recommendation"] = item_def["Recommendation"]
 
+        # ----------------------------
+        # Risk rules
+        # ----------------------------
         for cat_name, cat_def in list(category_defs.items()):
-            if (cat_def.get("TableType") == "methods") or ("method" in cat_name.lower()):
-                # ensure TableType
-                cat_def.setdefault("TableType", "methods")
-                # ensure RiskRule is set so generic dispatcher picks it up
+            if "method" in cat_name.lower():
                 cat_def.setdefault("RiskRule", "methods_options_only")
-                # default severity / cvss (used if rule does not return a value)
                 cat_def.setdefault("DefaultSeverity", "Medium")
-                cat_def.setdefault("DefaultCVSS", "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)")
-                
-                # save back
-                category_defs[cat_name] = cat_def
+                cat_def.setdefault(
+                    "DefaultCVSS",
+                    "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)"
+                )
+            elif "ssl" in cat_name.lower() or "tls" in cat_name.lower():
+                cat_def.setdefault("RiskRule", "ssl_https_not_supported")
+                cat_def.setdefault("DefaultSeverity", "Medium")
+                cat_def.setdefault(
+                    "DefaultCVSS",
+                    "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)"
+                )
 
-        name_to_def = {k: v or {} for k, v in category_defs.items()}
+            category_defs[cat_name] = cat_def
+
+        # Display names for summary
         for c in categories:
-            catname = c.get("name")
-            c_def = name_to_def.get(catname, {})
-            # prefer explicit DisplayName from definition; fallback to existing or category name
-            c["display_name"] = c_def.get("DisplayName") or c.get("display_name") or catname
+            catname = c["name"]
+            c_def = category_defs.get(catname, {})
+            c["display_name"] = c_def.get("DisplayName") or catname
 
         # Totals
         total_high = sum(c["high"] for c in categories)
@@ -971,53 +1084,31 @@ def generate_interactive_html_report(findings: List[Dict[str, Any]],
         total_low = sum(c["low"] for c in categories)
         total_findings = total_high + total_medium + total_low
 
-        # Category-level dynamic risk (uses dispatcher)
+        # Category-level risk stats
         category_stats = {}
         for cat_name, flist in findings_by_category.items():
-            category_stats[cat_name] = _compute_category_risk_generic(cat_name, flist, category_defs)
+            category_stats[cat_name] = _compute_category_risk_generic(
+                cat_name, flist, category_defs
+            )
 
-        # Build table schema + rows
+        # Build tables
         table_schema: Dict[str, List[str]] = {}
         table_rows: Dict[str, List[List[Any]]] = {}
-        # inside generate_interactive_html_report, while building table_schema/table_rows
+
         for cat_name, flist in findings_by_category.items():
             cat_def = category_defs.get(cat_name, {}) or {}
+            schema, rows = _build_table_for_category(cat_name, flist, cat_def)
+            table_schema[cat_name] = schema
+            table_rows[cat_name] = rows
 
-            # 1) explicit TableType standard builders (methods/headers)
-            tt = cat_def.get("TableType")
-            entry = _TABLETYPE_BUILDERS.get(tt)
-            if entry:
-                schema, builder = entry
-                table_schema[cat_name] = schema
-                table_rows[cat_name] = builder(flist)
-                continue
-
-            # 2) category wants a custom column layout (recommended)
-            if cat_def.get("TableColumns"):
-                # build schema from TableColumns
-                schema = cat_def.get("TableColumns")
-                col_map = _make_col_map_from_def(cat_def)  # returns list of (name, candidates)
-                # create rows using generic builder
-                table_schema[cat_name] = schema
-                table_rows[cat_name] = _rows_generic(flist, col_map)
-                continue
-
-            # 3) fallback heuristics (existing logic)
-            is_methods_like = any(
-                (f.get("Method") or f.get("_item_short") or "").upper() in ("OPTIONS","PUT","DELETE","TRACE","DEBUG")
-                for f in flist
-            )
-            if is_methods_like:
-                table_schema[cat_name] = ["Method", "Status"]
-                table_rows[cat_name] = _rows_for_methods(flist)
-            else:
-                table_schema[cat_name] = ["Header", "Status", "Current Value"]
-                table_rows[cat_name] = _rows_for_headers(flist)
-
-        # Render template
-        env = Environment(extensions=["jinja2.ext.do"], autoescape=select_autoescape(["html", "xml"]), undefined=Undefined)
+        # Render HTML
+        env = Environment(
+            extensions=["jinja2.ext.do"],
+            autoescape=select_autoescape(["html", "xml"]),
+            undefined=Undefined
+        )
         tmpl = env.from_string(REPORT_TEMPLATE)
-        page_style = _page_style_for_a4(force_a4)
+
         rendered = tmpl.render(
             target_url=target_url or "Unknown",
             scan_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1027,19 +1118,17 @@ def generate_interactive_html_report(findings: List[Dict[str, Any]],
             total_low=total_low,
             categories=categories,
             findings_by_category=findings_by_category,
-            vuln_defs=VULNERABILITY_DEFINITIONS,
             category_defs=category_defs,
             category_stats=category_stats,
             table_schema=table_schema,
             table_rows=table_rows,
-            page_style=page_style
+            page_style=_page_style_for_a4(force_a4)
         )
 
-        with open(filename, 'w', encoding='utf-8') as f:
+        with open(filename, "w", encoding="utf-8") as f:
             f.write(rendered)
 
         print(Fore.GREEN + f"✅ Interactive HTML report generated: {filename}" + Style.RESET_ALL)
-        print(Fore.CYAN + f"   Open the file in a browser to view and export the report." + Style.RESET_ALL)
         return True
 
     except Exception as e:

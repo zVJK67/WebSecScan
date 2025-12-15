@@ -299,7 +299,6 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
     client_cookies: List[Dict[str, Any]] = []
 
     # === 1. Fetch cookies from HTTP response ===
-        # === 1. Fetch cookies from HTTP response ===
     try:
         # Use the session (which has verify=False)
         resp = session.get(url, timeout=10)
@@ -484,17 +483,7 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
     # === 5. Return findings for summary (category-level severity) ===
     cookie_findings: List[Dict[str, Any]] = []
 
-    ISSUE_TITLES = {
-        "HttpOnly": "Missing HttpOnly Attribute",
-        "Secure": "Missing Secure Attribute",
-        "SameSite": "Missing SameSite Attribute",
-        "Path": "Overly Broad Path Attribute",
-        "Expires/Max-Age": "Missing Expires / Max-Age Attribute",
-        "Weak Session ID": "Weak Session ID",
-        "Domain": "Overly Broad Domain Attribute",
-        "Excessive Lifetime": "Excessive Cookie Lifetime",
-    }
-
+    # MAPPING: Display title -> ItemDetails key
     ISSUE_TO_ITEM_KEY = {
         "Missing HttpOnly Attribute": "HttpOnly",
         "Missing Secure Attribute": "Secure",
@@ -506,11 +495,20 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
         "Excessive Cookie Lifetime": "Excessive Lifetime",
     }
 
+    ISSUE_TITLES = {
+        "HttpOnly": "Missing HttpOnly Attribute",
+        "Secure": "Missing Secure Attribute",
+        "SameSite": "Missing SameSite Attribute",
+        "Path": "Overly Broad Path Attribute",
+        "Expires/Max-Age": "Missing Expires / Max-Age Attribute",
+        "Weak Session ID": "Weak Session ID",
+        "Domain": "Overly Broad Domain Attribute",
+        "Excessive Lifetime": "Excessive Cookie Lifetime",
+    }
+
     # -------- Server-side cookies --------
     for issue in server_issues:
         cookie_name = issue.get("Name")
-
-        # find the cookie object
         cookie = next((c for c in server_cookies if c.get("Name") == cookie_name), None)
         if not cookie:
             continue
@@ -523,7 +521,7 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
                 "Category": "Cookie Security (Server-Side)",
                 "Scope": "Server-Side",
                 "Finding": finding_title,
-                "_item_short": item_key,
+                "_item_short": item_key,  # THIS IS THE KEY - must match ItemDetails keys
                 "Evidence": _build_cookie_evidence(issue_type, cookie),
                 "Severity": severity
             })
@@ -531,7 +529,6 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
     # -------- Client-side cookies --------
     for issue in client_issues:
         cookie_name = issue.get("Name")
-
         cookie = next((c for c in client_cookies if c.get("Name") == cookie_name), None)
         if not cookie:
             continue
@@ -544,7 +541,7 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
                 "Category": "Cookie Security (Client-Side)",
                 "Scope": "Client-Side",
                 "Finding": finding_title,
-                "_item_short": item_key,
+                "_item_short": item_key,  # THIS IS THE KEY - must match ItemDetails keys
                 "Evidence": _build_cookie_evidence(issue_type, cookie),
                 "Severity": severity
             })

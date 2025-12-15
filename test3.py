@@ -155,7 +155,12 @@ VULNERABILITY_DEFINITIONS = {
         "DefaultSeverity": "Low",
         "DefaultCVSS": "3.1 (AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N)",
 
-        "TableType": "headers",
+        "TableColumns": ["Header", "Status", "Current Value"],
+            "TableColumnMap": {
+                "Header": ["Header", "_item_short", "Context"],
+                "Status": ["Status", "state"],
+                "Current Value": ["CurrentValue", "Current Value", "Value", "Detail"]
+            },
 
         "ItemDetails": {
             "Strict-Transport-Security": {
@@ -218,10 +223,14 @@ VULNERABILITY_DEFINITIONS = {
             ),
 
         "DefaultSeverity": "Medium",
-        "DefaultCVSS": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)",
-        "RiskRule": "methods_options_only",
+            "DefaultCVSS": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)",
+            "RiskRule": "methods_options_only",
 
-        "TableType": "methods",
+            "TableColumns": ["Method", "Status"],
+        "TableColumnMap": {
+            "Method": ["Method", "_item_short", "Header"],
+            "Status": ["Status", "state"]
+        },
 
         # Only per-method IMPACT (no per-method recommendation)
         "ItemDetails": {
@@ -563,27 +572,151 @@ VULNERABILITY_DEFINITIONS = {
     },
     
     "SSL/TLS": {
-        "Description": """SSL/TLS (Secure Sockets Layer/Transport Layer Security) provides encryption for data in transit between clients and servers. Weak SSL/TLS configurations, outdated protocols, weak ciphers, or certificate issues can expose communications to interception and manipulation.
+        "DisplayName": "Weak or Misconfigured SSL/TLS",
 
-Common issues include expired certificates, self-signed certificates in production, support for deprecated protocols (SSLv3, TLS 1.0, TLS 1.1), weak cipher suites, and missing security features like HSTS.""",
-        "CVSS": "7.4 (AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N)",
-        "Impact": """1. Man-in-the-middle attacks allowing traffic interception
-2. Exposure of sensitive data transmitted over insecure connections
-3. Session hijacking through unencrypted session tokens
-4. Credential theft during authentication
-5. Loss of user trust due to browser security warnings
-6. Compliance violations (PCI-DSS, HIPAA, GDPR)
-7. Vulnerability to known attacks (BEAST, POODLE, CRIME)""",
-        "Recommendation": """1. Use valid certificates from trusted Certificate Authorities
-2. Disable SSLv3, TLS 1.0, and TLS 1.1 - use TLS 1.2 or TLS 1.3
-3. Configure strong cipher suites and disable weak ciphers
-4. Implement HTTP Strict Transport Security (HSTS)
-5. Enable Perfect Forward Secrecy (PFS)
-6. Regularly monitor certificate expiration dates
-7. Implement certificate pinning for mobile applications
-8. Use tools like SSL Labs to test configuration
-9. Keep OpenSSL/TLS libraries updated"""
+        "Description": (
+            "SSL/TLS (Secure Sockets Layer / Transport Layer Security) provides encryption for data in transit "
+            "between clients and servers. Weak SSL/TLS configurations, outdated protocols, weak cipher suites, "
+            "or certificate issues can expose communications to interception, tampering, and man-in-the-middle "
+            "attacks.\n\n"
+            "Common SSL/TLS weaknesses include missing HTTPS support, deprecated protocol versions, weak "
+            "cryptographic algorithms, invalid or expired certificates, and missing security headers such as "
+            "HTTP Strict Transport Security (HSTS)."
+        ),
+
+        "DefaultSeverity": "Medium",
+        "DefaultCVSS": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)",
+
+        # ADD THIS: Dynamic risk rule for SSL/TLS
+        "RiskRule": "ssl_https_not_supported",
+
+        # Table configuration (replaces TableType)
+        "TableColumns": ["Finding", "Current Value", "Evidence"],
+        "TableColumnMap": {
+            "Finding": ["Description", "_item_short", "Context"],
+            "Current Value": ["CurrentValue", "Current Value"],
+            "Evidence": ["Evidence"]
+        },
+
+        "ItemDetails": {
+
+            "HTTPS Not Supported": {
+                "Impact": (
+                    "All data is transmitted in plaintext, allowing attackers to intercept credentials, session data, "
+                    "and sensitive information through man-in-the-middle attacks."
+                ),
+                "Recommendation": (
+                    "Enable HTTPS by configuring a valid SSL/TLS certificate and ensure a TLS listener is active "
+                    "on the service port."
+                )
+            },
+
+            "HTTPS Not Enforced": {
+                "Impact": (
+                    "Users may unknowingly access the application over unsecured HTTP, exposing sessions and "
+                    "sensitive data to downgrade and man-in-the-middle attacks."
+                ),
+                "Recommendation": (
+                    "Redirect all HTTP traffic to HTTPS using permanent redirects (301/307) and enforce HTTPS usage."
+                )
+            },
+
+            "Use of Weak Protocol Version": {
+                "Impact": (
+                    "Deprecated SSL/TLS protocol versions are vulnerable to known cryptographic weaknesses and "
+                    "protocol downgrade attacks, reducing the confidentiality of communications."
+                ),
+                "Recommendation": (
+                    "Disable SSLv2, SSLv3, TLS 1.0, and TLS 1.1. Only allow TLS 1.2 and TLS 1.3."
+                )
+            },
+
+            "Use of Weak Cipher Suites": {
+                "Impact": (
+                    "Weak or legacy cipher suites reduce encryption strength and may allow attackers to recover "
+                    "sensitive data or compromise encrypted sessions."
+                ),
+                "Recommendation": (
+                    "Remove weak cipher suites and allow only modern AEAD cipher suites such as AES-GCM or "
+                    "ChaCha20-Poly1305 with ECDHE key exchange."
+                )
+            },
+
+            "Missing Forward Secrecy": {
+                "Impact": (
+                    "The negotiated TLS cipher suite does not provide forward secrecy, meaning that if the server’s "
+                    "private key is compromised, previously captured encrypted traffic could be decrypted."
+                ),
+                "Recommendation": (
+                    "Enable forward secrecy by prioritizing ECDHE cipher suites and disabling RSA key exchange."
+                )
+            },
+
+            "Weak Diffie-Hellman Key Exchange": {
+                "Impact": (
+                    "Use of insufficient Diffie-Hellman key sizes weakens the key exchange process and may allow "
+                    "attackers to decrypt or intercept encrypted communications."
+                ),
+                "Recommendation": (
+                    "Configure Diffie-Hellman parameters with key sizes of at least 2048 bits or use ECDHE with "
+                    "secure curves such as X25519 or P-256."
+                )
+            },
+
+            "Weak Signature Algorithm": {
+                "Impact": (
+                    "Weak certificate signature algorithms may allow attackers to forge certificates, undermining "
+                    "the trust and authenticity of secure connections."
+                ),
+                "Recommendation": (
+                    "Use SSL/TLS certificates signed with SHA-256 or stronger cryptographic hash algorithms."
+                )
+            },
+
+            "SSL Certificate Invalid": {
+                "Impact": (
+                    "Invalid or untrusted certificates break client trust and may enable server impersonation or "
+                    "man-in-the-middle attacks."
+                ),
+                "Recommendation": (
+                    "Install a valid SSL/TLS certificate issued by a trusted Certificate Authority (CA) and ensure "
+                    "it matches the server hostname."
+                )
+            },
+
+            "SSL Certificate Expired": {
+                "Impact": (
+                    "Expired certificates can disrupt service availability and encourage users to bypass security "
+                    "warnings, increasing exposure to interception attacks."
+                ),
+                "Recommendation": (
+                    "Renew the SSL/TLS certificate before expiration to maintain secure communications."
+                )
+            },
+
+            "SSL Certificate Validity Too Long": {
+                "Impact": (
+                    "Overly long certificate validity periods increase risk if private keys are compromised and "
+                    "may violate modern security standards."
+                ),
+                "Recommendation": (
+                    "Replace the certificate with one that has a validity period of 397 days or less."
+                )
+            },
+
+            "Missing HSTS": {
+                "Impact": (
+                    "Without HTTP Strict Transport Security (HSTS), attackers may force users to downgrade secure "
+                    "connections to HTTP, exposing traffic to interception."
+                ),
+                "Recommendation": (
+                    "Add the Strict-Transport-Security header with a long max-age, includeSubDomains, "
+                    "and consider preload."
+                )
+            }
+        }
     }
+
 }
 
 def _normalize_item_key(s: str) -> str:

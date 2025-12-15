@@ -157,12 +157,15 @@ def normalize_findings(findings: List[Dict[str, Any]], force_category: str = Non
     return normalized
 
 
+# Add this to the compute_cvss_overrides_from_findings() function in findings_summary.py
+# Add it right after the HTTP Method logic
+
 def compute_cvss_overrides_from_findings(findings: List[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
     """
     Compute dynamic CVSS overrides for categories that have conditional severity/CVSS.
     Currently handles:
     - HTTP Method: Low (3.7) if only OPTIONS, Medium (5.3) otherwise
-    - SSL/TLS: High (9.8) if any High findings, Medium (5.3) otherwise
+    - SSL/TLS: High (9.8) if HTTPS not supported, Medium (5.3) otherwise
     
     Args:
         findings: List of all findings
@@ -203,19 +206,29 @@ def compute_cvss_overrides_from_findings(findings: List[Dict[str, Any]]) -> Dict
                 "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
             }
     
-    # --- SSL/TLS Dynamic Logic ---
+    # --- SSL/TLS Dynamic Logic (NEW) ---
     if "SSL/TLS" in by_category:
         ssl_findings = by_category["SSL/TLS"]
-        severities = [f.get("Severity", "Low") for f in ssl_findings]
         
-        if "High" in severities:
+        # Check if "HTTPS Not Supported" is present
+        has_https_not_supported = any(
+            "HTTPS Not Supported" in f.get("Description", "")
+            or "HTTPS not supported" in f.get("Description", "")
+            or "No TLS listener" in f.get("Current Value", "")
+            or "No TLS listener" in f.get("Evidence", "")
+            or "No TLS listener" in f.get("CurrentValue", "")
+            for f in ssl_findings
+        )
+        
+        if has_https_not_supported:
+            # High severity ONLY for HTTPS not supported
             overrides["SSL/TLS"] = {
                 "severity": "High",
                 "cvss": "9.8",
                 "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
             }
         else:
-            # Default Medium severity
+            # Default Medium severity for all other SSL/TLS issues
             overrides["SSL/TLS"] = {
                 "severity": "Medium",
                 "cvss": "5.3",
