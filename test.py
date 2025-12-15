@@ -365,6 +365,22 @@ REPORT_TEMPLATE = r"""
     }
 
     .anchor { display:block; padding-top:40px; margin-top:-40px; }
+
+    /* ===== ABSOLUTE PRINT BLOCK ===== */
+    @media print {
+      .no-print,
+      .export-modal,
+      .export-main-btn,
+      #openExportBtn,
+      #exportModal {
+        display: none !important;
+        visibility: hidden !important;
+      }
+
+      body {
+        background: white !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -886,13 +902,23 @@ REPORT_TEMPLATE = r"""
         return;
       }
 
-      // Local PDF only
+      /* ================= LOCAL PDF ONLY ================= */
       if (!sendEmail.checked && exportPDF.checked) {
         modal.style.display = "none";
-        window.print();
-        return;
+        openBtn.style.display = "none";
+
+        setTimeout(() => {
+          window.print();
+
+          setTimeout(() => {
+            openBtn.style.display = "";
+          }, 500);
+        }, 150);
+
+        return; // 🔥 THIS WAS MISSING 🔥
       }
 
+      /* ================= EMAIL FLOW ================= */
       const payload = {
         recipient_email: emailInput.value,
         include_pdf: exportPDF.checked,
@@ -911,8 +937,7 @@ REPORT_TEMPLATE = r"""
           },
           summary: {{ categories | tojson }},
           findings: {{ findings_by_category | tojson }}
-        },
-        html: document.documentElement.outerHTML
+        }
       };
 
       try {
