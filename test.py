@@ -230,6 +230,109 @@ REPORT_TEMPLATE = r"""
 
     .report-footer { background:#f8fafc; padding:14px 32px; color:#5b6b7a; font-size:13px; border-top:1px solid #eef2fb; text-align:center; }
 
+    .export-main-btn {
+      background: linear-gradient(135deg,#667eea,#764ba2);
+      color:#fff;
+      border:none;
+      padding:12px 22px;
+      border-radius:10px;
+      font-size:15px;
+      font-weight:700;
+      cursor:pointer;
+      box-shadow:0 6px 18px rgba(0,0,0,.18);
+    }
+
+    .export-modal {
+      display:none;
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.55);
+      z-index:9999;
+      padding:40px 16px;
+    }
+
+    .export-modal-inner {
+      max-width:620px;
+      margin:0 auto;
+      background:#fff;
+      border-radius:12px;
+      padding:22px;
+    }
+
+    .export-modal-header {
+      display:flex;
+      justify-content:space-between;
+      border-bottom:3px solid #667eea;
+      padding-bottom:12px;
+    }
+
+    .export-modal-title { font-size:20px;font-weight:800; }
+    .export-modal-sub { font-size:13px;color:#6b7280;margin-top:4px; }
+
+    .export-close {
+      background:none;
+      border:none;
+      font-size:22px;
+      cursor:pointer;
+    }
+
+    .export-options { margin-top:18px; display:grid; gap:10px; }
+
+    .export-option {
+      display:flex;
+      gap:12px;
+      padding:12px;
+      border:1px solid #e5e7eb;
+      border-radius:8px;
+    }
+
+    .export-option .hint { font-size:12px;color:#6b7280; }
+
+    .export-email {
+      margin-top:16px;
+      background:#f8fafc;
+      padding:12px;
+      border-radius:8px;
+    }
+
+    .export-email input[type="email"] {
+      width:100%;
+      margin-top:8px;
+      padding:10px;
+      border-radius:6px;
+      border:1px solid #d1d5db;
+    }
+
+    .export-actions {
+      display:flex;
+      justify-content:flex-end;
+      gap:10px;
+      margin-top:18px;
+    }
+
+    .btn-primary {
+      background:linear-gradient(135deg,#667eea,#764ba2);
+      color:white;
+      border:none;
+      padding:10px 18px;
+      border-radius:8px;
+      font-weight:700;
+      cursor:pointer;
+    }
+
+    .btn-muted {
+      background:#f1f5f9;
+      border:none;
+      padding:10px 18px;
+      border-radius:8px;
+      cursor:pointer;
+    }
+
+    .export-status {
+      margin-top:14px;
+      font-size:13px;
+    }
+
     {% set CATEGORY_RULES = {
       "Path Traversal":        {"impact": "category", "remediation": "category"},
       "HTTP Methods":          {"impact": "item",     "remediation": "category"},
@@ -606,6 +709,56 @@ REPORT_TEMPLATE = r"""
         </div>
       {% endfor %}
     </section>
+    
+  <div class="no-print" style="text-align:center;padding:24px 0;">
+    <button id="openExportBtn" class="export-main-btn">📥 Export Report</button>
+  </div>
+
+    <!-- ================= EXPORT MODAL ================= -->
+  <div id="exportModal" class="export-modal no-print" aria-hidden="true">
+    <div class="export-modal-inner" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
+      <div class="export-modal-header">
+        <div>
+          <div id="exportTitle" class="export-modal-title">Export Security Report</div>
+          <div class="export-modal-sub">Choose formats and optionally send the report by email</div>
+        </div>
+        <button class="export-close" id="exportCloseBtn">&times;</button>
+      </div>
+
+      <div class="export-options">
+        <label class="export-option">
+          <input type="checkbox" id="exportPDF" checked>
+          <div>
+            <strong>📄 PDF Report</strong>
+            <div class="hint">Printable PDF (browser or server-generated when emailing)</div>
+          </div>
+        </label>
+
+        <label class="export-option">
+          <input type="checkbox" id="exportJSON" checked>
+          <div>
+            <strong>📊 JSON Data</strong>
+            <div class="hint">Structured findings data</div>
+          </div>
+        </label>
+      </div>
+
+      <div class="export-email">
+        <label>
+          <input type="checkbox" id="sendEmail">
+          Send report to email (optional)
+        </label>
+        <input type="email" id="emailInput" placeholder="recipient@example.com" disabled>
+      </div>
+
+      <div class="export-actions">
+        <button id="exportCancelBtn" class="btn-muted">Cancel</button>
+        <button id="exportConfirmBtn" class="btn-primary">Export</button>
+      </div>
+
+      <div id="exportStatus" class="export-status"></div>
+    </div>
+  </div>
 
     <footer class="report-footer">
       WebSecScan — Web Security Misconfiguration Analyzer · Generated {{ scan_time }} · <span style="opacity:.85">Lee Zhi Hui</span>
@@ -690,6 +843,97 @@ REPORT_TEMPLATE = r"""
         });
       }
     })();
+  </script>
+
+  <script>
+  (function () {
+    const modal = document.getElementById("exportModal");
+    const openBtn = document.getElementById("openExportBtn");
+    const closeBtn = document.getElementById("exportCloseBtn");
+    const cancelBtn = document.getElementById("exportCancelBtn");
+    const confirmBtn = document.getElementById("exportConfirmBtn");
+
+    const sendEmail = document.getElementById("sendEmail");
+    const emailInput = document.getElementById("emailInput");
+    const exportPDF = document.getElementById("exportPDF");
+    const exportJSON = document.getElementById("exportJSON");
+    const status = document.getElementById("exportStatus");
+
+    const EMAIL_API = "http://localhost:5000/send-email";
+
+    openBtn.onclick = () => modal.style.display = "block";
+    closeBtn.onclick = cancelBtn.onclick = () => {
+      modal.style.display = "none";
+      status.textContent = "";
+    };
+
+    sendEmail.onchange = () => {
+      emailInput.disabled = !sendEmail.checked;
+      if (!sendEmail.checked) emailInput.value = "";
+    };
+
+    confirmBtn.onclick = async () => {
+      status.textContent = "";
+
+      if (!exportPDF.checked && !exportJSON.checked) {
+        status.textContent = "Select at least one format.";
+        return;
+      }
+
+      if (sendEmail.checked &&
+          !emailInput.value.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+        status.textContent = "Invalid email address.";
+        return;
+      }
+
+      // Local PDF only
+      if (!sendEmail.checked && exportPDF.checked) {
+        modal.style.display = "none";
+        window.print();
+        return;
+      }
+
+      const payload = {
+        recipient_email: emailInput.value,
+        include_pdf: exportPDF.checked,
+        include_json: exportJSON.checked,
+        target_url: "{{ target_url }}",
+        report_data: {
+          scan_metadata: {
+            target_url: "{{ target_url }}",
+            scan_time: "{{ scan_time }}",
+            total_findings: {{ total_findings }},
+            severity_counts: {
+              High: {{ total_high }},
+              Medium: {{ total_medium }},
+              Low: {{ total_low }}
+            }
+          },
+          summary: {{ categories | tojson }},
+          findings: {{ findings_by_category | tojson }}
+        },
+        html: document.documentElement.outerHTML
+      };
+
+      try {
+        confirmBtn.disabled = true;
+        const res = await fetch(EMAIL_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const json = await res.json();
+        status.textContent = json.success
+          ? "Email sent successfully."
+          : "Export failed.";
+      } catch (e) {
+        status.textContent = "Export failed.";
+      } finally {
+        confirmBtn.disabled = false;
+      }
+    };
+  })();
   </script>
 </body>
 </html>
