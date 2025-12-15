@@ -896,29 +896,78 @@ REPORT_TEMPLATE = r"""
         return;
       }
 
-      if (sendEmail.checked &&
-          !emailInput.value.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+      if (
+        sendEmail.checked &&
+        !emailInput.value.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
+      ) {
         status.textContent = "Invalid email address.";
         return;
       }
 
-      /* ================= LOCAL PDF ONLY ================= */
-      if (!sendEmail.checked && exportPDF.checked) {
-        modal.style.display = "none";
-        openBtn.style.display = "none";
+      /* ======================================================
+        CASE 1: LOCAL EXPORT ONLY (NO EMAIL)
+        ====================================================== */
+      if (!sendEmail.checked) {
 
-        setTimeout(() => {
-          window.print();
+        /* ---------- JSON ONLY ---------- */
+        if (exportJSON.checked) {
+          try {
+            const data = {
+              scan_metadata: {
+                target_url: "{{ target_url }}",
+                scan_time: "{{ scan_time }}",
+                total_findings: {{ total_findings }},
+                severity_counts: {
+                  High: {{ total_high }},
+                  Medium: {{ total_medium }},
+                  Low: {{ total_low }}
+                }
+              },
+              summary: {{ categories | tojson }},
+              findings: {{ findings_by_category | tojson }}
+            };
+
+            const blob = new Blob(
+              [JSON.stringify(data, null, 2)],
+              { type: "application/json" }
+            );
+
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "security_scan_report.json";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+
+            status.textContent = "JSON file downloaded to your Downloads folder.";
+            return; // ✅ STOP — NO BACKEND
+          } catch (e) {
+            status.textContent = "Failed to generate JSON file.";
+            return;
+          }
+        }
+
+        /* ---------- PDF ONLY ---------- */
+        if (exportPDF.checked) {
+          modal.style.display = "none";
+          openBtn.style.display = "none";
 
           setTimeout(() => {
-            openBtn.style.display = "";
-          }, 500);
-        }, 150);
+            window.print();
+            setTimeout(() => {
+              openBtn.style.display = "";
+            }, 500);
+          }, 150);
 
-        return; // 🔥 THIS WAS MISSING 🔥
+          return; // ✅ STOP — NO BACKEND
+        }
       }
 
-      /* ================= EMAIL FLOW ================= */
+      /* ======================================================
+        CASE 2: SEND TO EMAIL (BACKEND REQUIRED)
+        ====================================================== */
       const payload = {
         recipient_email: emailInput.value,
         include_pdf: exportPDF.checked,
@@ -937,11 +986,13 @@ REPORT_TEMPLATE = r"""
           },
           summary: {{ categories | tojson }},
           findings: {{ findings_by_category | tojson }}
-        }
+        },
+        html: document.documentElement.outerHTML
       };
 
       try {
         confirmBtn.disabled = true;
+
         const res = await fetch(EMAIL_API, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -952,6 +1003,7 @@ REPORT_TEMPLATE = r"""
         status.textContent = json.success
           ? "Email sent successfully."
           : "Export failed.";
+
       } catch (e) {
         status.textContent = "Export failed.";
       } finally {
