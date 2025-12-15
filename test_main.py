@@ -404,86 +404,47 @@ def main():
     # Print table with overrides
     print_summary_table(summary, title="Security Scan Results Summary", cvss_overrides=cvss_overrides)
 
-    # If there are findings, keep the existing interactive / export flow.
-    if normalized:
-        # === NEW: Ask if user wants to generate interactive HTML report ===
-        print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
-        generate_report = input(Fore.YELLOW + "\nGenerate interactive HTML report? (y/n): " + Style.RESET_ALL).strip().lower()
+    # ========================================================================
+    # === ALWAYS GENERATE INTERACTIVE HTML REPORT (NO PROMPTS)
+    # ========================================================================
 
-        if generate_report == 'y':
-            # Generate filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            html_filename = f"security_scan_report_{timestamp}.html"
+    # Generate filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    html_filename = f"security_scan_report_{timestamp}.html"
 
-            print(Fore.CYAN + f"\nGenerating interactive report..." + Style.RESET_ALL)
+    print(Fore.CYAN + "\nGenerating interactive HTML report..." + Style.RESET_ALL)
 
-            success = generate_interactive_html_report(
-                findings=all_findings,
-                summary=summary,
-                filename=html_filename,
-                target_url=url
-            )
+    success = generate_interactive_html_report(
+        findings=all_findings,
+        summary=summary,
+        filename=html_filename,
+        target_url=url
+    )
 
-            if success:
-                print(Fore.GREEN + f"\n✅ Report generated successfully!" + Style.RESET_ALL)
-                print(Fore.CYAN + f"   📁 File: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
-                print(Fore.CYAN + f"   🌐 Opening in browser..." + Style.RESET_ALL)
-
-                # Automatically open in browser
-                try:
-                    webbrowser.open('file://' + os.path.abspath(html_filename))
-                    print(Fore.GREEN + "   ✓ Opened in default browser" + Style.RESET_ALL)
-                except Exception as e:
-                    print(Fore.RED + f"   ✗ Could not open browser: {e}" + Style.RESET_ALL)
-                    print(Fore.YELLOW + f"   Please open manually: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
-            else:
-                print(Fore.RED + "\n✗ Failed to generate report" + Style.RESET_ALL)
-
-        else:
-            # === LEGACY: Option for direct CSV/JSON export (without interactive HTML) ===
-            export_legacy = input(Fore.YELLOW + "\nExport to CSV or JSON directly? (y/n): " + Style.RESET_ALL).strip().lower()
-
-            if export_legacy == 'y':
-                print(Fore.CYAN + "\nAvailable export formats:" + Style.RESET_ALL)
-                print("  1. JSON  – Structured data (for analysis or integration)")
-                print("  2. CSV   – Table summary (for spreadsheets)")
-                print("  3. Both  – Export both formats")
-
-                fmt_choice = input(Fore.YELLOW + "\nEnter your choice: " + Style.RESET_ALL).strip().lower()
-
-                export_json_flag = fmt_choice in ['1', '3', 'json', 'both']
-                export_csv_flag = fmt_choice in ['2', '3', 'csv', 'both']
-
-                # --- JSON Export ---
-                if export_json_flag:
-                    json_fname = input("Enter JSON filename (default: security_scan_report.json): ").strip()
-                    if not json_fname:
-                        json_fname = "security_scan_report.json"
-                    elif not json_fname.lower().endswith('.json'):
-                        json_fname += '.json'
-                    try:
-                        export_to_json(all_findings, summary, filename=json_fname, target_url=url)
-                    except Exception as e:
-                        print(Fore.RED + f"[ERROR] export_to_json failed: {e}" + Style.RESET_ALL)
-
-                # --- CSV Export ---
-                if export_csv_flag:
-                    csv_fname = input("Enter CSV filename (default: security_findings_summary.csv): ").strip()
-                    if not csv_fname:
-                        csv_fname = "security_findings_summary.csv"
-                    elif not csv_fname.lower().endswith('.csv'):
-                        csv_fname += '.csv'
-                    try:
-                        export_summary_csv(summary, csv_fname)
-                    except Exception as e:
-                        print(Fore.RED + f"[ERROR] export_summary_csv failed: {e}" + Style.RESET_ALL)
-
+    if success:
+        print(Fore.GREEN + f"\n✅ Report generated successfully!" + Style.RESET_ALL)
+        print(Fore.CYAN + f"   📁 File: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
     else:
-        print(Fore.GREEN + "\n✓ No security findings detected across all categories!" + Style.RESET_ALL)
+        print(Fore.RED + "\n✗ Failed to generate report" + Style.RESET_ALL)
+
+    # ========================================================================
+    # === ENDING BANNER
+    # ========================================================================
 
     print(Fore.GREEN + "\n========================================================================================================================" + Style.RESET_ALL)
     print(Fore.GREEN + "                    Security Scan Completed ! Thank you for using WebSecScan" + Style.RESET_ALL)
     print(Fore.GREEN + "========================================================================================================================" + Style.RESET_ALL)
+
+    # Wait for user before opening browser
+    input(Fore.YELLOW + "\nPress Enter to view the interactive HTML report..." + Style.RESET_ALL)
+
+    if success:
+        try:
+            webbrowser.open('file://' + os.path.abspath(html_filename))
+            print(Fore.GREEN + "✓ Opened report in default browser" + Style.RESET_ALL)
+        except Exception as e:
+            print(Fore.RED + f"✗ Could not open browser: {e}" + Style.RESET_ALL)
+            print(Fore.YELLOW + f"Please open manually: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
 
 
 if __name__ == "__main__":
