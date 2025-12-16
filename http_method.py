@@ -1,36 +1,54 @@
-# http_method.py
 import re
 from typing import List, Union, Dict, Any, Optional
 from colorama import Fore, Style
 import requests
 
-# Known risky HTTP methods and short explanation
+"""
+HTTP Method Security Checker
+
+Design Notes:
+- Passive detection only (OPTIONS-based)
+- No active method execution to avoid side effects
+- WebDAV methods are detected but not exploited
+- Severity and CVSS are context-aware
+- Risk rating is shown ONLY when findings exist
+- Aligned with OWASP ZAP HTTP Method Scan
+"""
+
+# Known risky HTTP methods and explanations
 _METHOD_RISKS = {
-    "OPTIONS": "This method is a diagnostic method mainly used for debugging purposes, but it can unintentionally help attackers by revealing supported server methods.",
-    "PUT": "This method allows a client to upload new files on the web server.",
-    "DELETE": "This method allows a client to delete a file on the web server.",
-    "TRACE": "This method simply echoes back to the client whatever string has been sent to the server, and is used mainly for debugging purposes.",
-    "CONNECT": "This method could allow a client to use the web server as a proxy.",
-    "PATCH": "Partial updates — risky when not properly access-controlled.",
-    # WebDAV / others
-    "PROPFIND": "WebDAV method that can leak file system structure or metadata.",
-    "MKCOL": "WebDAV method to create collections (directories).",
-    "LOCK": "WebDAV locking method (can be abused).",
+    "OPTIONS": "Reveals supported HTTP methods and may aid reconnaissance.",
+    "PUT": "Allows file upload or overwrite if improperly restricted.",
+    "DELETE": "Allows deletion of server-side resources.",
+    "PATCH": "Allows partial modification of resources if not access-controlled.",
+
+    # Contextual / lower confidence
+    "TRACE": "Low risk; may enable cross-site tracing in legacy environments.",
+    "CONNECT": "Risky only if the server can be abused as an open proxy.",
+
+    # WebDAV
+    "PROPFIND": "WebDAV method that may disclose directory structure or metadata.",
+    "MKCOL": "WebDAV method that can create server-side collections.",
+    "LOCK": "WebDAV locking method that may be abused.",
     "UNLOCK": "WebDAV unlock method.",
-    "REPORT": "Repository/reporting method that may leak info.",
-    "COPY": "Can copy resources if misconfigured.",
-    "MOVE": "Can move/rename resources; risky if unintended.",
+    "COPY": "Can copy resources if WebDAV is misconfigured.",
+    "MOVE": "Can move or rename resources if WebDAV is enabled.",
 }
+
+SAFE_METHODS = {"GET", "HEAD", "POST"}
+WEBDAV_METHODS = {"PROPFIND", "MKCOL", "LOCK", "UNLOCK", "COPY", "MOVE"}
+
 
 def _normalize_methods_input(methods: Union[List[str], str, None]) -> List[str]:
     """Return uppercased, deduplicated list of HTTP methods."""
     if not methods:
         return []
+
     if isinstance(methods, str):
-        parts = [m.strip().upper() for m in re.split(r'\s*,\s*', methods) if m.strip()]
+        parts = [m.strip().upper() for m in re.split(r"\s*,\s*", methods) if m.strip()]
     else:
         parts = [str(m).strip().upper() for m in methods if str(m).strip()]
-    # deduplicate preserving order
+
     seen = set()
     out = []
     for p in parts:
@@ -39,175 +57,148 @@ def _normalize_methods_input(methods: Union[List[str], str, None]) -> List[str]:
             out.append(p)
     return out
 
+
+def _calculate_severity(methods: List[str]) -> str:
+    """Context-aware severity calculation."""
+    non_safe = [m for m in methods if m not in SAFE_METHODS]
+
+    if not non_safe:
+        return "Info"
+
+    if non_safe == ["OPTIONS"]:
+        return "Low"
+
+    webdav_count = len([m for m in non_safe if m in WEBDAV_METHODS])
+    if webdav_count >= 2:
+        return "Medium"
+
+    if any(m in {"PUT", "DELETE", "MOVE", "COPY"} for m in non_safe):
+        return "Medium"
+
+    return "Low"
+
+
+def _severity_to_cvss(severity: str) -> str:
+    """Map severity to OWASP-style CVSS."""
+    mapping = {
+        "Low": "3.7 (AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N)",
+        "Medium": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)",
+        "High": "8.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N)",
+    }
+    return mapping.get(severity, "—")
+
+
 def analyze_http_methods_from_list(methods_list: List[str]) -> List[Dict[str, Any]]:
-    """
-    Return findings list for provided normalized methods_list.
-    Each finding for unsafe methods will include header, status and recommendation.
-    """
+    """Generate findings for exposed HTTP methods."""
     findings = []
     if not methods_list:
-        return []
+        return findings
 
-    risky = [m for m in methods_list if m in _METHOD_RISKS]
-    if risky:
-        for m in risky:
-            findings.append({
-                "Category": "HTTP Methods",
-                "Header": f"HTTP Method: {m}",  # For display in table - KEEP the prefix
-                "_item_short": m,  # For ItemDetails lookup - just the method name
-                "Method": m,
-                "Status": "Unsafe",
-                "Severity": "High",
-                "Recommendation": _METHOD_RISKS[m],
-                "Methods": methods_list
-            })
-    
+    severity = _calculate_severity(methods_list)
+    risky_methods = [m for m in methods_list if m in _METHOD_RISKS]
+
+    for m in risky_methods:
+        findings.append({
+            "Category": "HTTP Methods",
+            "Header": f"HTTP Method: {m}",
+            "_item_short": m,
+            "Method": m,
+            "Status": "Unsafe",
+            "Severity": severity,
+            "Recommendation": _METHOD_RISKS[m],
+            "Methods": methods_list
+        })
+
     return findings
 
+
 def _print_raw_options_response(resp: Optional[requests.Response]) -> None:
-    """Print a compact raw OPTIONS response block (status + headers), matching the desired sample."""
+    """Print raw OPTIONS response (status + headers)."""
     print(Fore.WHITE + "OPTIONS Response:" + Style.RESET_ALL)
     print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
+
     if resp is None:
-        print(Fore.WHITE + "(No response received)" + Style.RESET_ALL)
+        print("(No response received)")
         print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
         return
 
-    # Print status line
-    status_line = f"HTTP/1.1 {resp.status_code} {resp.reason}"
-    print(Fore.WHITE + status_line)
+    print(Fore.WHITE + f"HTTP/1.1 {resp.status_code} {resp.reason}")
 
-    # Print common headers in a predictable order
-    common_order = ["Date", "Content-Type", "Content-Length", "Connection", "Server"]
-    for h in common_order:
+    ordered_headers = [
+        "Date", "Server", "Allow",
+        "Access-Control-Allow-Origin",
+        "Access-Control-Allow-Methods",
+        "Access-Control-Allow-Credentials",
+        "Content-Type", "Content-Length", "Connection"
+    ]
+
+    printed = set()
+    for h in ordered_headers:
         if h in resp.headers:
             print(Fore.WHITE + f"{h}: {resp.headers[h]}")
-    
-    # Print Allow / Access-Control-Allow-Methods if present
-    if "Allow" in resp.headers:
-        print(Fore.WHITE + f"Allow: {resp.headers['Allow']}")
-    if "Access-Control-Allow-Origin" in resp.headers:
-        print(Fore.WHITE + f"Access-Control-Allow-Origin: {resp.headers['Access-Control-Allow-Origin']}")
-    if "Access-Control-Allow-Credentials" in resp.headers:
-        print(Fore.WHITE + f"Access-Control-Allow-Credentials: {resp.headers['Access-Control-Allow-Credentials']}")
-    if "Access-Control-Allow-Methods" in resp.headers:
-        print(Fore.WHITE + f"Access-Control-Allow-Methods: {resp.headers['Access-Control-Allow-Methods']}")
-    
-    # Print any remaining headers that weren't printed
+            printed.add(h)
+
     for k, v in resp.headers.items():
-        if k in common_order or k in {"Allow", "Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Credentials"}:
-            continue
-        print(Fore.WHITE + f"{k}: {v}")
+        if k not in printed:
+            print(Fore.WHITE + f"{k}: {v}")
+
     print(Fore.CYAN + "**********************************************************" + Style.RESET_ALL)
 
-def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, Any]]:
-    """
-    Do an OPTIONS request to `url`, print raw response, parse Allow (or AC-Allow-Methods),
-    analyze for unsafe methods, and print findings (matching your desired format).
-    Returns the findings list (so main.py can still collect them).
-    """
-    # Print section header
-    print(Fore.CYAN + "\nHTTP Method Security Check" + Style.RESET_ALL)
-    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
-    
-    resp = None
-    response_received = False
-    
-    try:
-        # Send OPTIONS request (verification disabled so bad certs don't block the scan)
-        resp = requests.options(url, timeout=timeout, allow_redirects=True, verify=False)
-        response_received = True if resp is not None else False
-    except requests.exceptions.RequestException as e:
-        # Friendly short message for the user
-        print(Fore.YELLOW + f"⚠️ Could not fetch OPTIONS response from {url}: {e}" + Style.RESET_ALL)
-        print(Fore.YELLOW + "   The scanner will continue; HTTP method checks may be incomplete." + Style.RESET_ALL)
-        response_received = False
-        resp = None
 
-    # 1) Print raw OPTIONS response first
+def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, Any]]:
+    """Perform passive HTTP method analysis via OPTIONS."""
+    print(Fore.CYAN + "\nHTTP Method Security Check" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "══════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+
+    resp = None
+    try:
+        resp = requests.options(url, timeout=timeout, allow_redirects=True, verify=False)
+    except requests.exceptions.RequestException as e:
+        print(Fore.YELLOW + f"⚠️ OPTIONS request failed: {e}" + Style.RESET_ALL)
+
     _print_raw_options_response(resp)
 
-    # 2) Extract methods from headers (ONLY check 'Allow' header)
-    methods_hdr_value = None
-    if resp is not None:
-        methods_hdr_value = resp.headers.get("Allow")
+    methods_hdr = resp.headers.get("Allow") if resp else None
+    methods_list = _normalize_methods_input(methods_hdr)
 
-    # 3) Parse header value using regex if present
-    methods_list = []
-    if methods_hdr_value:
-        methods_list = [m.strip().upper() for m in re.split(r'\s*,\s*', methods_hdr_value) if m.strip()]
-    else:
-        methods_list = []
-
-    # 4) Analyze methods
-    findings = analyze_http_methods_from_list(methods_list)
-
-    # 5) Print findings in desired format
-    print()
-    
-    # Scenario 1: No response received at all
-    if not response_received:
-        print(Fore.RED + "[!] Failed to retrieve OPTIONS response from server." + Style.RESET_ALL)
-        print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.GREEN}0{Style.RESET_ALL}")
-        print(Fore.WHITE + "\nFindings:")
-        print(Fore.CYAN + f"``````````````````````````````````````````````````````````````````````````````````" + Style.RESET_ALL)
-        print(Fore.GREEN + "[!] No unsafe HTTP methods detected as no OPTIONS response received." + Style.RESET_ALL)
-        print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
-        print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
-        return []
-    
-    # Scenario 2: Response received but no Allow header
+    # No Allow header → unknown exposure
     if not methods_list:
-        print(Fore.RED + "[!] The 'Allow' header is not shown in the response." + Style.RESET_ALL)
-        print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.GREEN}0{Style.RESET_ALL}")
-        print(Fore.WHITE + "\nFindings:")
-        print("``````````````````````````````````````````````````````````````````````````````````")
-        print(Fore.GREEN + "✓ No unsafe HTTP methods detected as 'Allow' header is not present." + Style.RESET_ALL)
-        print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
-        print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+        print(Fore.YELLOW + "[!] Server did not disclose supported HTTP methods." + Style.RESET_ALL)
+        print("Note: Absence of Allow header does not guarantee security.")
+        print(Fore.MAGENTA + "══════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
         return []
 
-    # Scenario 3: Methods detected
-    unsafe_findings = [f for f in findings if f.get("Status", "").lower() == "unsafe"]
-    unsafe_count = len(unsafe_findings)
-    
-    # Determine if only OPTIONS (or OPTIONS among safe methods like GET, HEAD, POST)
-    safe_methods = {"GET", "HEAD", "POST"}
-    non_safe_methods = [m for m in methods_list if m not in safe_methods]
-    
-    # Check if only OPTIONS is the risky one among all methods
-    only_options_risky = (non_safe_methods == ["OPTIONS"])
-    
-    print(Fore.RED + "[!] 'Allow' header is shown in OPTIONS response." + Style.RESET_ALL)
-    print(Fore.WHITE + f"Detected Unsafe Methods: {Fore.RED if unsafe_count > 0 else Fore.GREEN}{unsafe_count}{Style.RESET_ALL}")
-    
-    if unsafe_count > 0:
-        print(Fore.WHITE + "Risk Rating:")
-        if only_options_risky:
-            # Low severity if only OPTIONS is risky
-            print(f"{Fore.YELLOW}Severity: Low{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}CVSS: 3.7 (AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N){Style.RESET_ALL}\n")
-        else:
-            # Medium severity if other unsafe methods present
-            print(f"{Fore.YELLOW}Severity: Medium{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}CVSS: 5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N){Style.RESET_ALL}\n")
-        
-        print("\nFindings:")
-        print("``````````````````````````````````````````````````````````````````````````````````")
-        for i, f in enumerate(unsafe_findings, start=1):
-            method_name = f.get('Method', '')
-            print(f"{i}. {method_name}")
-            print(f"   -> {f.get('Recommendation')}")
-        
-        print("[Remediation]")
-        print("Disable all unsafe methods.")
+    findings = analyze_http_methods_from_list(methods_list)
+    unsafe_methods = [m for m in methods_list if m not in SAFE_METHODS]
+
+    print(Fore.RED + "[!] 'Allow' header disclosed supported HTTP methods." + Style.RESET_ALL)
+    print(f"Detected Potentially Unsafe Methods: {len(unsafe_methods)}")
+
+    # ✅ Risk rating ONLY if findings exist
+    if findings:
+        severity = findings[0]["Severity"]
+        cvss = _severity_to_cvss(severity)
+
+        print(Fore.WHITE + "\nRisk Rating:" + Style.RESET_ALL)
+        print(f"{Fore.YELLOW}Severity: {severity}{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}CVSS: {cvss}{Style.RESET_ALL}")
+
+    print("\nFindings:")
+    print("``````````````````````````````````````````````````````````")
+    if findings:
+        for i, f in enumerate(findings, 1):
+            print(f"{i}. {f['Method']}")
+            print(f"   -> {f['Recommendation']}")
+            if f["Method"] == "PROPFIND":
+                print("   -> Note: Verify that 'Depth: infinity' is restricted (manual check).")
     else:
-        # No unsafe methods detected
-        print(Fore.WHITE + "\nFindings:")
-        print("``````````````````````````````````````````````````````````````````````````````````")
         print(Fore.GREEN + "✓ No unsafe HTTP methods detected." + Style.RESET_ALL)
-        print("\nNote: Deeper testing is still needed to double check there are no unsafe HTTP methods enabled.")
-    
-    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
-    
+        print("Note: Deeper testing may still be required.")
+
+    print("\n[Remediation]")
+    print("Disable unused or unsafe HTTP methods at the web server or application level.")
+    print("Use allowlists and proper access controls.")
+
+    print(Fore.MAGENTA + "══════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+
     return findings

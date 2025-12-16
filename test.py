@@ -1308,9 +1308,35 @@ def _rule_ssl_https_not_supported(cat_name, flist, cat_def):
         return {"severity": "Medium", "cvss": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)"}
 
 
+def _rule_path_traversal(cat_name, flist, cat_def):
+    """
+    Path Traversal risk logic:
+    - High if direct file content evidence is found
+    - Medium if only behavioral anomalies are detected
+    """
+    if not flist:
+        return {"severity": None, "cvss": None}
+
+    has_direct_evidence = any(
+        "Direct evidence" in (f.get("Behavior") or "")
+        for f in flist
+    )
+
+    if has_direct_evidence:
+        return {
+            "severity": "High",
+            "cvss": "7.5 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N)"
+        }
+
+    return {
+        "severity": "Medium",
+        "cvss": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)"
+    }
+
 _RISK_RULES = {
     "methods_options_only": _rule_methods_options_only,
-    "ssl_https_not_supported": _rule_ssl_https_not_supported
+    "ssl_https_not_supported": _rule_ssl_https_not_supported,
+    "path_traversal_dynamic": _rule_path_traversal
 }
 
 
@@ -1431,6 +1457,14 @@ def generate_interactive_html_report(
                     "DefaultCVSS",
                     "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)"
                 )
+
+            elif cat_name == "Path Traversal":
+              cat_def.setdefault("RiskRule", "path_traversal_dynamic")
+              cat_def.setdefault("DefaultSeverity", "Medium")
+              cat_def.setdefault(
+                  "DefaultCVSS",
+                  "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)"
+              )
 
             category_defs[cat_name] = cat_def
 

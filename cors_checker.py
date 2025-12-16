@@ -240,7 +240,7 @@ def analyze_cors(
     # Finding type 3: Unsafe Origin Reflection
     if allow_origin and allow_origin != "*":
         allowed = str(allow_origin).strip()
-        if allowed == fake_origin:
+        if fake_origin.lower().rstrip('/') in allowed.lower():
             findings.append({
                 "Category": "CORS Security",
                 "Type": "Unsafe Origin Reflection",
@@ -251,86 +251,71 @@ def analyze_cors(
                 "Recommendation": "Replace dynamic origin reflection with a fixed whitelist of allowed origins. Reject unexpected or untrusted origins."
             })
 
-    # Finding type 4: Excessive Allowed Methods
+    # Finding type 4: Excessive Allowed Methods (ONLY unsafe methods)
     if allow_methods:
         methods_list = [m.strip().upper() for m in str(allow_methods).split(",") if m.strip()]
         methods_set = set(methods_list)
+
+        # Methods that can modify server state
         unsafe_methods = {"PUT", "DELETE", "PATCH"}
+
         exposed = methods_set.intersection(unsafe_methods)
 
-        if exposed or len(methods_list) > 3:
+        if exposed:
             findings.append({
                 "Category": "CORS Security",
                 "Type": "Excessive Allowed Methods",
-                "Header": "Excessive Allowed Methods",  # For table display
+                "Header": "Excessive Allowed Methods",
                 "_item_short": "Excessive Allowed Methods",
                 "CurrentValue": f"Access-Control-Allow-Methods: {allow_methods}",
-                "Detail": "The server allows more HTTP methods than necessary, increasing exposure.",
+                "Detail": (
+                    "The server allows state-changing HTTP methods "
+                    f"({', '.join(sorted(exposed))}) in cross-origin requests."),
                 "Recommendation": "Restrict allowed methods to only the application requires (eg. GET, POST)."
             })
 
     # Finding type 5A/5B: Vary: Origin Header
-    if allow_origin and allow_origin not in ("*", "null"):
+    dynamic_cors = (
+        wildcard_seen or
+        allow_origin == fake_origin or
+        allow_credentials_bool
+    )
+
+    if allow_origin and dynamic_cors:
         if not vary_val or "origin" not in vary_val.lower():
             findings.append({
                 "Category": "CORS Security",
                 "Type": "Missing 'Vary: Origin' Header",
-                "Header": "Missing 'Vary: Origin' Header",  # For table display
+                "Header": "Missing 'Vary: Origin' Header",
                 "_item_short": "Missing Vary Origin Header",
-                "Detail": "The server does not include the Vary: Origin header.",
-                "Recommendation": "Add Vary: Origin when the server returns different CORS responses depending on the request's Origin."
+                "Detail": (
+                    "The server returns dynamic CORS responses but does not "
+                    "include the Vary: Origin header, which can cause unsafe "
+                    "responses to be cached and reused."
+                ),
+                "Recommendation": (
+                    "Add Vary: Origin when the server returns different "
+                    "CORS responses based on the request Origin."
+                )
             })
-        else:
-            # Check if CORS policy is unsafe despite having Vary: Origin
-            if wildcard_seen or (allow_origin == fake_origin) or allow_credentials_bool:
-                findings.append({
-                    "Category": "CORS Security",
-                    "Type": "Unsafe 'Vary: Origin' Usage",
-                    "Header": "Unsafe 'Vary: Origin' Usage",  # For table display
-                    "_item_short": "Unsafe Vary Origin Usage",
-                    "CurrentValue": f"Vary: Origin",
-                    "Detail": "The header is present, but the overall CORS policy (allowed origins, credentials, reflection) is unsafe, causing the unsafe configuration to be cached.",
-                    "Recommendation": "Fix the CORS policy first (proper whitelist, no wildcard with credentials). Only rely on Vary: Origin after the policy is secure."
-                })
-
-    # Finding type 6A/6B: Access-Control-Max-Age
-    if not max_age:
-        findings.append({
-            "Category": "CORS Security",
-            "Type": "Missing Access-Control-Max-Age Header",
-            "Header": "Missing Access-Control-Max-Age Header",  # For table display
-            "_item_short": "Missing Access-Control-Max-Age",
-            "Detail": "The server does not include the Access-Control-Max-Age header.",
-            "Recommendation": "Set a reasonable Access-Control-Max-Age (eg. 300–600 seconds) to help browsers reuse valid preflight results without adding performance overhead."
-        })
-    else:
-        try:
-            max_age_val = int(max_age)
-            if max_age_val > 86400:  # More than 24 hours
-                findings.append({
-                    "Category": "CORS Security",
-                    "Type": "Unsafe or Excessively Long Access-Control-Max-Age",
-                    "Header": "Unsafe or Excessively Long Access-Control-Max-Age",  # For table display
-                    "_item_short": "Excessive Access-Control-Max-Age",
-                    "CurrentValue": f"Access-Control-Max-Age: {max_age}",
-                    "Detail": "The server caches CORS permissions for too long, causing outdated or incorrect policies to persist.",
-                    "Recommendation": "Avoid extremely long caching durations, use moderate values (eg. 300–600 seconds)."
-                })
-        except ValueError:
-            pass
-
-    # Finding type 7: CORS Enabled on Endpoints That Don't Need It
-    if allow_origin and not url.endswith(('/api', '/api/', '/graphql', '/v1', '/v2')):
-        # Only flag if it's not obviously an API endpoint
-        parsed = urlparse(url)
-        if parsed.path in ('/', '', '/index.html', '/home'):
+        elif wildcard_seen or allow_origin == fake_origin or allow_credentials_bool:
+            # Unsafe policy + cacheable response
             findings.append({
                 "Category": "CORS Security",
-                "Type": "CORS Enabled on Endpoints That Don't Need It",
-                "Header": "CORS Enabled on Endpoints That Don't Need It",  # For table display
-                "_item_short": "CORS Enabled on Unnecessary Endpoints",
-                "Detail": "The server appears to return CORS headers even for endpoints that do not require cross-origin access.",
-                "Recommendation": "Only enable CORS for specific API endpoints that truly require cross-origin requests. Disable it for login pages or sensitive routes."
+                "Type": "Unsafe 'Vary: Origin' Usage",
+                "Header": "Unsafe 'Vary: Origin' Usage",
+                "_item_short": "Unsafe Vary Origin Usage",
+                "CurrentValue": "Vary: Origin",
+                "Detail": (
+                    "The Vary: Origin header is present, but the underlying "
+                    "CORS policy (wildcard, reflection, or credentials) is unsafe, "
+                    "causing the insecure configuration to be cached."
+                ),
+                "Recommendation": (
+                    "Fix the CORS policy first (proper whitelist, no wildcard "
+                    "with credentials). Only rely on Vary: Origin after the "
+                    "policy is secure."
+                )
             })
 
     # Finding type 8: Preflight (OPTIONS) Accepts Untrusted Origins

@@ -11,6 +11,8 @@ from findings_summary import normalize_findings, generate_summary, print_summary
 from path_traversal import test_path_traversal, print_path_traversal_results
 from directory_scan import scan_common_paths, print_dir_scan_results
 from export_findings import generate_interactive_html_report, export_to_json
+from vulnerability_definitions import VULNERABILITY_DEFINITIONS, enrich_finding_with_details
+
 
 from colorama import Fore, Style, init
 import urllib.parse
@@ -33,6 +35,59 @@ def handle_interrupt(sig, frame):
     sys.exit(0)
 # Capture Ctrl+C and exit gracefully
 signal.signal(signal.SIGINT, handle_interrupt)
+
+
+def enrich_finding_dynamic(finding: dict) -> dict:
+    """
+    Enrich a single finding, but for HTTP Security Headers produce
+    Impact/Recommendation only for the missing headers reported by the scanner.
+    For Unsafe HTTP Methods, produce Impact only for the specific methods detected.
+    """
+    enriched = enrich_finding_with_details(finding)
+
+    category = (finding.get("Category") or enriched.get("Category") or "").strip()
+    
+    # Special handling for HTTP Security Headers
+    if category == "HTTP Security Headers":
+        # Get the header name from finding
+        header_name = (
+            finding.get("_item_short") 
+            or finding.get("Header") 
+            or finding.get("Context")
+            or ""
+        )
+        
+        if header_name:
+            header_details = VULNERABILITY_DEFINITIONS["HTTP Security Headers"].get("ItemDetails", {})
+            detail = header_details.get(header_name)
+            
+            if detail:
+                if detail.get("Impact") and not enriched.get("Impact"):
+                    enriched["Impact"] = detail["Impact"]
+                if detail.get("Recommendation") and not enriched.get("Recommendation"):
+                    enriched["Recommendation"] = detail["Recommendation"]
+    
+    # Special handling for Unsafe HTTP Methods
+    elif category == "Unsafe HTTP Methods Enabled":
+        # Ensure DisplayName is set
+        vuln_def = VULNERABILITY_DEFINITIONS.get(category, {})
+        if vuln_def.get("DisplayName"):
+            enriched["DisplayName"] = vuln_def["DisplayName"]
+        
+        # Get the specific method from the finding
+        method = finding.get("Header") or finding.get("Method") or ""
+        method_details = vuln_def.get("MethodDetails", {})
+        
+        if method and method in method_details:
+            method_info = method_details[method]
+            if method_info.get("Impact"):
+                enriched["Impact"] = method_info["Impact"]
+        
+        # Use category-level recommendation (same for all methods)
+        if vuln_def.get("Recommendation"):
+            enriched["Recommendation"] = vuln_def["Recommendation"]
+
+    return enriched
 
 
 def normalize_and_validate_url(raw_url: str) -> str:
@@ -166,7 +221,7 @@ def main():
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # Tag header findings with proper category
-    header_findings = _tag_findings_with_category(header_findings, "Security Headers")
+    header_findings = _tag_findings_with_category(header_findings, "HTTP Security Headers")
 
     # === Step 2: HTTP Method Check ===
     print(Fore.CYAN + "\n[2/8] Checking HTTP methods..." + Style.RESET_ALL)
@@ -202,26 +257,41 @@ def main():
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # Tag server findings with proper category
-    server_findings = _tag_findings_with_category(server_findings, "Server Information")
+    server_findings = _tag_findings_with_category(server_findings, "Server Info")
 
     # === Step 4: Cookie Security Analysis ===
-    # Selenium-based JS cookie capture is required for this system (always enabled).
+    print(Fore.CYAN + "\n[4/8] Checking cookie security..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        # Always capture JS-created cookies using Selenium (no prompt).
         capture_js = True
-
-        # Call the cookie analyzer (it prints its own formatted output).
         cookie_findings = analyze_cookies(url, include_js_cookies=capture_js)
+
+        # Separate findings by scope and tag appropriately
+        server_side_cookies = []
+        client_side_cookies = []
+        
+        for finding in cookie_findings:
+            scope = finding.get("Scope", "")
+            if "Server-Side" in scope:
+                server_side_cookies.append(finding)
+            elif "Client-Side" in scope:
+                client_side_cookies.append(finding)
+            else:
+                # Default to server-side if scope is unclear
+                server_side_cookies.append(finding)
+        
+        # Tag each group with correct category
+        server_side_cookies = _tag_findings_with_category(server_side_cookies, "Cookie Security (Server-Side)")
+        client_side_cookies = _tag_findings_with_category(client_side_cookies, "Cookie Security (Client-Side)")
+        
+        # Merge back together
+        cookie_findings = server_side_cookies + client_side_cookies
 
     except Exception as e:
         print(Fore.RED + f"[ERROR] Cookie check failed: {e}" + Style.RESET_ALL)
         cookie_findings = []
-    # Print elapsed time for consistency with other steps
-    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
-    # Tag cookie findings with proper category for aggregation later
-    cookie_findings = _tag_findings_with_category(cookie_findings, "Cookie Security")
+    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # === Step 5: CORS Security Analysis (UPDATED) ===
     print(Fore.CYAN + "\n[5/8] Checking Cross-Origin Resource Sharing (CORS) configuration..." + Style.RESET_ALL)
@@ -286,27 +356,11 @@ def main():
         pt_findings = []
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
-    # === Step 8: SSL/TLS Check ===
+     # === Step 8: SSL/TLS Check ===
     print(Fore.CYAN + "\n[8/8] Checking SSL/TLS configuration..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        run_ssl_check(url, verbose=verbose)  # Pass verbose parameter
-        # For summary table, still collect basic SSL findings
-        try:
-            ssl_data = check_ssl_tls(urllib.parse.urlparse(url).hostname)
-            if ssl_data.get("error"):
-                ssl_findings = [{"Category": "SSL/TLS", "Severity": "High", "Description": f"SSL/TLS error: {ssl_data.get('error')}"}]
-            elif not ssl_data.get("https_supported"):
-                ssl_findings = [{"Category": "SSL/TLS", "Severity": "High", "Description": "HTTPS not supported; site is served over plain HTTP."}]
-            elif not ssl_data.get("certificate_valid"):
-                ssl_findings = [{"Category": "SSL/TLS", "Severity": "High", "Description": "Invalid or expired TLS certificate detected."}]
-            elif ssl_data.get("days_until_expiry") is not None and ssl_data.get("days_until_expiry") < 30:
-                ssl_findings = [{"Category": "SSL/TLS", "Severity": "Medium", "Description": f"TLS certificate will expire in {ssl_data.get('days_until_expiry')} days."}]
-            else:
-                ssl_findings = []
-        except Exception as e:
-            print(Fore.RED + f"[DEBUG] Error collecting SSL summary findings: {e}" + Style.RESET_ALL)
-            ssl_findings = []
+        ssl_findings = run_ssl_check(url, verbose=verbose)
     except Exception as e:
         print(Fore.RED + f"[ERROR] SSL/TLS check failed: {e}" + Style.RESET_ALL)
         import traceback
@@ -334,6 +388,8 @@ def main():
     all_findings.extend(pt_findings or [])
     all_findings.extend(ssl_findings or [])
 
+    
+
     # Normalize findings (ensures Category/Severity/Description present and removes clear "safe" items)
     normalized = normalize_findings(all_findings, exclude_safe=True)
 
@@ -346,86 +402,47 @@ def main():
     # Print table with overrides
     print_summary_table(summary, title="Security Scan Results Summary", cvss_overrides=cvss_overrides)
 
-    # If there are findings, keep the existing interactive / export flow.
-    if normalized:
-        # === NEW: Ask if user wants to generate interactive HTML report ===
-        print(Fore.CYAN + "\n" + "=" * 80 + Style.RESET_ALL)
-        generate_report = input(Fore.YELLOW + "\nGenerate interactive HTML report? (y/n): " + Style.RESET_ALL).strip().lower()
+    # ========================================================================
+    # === ALWAYS GENERATE INTERACTIVE HTML REPORT (NO PROMPTS)
+    # ========================================================================
 
-        if generate_report == 'y':
-            # Generate filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            html_filename = f"security_scan_report_{timestamp}.html"
+    # Generate filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    html_filename = f"security_scan_report_{timestamp}.html"
 
-            print(Fore.CYAN + f"\nGenerating interactive report..." + Style.RESET_ALL)
+    print(Fore.CYAN + "\nGenerating interactive HTML report..." + Style.RESET_ALL)
 
-            success = generate_interactive_html_report(
-                findings=all_findings,
-                summary=summary,
-                filename=html_filename,
-                target_url=url
-            )
+    success = generate_interactive_html_report(
+        findings=all_findings,
+        summary=summary,
+        filename=html_filename,
+        target_url=url
+    )
 
-            if success:
-                print(Fore.GREEN + f"\n✅ Report generated successfully!" + Style.RESET_ALL)
-                print(Fore.CYAN + f"   📁 File: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
-                print(Fore.CYAN + f"   🌐 Opening in browser..." + Style.RESET_ALL)
-
-                # Automatically open in browser
-                try:
-                    webbrowser.open('file://' + os.path.abspath(html_filename))
-                    print(Fore.GREEN + "   ✓ Opened in default browser" + Style.RESET_ALL)
-                except Exception as e:
-                    print(Fore.RED + f"   ✗ Could not open browser: {e}" + Style.RESET_ALL)
-                    print(Fore.YELLOW + f"   Please open manually: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
-            else:
-                print(Fore.RED + "\n✗ Failed to generate report" + Style.RESET_ALL)
-
-        else:
-            # === LEGACY: Option for direct CSV/JSON export (without interactive HTML) ===
-            export_legacy = input(Fore.YELLOW + "\nExport to CSV or JSON directly? (y/n): " + Style.RESET_ALL).strip().lower()
-
-            if export_legacy == 'y':
-                print(Fore.CYAN + "\nAvailable export formats:" + Style.RESET_ALL)
-                print("  1. JSON  – Structured data (for analysis or integration)")
-                print("  2. CSV   – Table summary (for spreadsheets)")
-                print("  3. Both  – Export both formats")
-
-                fmt_choice = input(Fore.YELLOW + "\nEnter your choice: " + Style.RESET_ALL).strip().lower()
-
-                export_json_flag = fmt_choice in ['1', '3', 'json', 'both']
-                export_csv_flag = fmt_choice in ['2', '3', 'csv', 'both']
-
-                # --- JSON Export ---
-                if export_json_flag:
-                    json_fname = input("Enter JSON filename (default: security_scan_report.json): ").strip()
-                    if not json_fname:
-                        json_fname = "security_scan_report.json"
-                    elif not json_fname.lower().endswith('.json'):
-                        json_fname += '.json'
-                    try:
-                        export_to_json(all_findings, summary, filename=json_fname, target_url=url)
-                    except Exception as e:
-                        print(Fore.RED + f"[ERROR] export_to_json failed: {e}" + Style.RESET_ALL)
-
-                # --- CSV Export ---
-                if export_csv_flag:
-                    csv_fname = input("Enter CSV filename (default: security_findings_summary.csv): ").strip()
-                    if not csv_fname:
-                        csv_fname = "security_findings_summary.csv"
-                    elif not csv_fname.lower().endswith('.csv'):
-                        csv_fname += '.csv'
-                    try:
-                        export_summary_csv(summary, csv_fname)
-                    except Exception as e:
-                        print(Fore.RED + f"[ERROR] export_summary_csv failed: {e}" + Style.RESET_ALL)
-
+    if success:
+        print(Fore.GREEN + f"\n✅ Report generated successfully!" + Style.RESET_ALL)
+        print(Fore.CYAN + f"   📁 File: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
     else:
-        print(Fore.GREEN + "\n✓ No security findings detected across all categories!" + Style.RESET_ALL)
+        print(Fore.RED + "\n✗ Failed to generate report" + Style.RESET_ALL)
+
+    # ========================================================================
+    # === ENDING BANNER
+    # ========================================================================
 
     print(Fore.GREEN + "\n========================================================================================================================" + Style.RESET_ALL)
     print(Fore.GREEN + "                    Security Scan Completed ! Thank you for using WebSecScan" + Style.RESET_ALL)
     print(Fore.GREEN + "========================================================================================================================" + Style.RESET_ALL)
+
+    # Wait for user before opening browser
+    input(Fore.YELLOW + "\nPress Enter to view the interactive HTML report..." + Style.RESET_ALL)
+
+    if success:
+        try:
+            webbrowser.open('file://' + os.path.abspath(html_filename))
+            print(Fore.GREEN + "✓ Opened report in default browser" + Style.RESET_ALL)
+        except Exception as e:
+            print(Fore.RED + f"✗ Could not open browser: {e}" + Style.RESET_ALL)
+            print(Fore.YELLOW + f"Please open manually: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
 
 
 if __name__ == "__main__":

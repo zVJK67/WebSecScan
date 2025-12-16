@@ -11,164 +11,192 @@ Your system is categorical; only vulnerabilities (final findings) have a risk ra
 The Risk Rating printed here is kept fixed as in the original design.
 """
 
-def analyze_security_headers(headers: Dict[str, str]) -> List[Dict[str, Any]]:
-    """
-    Analyze a headers mapping for common security header issues.
-
-    - headers: mapping-like object (case-insensitive expected). We normalize to lowercase keys internally.
-    - returns: list of findings dicts with keys: Header, Status, Recommendation, (optional) CurrentValue
-    """
+def analyze_security_headers(headers: Dict[str, str], is_https: bool = True) -> List[Dict[str, Any]]:
     findings: List[Dict[str, Any]] = []
 
-    # Normalize header keys to lowercase for robust lookup
-    lower_headers = {k.lower(): (v if v is not None else "") for k, v in headers.items()}
+    # Normalize headers
+    lower_headers = {k.lower(): (v or "") for k, v in headers.items()}
 
     def hdr(name: str) -> str:
         return lower_headers.get(name.lower(), "")
 
-    # helper to append finding (no Severity field — categorical system)
-    def add_finding(header_name: str, status: str, recommendation: str, current: str = None):
-        finding = {
-            "Header": header_name,
+    def add_finding(header: str, status: str, recommendation: str, current: str = None):
+        item = {
+            "Header": header,
             "Status": status,
             "Recommendation": recommendation
         }
         if current is not None:
-            finding["CurrentValue"] = current
-        findings.append(finding)
+            item["CurrentValue"] = current
+        findings.append(item)
 
-    # --- Content Security Policy (CSP) ---
+    # ============================================================
+    # Content-Security-Policy
+    # ============================================================
     csp = hdr("Content-Security-Policy")
     if not csp:
-        add_finding("Content-Security-Policy", "Missing",
-                    "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'")
+        add_finding(
+            "Content-Security-Policy",
+            "Missing",
+            "Add CSP with default-src 'self' and frame-ancestors 'none'"
+        )
     else:
-        # detect unsafe tokens robustly
-        if re.search(r"(?:'|\")?unsafe-inline(?:'|\")?", csp, re.IGNORECASE) or re.search(r"(?:'|\")?unsafe-eval(?:'|\")?", csp, re.IGNORECASE):
-            add_finding("Content-Security-Policy", "Misconfigured",
-                        "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'", current=csp)
-        else:
-            # check presence of at least a default-src or script-src directive
-            if not re.search(r"(?:^|\s)(default-src|script-src)\s", csp, re.IGNORECASE):
-                add_finding("Content-Security-Policy", "Misconfigured",
-                            "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'", current=csp)
+        csp_lower = csp.lower()
 
-    # --- Strict Transport Security (HSTS) ---
+        unsafe_inline = "unsafe-inline" in csp_lower
+        unsafe_eval = "unsafe-eval" in csp_lower
+        has_nonce_or_hash = bool(re.search(r"nonce-|sha256-|sha384-|sha512-", csp_lower))
+        has_default_or_script = bool(re.search(r"(default-src|script-src)", csp_lower))
+        has_frame_ancestors = "frame-ancestors" in csp_lower
+
+        if (unsafe_inline or unsafe_eval) and not has_nonce_or_hash:
+            add_finding(
+                "Content-Security-Policy",
+                "Misconfigured",
+                "Avoid unsafe-inline/unsafe-eval; use nonces or hashes",
+                csp
+            )
+        elif not has_default_or_script:
+            add_finding(
+                "Content-Security-Policy",
+                "Misconfigured",
+                "Define default-src or script-src directive",
+                csp
+            )
+        elif not has_frame_ancestors:
+            add_finding(
+                "Content-Security-Policy",
+                "Misconfigured",
+                "Add frame-ancestors to prevent clickjacking",
+                csp
+            )
+
+    # ============================================================
+    # Strict-Transport-Security (HTTPS ONLY)
+    # ============================================================
     hsts = hdr("Strict-Transport-Security")
-    if not hsts:
-        add_finding("Strict-Transport-Security", "Missing",
-                    "Strict-Transport-Security: max-age=31536000; includeSubDomains")
-    else:
-        m = re.search(r"max-age\s*=\s*(\d+)", hsts, re.IGNORECASE)
-        if not m:
-            add_finding("Strict-Transport-Security", "Misconfigured",
-                        "Strict-Transport-Security: max-age=31536000; includeSubDomains", current=hsts)
+    if is_https:
+        if not hsts:
+            add_finding(
+                "Strict-Transport-Security",
+                "Missing",
+                "Strict-Transport-Security: max-age=31536000; includeSubDomains"
+            )
         else:
-            try:
-                max_age = int(m.group(1))
-            except ValueError:
-                max_age = 0
-            if max_age < 31536000:
-                add_finding("Strict-Transport-Security", "Misconfigured",
-                            "Strict-Transport-Security: max-age=31536000; includeSubDomains", current=hsts)
-            else:
-                if not re.search(r"includesubdomains", hsts, re.IGNORECASE):
-                    add_finding("Strict-Transport-Security", "Misconfigured",
-                                "Strict-Transport-Security: max-age=31536000; includeSubDomains", current=hsts)
+            m = re.search(r"max-age\s*=\s*(\d+)", hsts, re.IGNORECASE)
+            if not m or int(m.group(1)) < 31536000:
+                add_finding(
+                    "Strict-Transport-Security",
+                    "Misconfigured",
+                    "Use max-age ≥ 31536000",
+                    hsts
+                )
+            elif "includesubdomains" not in hsts.lower():
+                add_finding(
+                    "Strict-Transport-Security",
+                    "Misconfigured",
+                    "Add includeSubDomains",
+                    hsts
+                )
 
-    # --- X-Frame-Options ---
+    # ============================================================
+    # X-Frame-Options
+    # ============================================================
     xfo = hdr("X-Frame-Options")
     if not xfo:
-        add_finding("X-Frame-Options", "Missing", "X-Frame-Options: SAMEORIGIN / DENY")
-    else:
-        val = xfo.strip().upper()
-        if val not in {"DENY", "SAMEORIGIN"}:
-            add_finding("X-Frame-Options", "Misconfigured", "X-Frame-Options: SAMEORIGIN / DENY", current=xfo)
+        add_finding("X-Frame-Options", "Missing", "X-Frame-Options: DENY or SAMEORIGIN")
+    elif xfo.strip().upper() not in {"DENY", "SAMEORIGIN"}:
+        add_finding("X-Frame-Options", "Misconfigured", "Use DENY or SAMEORIGIN", xfo)
 
-    # --- X-XSS-Protection ---
+    # ============================================================
+    # X-XSS-Protection (Deprecated → Informational)
+    # ============================================================
     xxp = hdr("X-XSS-Protection")
-    if not xxp:
-        # modern guidance: deprecated header; report as Low-style missing for legacy browsers
-        add_finding("X-XSS-Protection", "Missing", "X-XSS-Protection: 0")
-    else:
-        val = xxp.strip()
-        # Treat '0' as recommended; treat '1; mode=block' as legacy (flag informational/misconfigured)
-        if val == "0":
-            pass
-        elif val.lower().startswith("1"):
-            add_finding("X-XSS-Protection", "Misconfigured", "X-XSS-Protection: 0 (modern best practice)", current=xxp)
-        else:
-            add_finding("X-XSS-Protection", "Misconfigured", "X-XSS-Protection: 0", current=xxp)
+    if xxp and not xxp.strip().startswith("0"):
+        add_finding(
+            "X-XSS-Protection",
+            "Informational",
+            "Deprecated header; modern browsers rely on CSP",
+            xxp
+        )
 
-    # --- X-Content-Type-Options ---
+    # ============================================================
+    # X-Content-Type-Options
+    # ============================================================
     xcto = hdr("X-Content-Type-Options")
     if not xcto:
         add_finding("X-Content-Type-Options", "Missing", "X-Content-Type-Options: nosniff")
-    else:
-        if xcto.strip().lower() != "nosniff":
-            add_finding("X-Content-Type-Options", "Misconfigured", "X-Content-Type-Options: nosniff", current=xcto)
+    elif xcto.strip().lower() != "nosniff":
+        add_finding("X-Content-Type-Options", "Misconfigured", "Use nosniff", xcto)
 
-    # --- Cache-Control ---
+    # ============================================================
+    # Cache-Control (Context Aware)
+    # ============================================================
     cc = hdr("Cache-Control")
-    if not cc:
-        add_finding("Cache-Control", "Missing", "Cache-Control: no-store, no-cache")
-    else:
-        cc_lower = cc.lower()
-        has_no_store = "no-store" in cc_lower
-        has_no_cache = "no-cache" in cc_lower
-        if not has_no_store and not has_no_cache:
-            add_finding("Cache-Control", "Misconfigured", "Cache-Control: no-store, no-cache", current=cc)
+    ct = hdr("Content-Type").lower()
+    has_cookie = "set-cookie" in lower_headers
 
-    # --- Referrer Policy ---
+    if ("text/html" in ct or has_cookie):
+        if not cc:
+            add_finding("Cache-Control", "Missing", "Cache-Control: no-store, no-cache")
+        elif not any(d in cc.lower() for d in ["no-store", "no-cache"]):
+            add_finding("Cache-Control", "Misconfigured", "Disable caching for sensitive content. Set Cache-Control: no-store, no-cache", cc)
+
+    # ============================================================
+    # Referrer-Policy
+    # ============================================================
     rp = hdr("Referrer-Policy")
     if not rp:
-        add_finding("Referrer-Policy", "Missing", "Referrer-Policy: strict-origin-when-cross-origin")
-    else:
-        rp_val = rp.strip().lower()
-        if rp_val != "strict-origin-when-cross-origin":
-            add_finding("Referrer-Policy", "Misconfigured", "Referrer-Policy: strict-origin-when-cross-origin", current=rp)
+        add_finding(
+            "Referrer-Policy",
+            "Missing",
+            "Referrer-Policy: strict-origin-when-cross-origin"
+        )
 
-    # --- Content-Type ---
-    ct = hdr("Content-Type")
-    if not ct:
-        add_finding("Content-Type", "Missing", "Content-Type: text/html; charset=UTF-8")
-    else:
-        ct_lower = ct.lower().replace(" ", "")
-        best_practice = "text/html;charset=utf-8"
-        if best_practice not in ct_lower:
-            add_finding("Content-Type", "Misconfigured", "Content-Type: text/html; charset=UTF-8", current=ct)
-
-    # --- Cross-Origin-Opener-Policy ---
+    # ============================================================
+    # Cross-Origin Policies
+    # ============================================================
     coop = hdr("Cross-Origin-Opener-Policy")
+    coep = hdr("Cross-Origin-Embedder-Policy")
+
     if not coop:
         add_finding("Cross-Origin-Opener-Policy", "Missing", "Cross-Origin-Opener-Policy: same-origin")
-    else:
-        coop_val = coop.strip().lower()
-        if coop_val != "same-origin":
-            add_finding("Cross-Origin-Opener-Policy", "Misconfigured", "Cross-Origin-Opener-Policy: same-origin", current=coop)
+    elif coop.lower() != "same-origin":
+        add_finding("Cross-Origin-Opener-Policy", "Misconfigured", "Use same-origin", coop)
 
-    # --- Cross-Origin-Embedder-Policy ---
-    coep = hdr("Cross-Origin-Embedder-Policy")
     if not coep:
         add_finding("Cross-Origin-Embedder-Policy", "Missing", "Cross-Origin-Embedder-Policy: require-corp")
-    else:
-        coep_val = coep.strip().lower()
-        if coep_val != "require-corp":
-            add_finding("Cross-Origin-Embedder-Policy", "Misconfigured", "Cross-Origin-Embedder-Policy: require-corp", current=coep)
+    elif coep.lower() != "require-corp":
+        add_finding("Cross-Origin-Embedder-Policy", "Misconfigured", "Use require-corp", coep)
 
-    # --- Cross-Origin-Resource-Policy ---
-    corp = hdr("Cross-Origin-Resource-Policy")
-    if not corp:
-        add_finding("Cross-Origin-Resource-Policy", "Missing", "Cross-Origin-Resource-Policy: same-site")
-    else:
-        corp_val = corp.strip().lower()
-        if corp_val != "same-site":
-            add_finding("Cross-Origin-Resource-Policy", "Misconfigured", "Cross-Origin-Resource-Policy: same-site", current=corp)
+    if coep.lower() == "require-corp" and coop.lower() != "same-origin":
+        add_finding(
+            "COOP/COEP",
+            "Misconfigured",
+            "COEP=require-corp should be paired with COOP=same-origin"
+        )
 
-    # --- Permissions-Policy (formerly Feature-Policy) ---
+    # ============================================================
+    # X-DNS-Prefetch-Control (Privacy)
+    # ============================================================
+    dns_prefetch = hdr("X-DNS-Prefetch-Control")
+    if not dns_prefetch:
+        add_finding(
+            "X-DNS-Prefetch-Control",
+            "Informational",
+            "Consider X-DNS-Prefetch-Control: off for privacy"
+        )
+
+    # ============================================================
+    # Permissions-Policy
+    # ============================================================
     pp = hdr("Permissions-Policy") or hdr("Feature-Policy")
     if not pp:
-        add_finding("Permissions-Policy", "Missing", "Add Permissions-Policy to control access to powerful features (camera, microphone, geolocation).")
+        add_finding(
+            "Permissions-Policy",
+            "Missing",
+            "Restrict browser features such as camera, microphone, geolocation"
+        )
 
     return findings
 
@@ -181,10 +209,11 @@ def print_findings(findings: List[Dict[str, Any]], raw_headers: Dict[str, str], 
     """
 
     # Only Missing or Misconfigured findings
-    issues = [f for f in findings if f.get("Status") in ["Missing", "Misconfigured"]]
+    issues = [f for f in findings if f.get("Status") in ["Missing", "Misconfigured", "Informational"]]
 
     missing_count = len([f for f in issues if f.get("Status") == "Missing"])
     misconfigured_count = len([f for f in issues if f.get("Status") == "Misconfigured"])
+    info_count = len([f for f in findings if f.get("Status") == "Informational"])
 
     # Header lines
     print(Fore.CYAN + "\nHTTP Security Header Analysis Results" + Style.RESET_ALL)
@@ -223,6 +252,7 @@ def print_findings(findings: List[Dict[str, Any]], raw_headers: Dict[str, str], 
     print(Fore.WHITE + f"\nTotal Issues Detected: {Fore.YELLOW}{len(issues)}{Style.RESET_ALL}")
     print(Fore.WHITE + f"Missing Headers: {Fore.RED}{missing_count}{Style.RESET_ALL} | "
           f"Misconfigured: {Fore.YELLOW}{misconfigured_count}{Style.RESET_ALL}")
+    print(Fore.WHITE + f"Informational Findings: {Fore.CYAN}{info_count}{Style.RESET_ALL}")
 
     # Fixed risk rating (your system is categorical; do not change)
     print(Fore.WHITE + "\nRisk Rating:" + Style.RESET_ALL)
@@ -249,23 +279,30 @@ def print_findings(findings: List[Dict[str, Any]], raw_headers: Dict[str, str], 
 
 def get_findings_for_export(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Convert findings to export format.
-    DO NOT include 'Recommendation' field - let enrichment handle it via ItemDetails.
+    Convert header findings into export format.
+    Informational findings are preserved but do NOT increase risk.
     """
-    export_findings = []
-    
+    exported = []
+
     for f in findings:
-        header_name = f.get("Header", "")
-        
-        export_findings.append({
+        status = f.get("Status", "").lower()
+
+        # Map status to severity (categorical-safe)
+        if status == "informational":
+            severity = "Info"
+        elif status in ("missing", "misconfigured"):
+            severity = "Low"
+        else:
+            severity = "Low"
+
+        exported.append({
             "Category": "HTTP Security Headers",
-            "Header": header_name,
+            "Header": f.get("Header", ""),
             "Finding": f.get("Status", ""),
-            "_item_short": header_name,  # Used to match ItemDetails in test3.py
+            "_item_short": f.get("Header", ""),  # Used for ItemDetails enrichment
             "Status": f.get("Status", ""),
             "CurrentValue": f.get("CurrentValue"),
-            "Severity": "Low"
-            # DO NOT include "Recommendation" - enrichment will attach it from ItemDetails
+            "Severity": severity
         })
-    
-    return export_findings
+
+    return exported

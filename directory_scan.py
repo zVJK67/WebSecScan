@@ -18,7 +18,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Common paths to probe (safe, read-only)
 COMMON_PATHS = [
-    "/", "/robots.txt", "/sitemap.xml", "/.git/", "/.env", "/.htaccess",
+    "/robots.txt", "/sitemap.xml", "/.git/", "/.env", "/.htaccess",
     "/config.php", "/config.php.bak", "/config.bak", "/backup.zip",
     "/wp-config.php", "/admin/", "/admin/index.php", "/phpinfo.php",
     "/server-status", "/.well-known/security.txt", "/.well-known/change-password",
@@ -109,6 +109,7 @@ def scan_common_paths(base_url: str, timeout: int = 6, max_results: int = 50) ->
     for rel in COMMON_PATHS:
         if scanned >= max_results:
             break
+
         scanned += 1
 
         full = urljoin(base if base.endswith("/") else base + "/", rel.lstrip("/"))
@@ -119,7 +120,7 @@ def scan_common_paths(base_url: str, timeout: int = 6, max_results: int = 50) ->
             if status in INTERESTING_STATUS:
                 sev = _severity_for(rel, status)
                 risk_explanation = _get_risk_explanation(rel)
-                
+
                 findings.append({
                     "Category": "Directory Exposure",
                     "Severity": sev,
@@ -131,7 +132,6 @@ def scan_common_paths(base_url: str, timeout: int = 6, max_results: int = 50) ->
                     "_item_short": rel.strip("/"),
                 })
         except requests.RequestException:
-            # ignore transient network errors and continue scanning
             continue
 
     return findings

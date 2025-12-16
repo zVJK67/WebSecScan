@@ -10,8 +10,8 @@ from server_info import get_server_info, print_server_info
 from findings_summary import normalize_findings, generate_summary, print_summary_table, compute_cvss_overrides_from_findings
 from path_traversal import test_path_traversal, print_path_traversal_results
 from directory_scan import scan_common_paths, print_dir_scan_results
-from test import generate_interactive_html_report, export_to_json
-from test3 import VULNERABILITY_DEFINITIONS, enrich_finding_with_details
+from export_findings import generate_interactive_html_report, export_to_json
+from vulnerability_definitions import VULNERABILITY_DEFINITIONS, enrich_finding_with_details
 
 
 from colorama import Fore, Style, init
