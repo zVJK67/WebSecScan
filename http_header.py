@@ -249,7 +249,8 @@ def print_findings(findings: List[Dict[str, Any]], raw_headers: Dict[str, str], 
 
 def get_findings_for_export(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Convert header findings to export format with correct _item_short keys.
+    Convert findings to export format.
+    DO NOT include 'Recommendation' field - let enrichment handle it via ItemDetails.
     """
     export_findings = []
     
@@ -260,11 +261,11 @@ def get_findings_for_export(findings: List[Dict[str, Any]]) -> List[Dict[str, An
             "Category": "HTTP Security Headers",
             "Header": header_name,
             "Finding": f.get("Status", ""),
-            "_item_short": header_name,  # KEY: Use header name directly (matches ItemDetails keys)
+            "_item_short": header_name,  # Used to match ItemDetails in test3.py
             "Status": f.get("Status", ""),
             "CurrentValue": f.get("CurrentValue"),
-            "Recommendation": f.get("Recommendation"),
             "Severity": "Low"
+            # DO NOT include "Recommendation" - enrichment will attach it from ItemDetails
         })
     
     return export_findings

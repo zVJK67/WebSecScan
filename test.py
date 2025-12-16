@@ -565,7 +565,7 @@ REPORT_TEMPLATE = r"""
               </div>
 
               <div class="vuln-section">
-                <div class="section-title">Findings</div>
+                <div class="section-title">Instances</div>
 
                 {# Get schema and rows for this category #}
                 {% set schema = table_schema.get(cat_name, ["Finding","Status","Current Value"]) %}
@@ -609,25 +609,31 @@ REPORT_TEMPLATE = r"""
                                   {% endfor %}
                                 </ul>
 
-                              {# Case 2: Explicit CurrentValue from finding_obj #}
-                              {% elif finding_obj.get("CurrentValue") %}
+                              {# Case 2: Explicit Evidence or CurrentValue from finding_obj #}
+                              {% elif finding_obj.get("Evidence") or finding_obj.get("CurrentValue") %}
                                 <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">
-                                  {{ finding_obj.get("CurrentValue") }}
+                                  {{ finding_obj.get("Evidence") or finding_obj.get("CurrentValue") }}
                                 </code>
 
-                                {% if finding_obj.get("Detail") %}
+                                {% if finding_obj.get("Detail") and finding_obj.get("Detail") != (finding_obj.get("Evidence") or finding_obj.get("CurrentValue")) %}
                                   <div style="margin-top:4px;">
                                     {{ finding_obj.get("Detail") }}
                                   </div>
                                 {% endif %}
 
-                              {# Case 3: Detail only #}
+                              {# Case 3: Detail only (no code styling needed) #}
                               {% elif finding_obj.get("Detail") %}
                                 {{ finding_obj.get("Detail") }}
 
                               {# Case 4: Empty / None value #}
                               {% elif cell is none or cell == "" %}
                                 <span style="color:#9ca3af;">-</span>
+
+                              {# Case 5: Cell has value - apply code styling #}
+                              {% elif cell %}
+                                <code style="background:#e7f1ff; color:#213448; padding:2px 6px; border-radius:3px; font-family:monospace; font-size:12px;">
+                                  {{ cell }}
+                                </code>
 
                               {# Fallback #}
                               {% else %}
@@ -660,8 +666,8 @@ REPORT_TEMPLATE = r"""
                     {% for row in rows_for_cat %}
                       {% set f = row[-1] %}
                       {% if f.get("Impact") %}
-                        {# Get the actual finding name from the first column of the row #}
-                        {% set finding_name = row[0] if row|length > 0 else f.get("_item_short") %}
+                        {# Get the finding name from the Finding field, not row[0] #}
+                        {% set finding_name = f.get("Finding") or f.get("_item_short") or (row[0] if row|length > 0 else "") %}
                         <div style="margin-bottom:20px;">
                           <div style="font-weight:700; color:#1a1a1a; margin-bottom:6px;">{{ finding_name }}</div>
                           <div style="color:#2f3a47; line-height:1.6;">{{ f.get("Impact") }}</div>
@@ -680,7 +686,7 @@ REPORT_TEMPLATE = r"""
                 {% endif %}
               </div>
 
-              {# REMEDIATION SECTION #}
+              {# RECOMMENDATION SECTION #}
               <div class="vuln-section" style="margin-top:24px;">
                 <div class="remediation-box">
                   <div class="section-title">Remediation</div>
@@ -695,8 +701,8 @@ REPORT_TEMPLATE = r"""
                       {% for row in rows_for_cat %}
                         {% set f = row[-1] %}
                         {% if f.get("Recommendation") %}
-                          {# Get the actual finding name from the first column of the row #}
-                          {% set finding_name = row[0] if row|length > 0 else f.get("_item_short") %}
+                          {# Get the finding name from the Finding field, not row[0] #}
+                          {% set finding_name = f.get("Finding") or f.get("_item_short") or (row[0] if row|length > 0 else "") %}
                           <div style="margin-bottom:20px;">
                             <div style="font-weight:700; color:#856404; margin-bottom:6px;">{{ finding_name }}</div>
                             <div style="color:#664d03; line-height:1.6;">{{ f.get("Recommendation") }}</div>
@@ -1146,17 +1152,16 @@ def _make_col_map_from_def(cat_def):
     
     # Default fallback mappings for common column names
     default_candidates = {
-        "Finding": ["_item_short", "Header", "Context", "Description", "name"],
+        "Finding": ["_item_short", "Header", "Description"],
         "Method": ["Method", "_item_short", "Header"],
-        "Status": ["Status", "state"],
-        "Evidence": ["Evidence", "CurrentValue", "Current Value", "Value", "Detail"],
-        "Current Value": ["CurrentValue", "Current Value", "Value", "Detail"],
+        "Status": ["Status"],
+        "Evidence": ["Evidence", "CurrentValue", "Detail"],
+        "Current Value": ["Evidence", "CurrentValue", "Detail"],
         "Endpoint": ["Endpoint", "Path", "URL"],
         "Payloads Triggering": ["Payloads", "Payloads Triggering"],
         "Payloads": ["Payloads", "Payloads Triggering"],
-        "Scope": ["Scope"],
-        "URL": ["URL", "Path"],
-        "RelPath": ["RelPath", "Path"]
+        "URL": ["URL"],
+        "RelPath": ["RelPath"]
     }
     
     col_map = []
@@ -1227,6 +1232,45 @@ def _normalize_item_name(item):
         s = s.split(":", 1)[1].strip()
     return s.upper()
 
+def _normalize_item_short_for_defs(cat: str, raw: str) -> str:
+    if not raw:
+        return ""
+
+    s = str(raw).strip()
+
+    # FIX: HTTP Security Headers → keep header name only
+    if cat == "HTTP Security Headers":
+        if ":" in s:
+            return s.split(":", 1)[0].strip()
+        return s
+
+    # FIX: Cookie Security → extract known attribute names
+    if "Cookie Security" in cat:  # ← Changed from exact match
+        for key in (
+            "HttpOnly", "Secure", "SameSite", "Path",
+            "Domain", "Expires/Max-Age", "Weak Session ID",
+            "Excessive Lifetime", "Overly Broad Path Attribute"
+        ):
+            if key.lower() in s.lower():
+                return key
+        return s
+
+    # FIX: Server Info → map by meaning, not value
+    if "Server Info" in cat:  # ← Changed from exact match
+        sl = s.lower()
+        if "server" in sl and "header" in sl:
+            return "Server Header Exposed"
+        if "technology" in sl or "powered" in sl:
+            return "Technology Header Exposed"
+        if "framework" in sl or "generator" in sl:
+            return "Framework/Generator Header Exposed"
+        if "error" in sl:
+            return "Error Pages Reveal Server Details"
+        if "fingerprint" in sl or "behavior" in sl:
+            return "Server Behavioral Fingerprinting"
+        return s
+
+    return s
 
 def _rule_methods_options_only(cat_name, flist, cat_def):
     """Dynamic rule for Unsafe HTTP Methods."""
@@ -1340,18 +1384,15 @@ def generate_interactive_html_report(
                 # FIX 1: ONLY set _item_short for PER-ITEM categories
                 # ----------------------------
                 if cat in PER_ITEM_CATEGORIES:
-                    item_name = (
-                        finding.get("Method")
-                        or finding.get("Header")
-                        or finding.get("Cookie")
-                        or finding.get("Context")
-                    )
+                  raw_item = (
+                      finding.get("Method")
+                      or finding.get("Header")
+                      or finding.get("Finding")
+                      or finding.get("Context")
+                      or finding.get("Cookie")
+                  )
 
-                    if item_name:
-                        if isinstance(item_name, str) and ":" in item_name:
-                            finding["_item_short"] = item_name.split(":", 1)[1].strip()
-                        else:
-                            finding["_item_short"] = str(item_name).strip()
+                  finding["_item_short"] = _normalize_item_short_for_defs(cat, raw_item)
 
                 # ----------------------------
                 # Attach per-item Impact / Recommendation

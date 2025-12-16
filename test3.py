@@ -19,11 +19,10 @@ COOKIE_SECURITY_DEF= {
     "DefaultCVSS": "7.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N)",
 
     "TableType": None,
-    "TableColumns": ["Scope", "Finding", "Evidence"],
+    "TableColumns": ["Finding", "Current Value"],
     "TableColumnMap": {
-        "Scope": ["Scope"],
         "Finding": ["Finding"],
-        "Evidence": ["Evidence"]
+        "Current Value": ["Evidence"]
     },
 
     "ItemDetails": {
@@ -157,9 +156,9 @@ VULNERABILITY_DEFINITIONS = {
 
         "TableColumns": ["Header", "Status", "Current Value"],
             "TableColumnMap": {
-                "Header": ["Header", "_item_short", "Context"],
-                "Status": ["Status", "state"],
-                "Current Value": ["CurrentValue", "Current Value", "Value", "Detail"]
+                "Header": ["Header", "_item_short"],
+                "Status": ["Status"],
+                "Current Value": ["CurrentValue", "Detail"]
             },
 
         "ItemDetails": {
@@ -229,7 +228,7 @@ VULNERABILITY_DEFINITIONS = {
             "TableColumns": ["Method", "Status"],
         "TableColumnMap": {
             "Method": ["Method", "_item_short", "Header"],
-            "Status": ["Status", "state"]
+            "Status": ["Status"]
         },
 
         # Only per-method IMPACT (no per-method recommendation)
@@ -269,10 +268,10 @@ VULNERABILITY_DEFINITIONS = {
         "DefaultCVSS": "3.1 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)",
 
         "TableType": None,
-        "TableColumns": ["Finding", "Evidence"],    # visible column titles
+        "TableColumns": ["Finding", "Evidence"],    
         "TableColumnMap": {
-            "Finding": ["Header", "_item_short", "Context"],
-            "Evidence": ["CurrentValue", "Current Value", "Value", "Detail"]
+            "Finding": ["Header", "_item_short"],
+            "Evidence": ["Detail"]
         },
 
         "ItemDetails": {
@@ -591,11 +590,10 @@ VULNERABILITY_DEFINITIONS = {
         "RiskRule": "ssl_https_not_supported",
 
         # Table configuration (replaces TableType)
-        "TableColumns": ["Finding", "Current Value", "Evidence"],
+        "TableColumns": ["Finding", "Evidence"],
         "TableColumnMap": {
-            "Finding": ["Description", "_item_short", "Context"],
-            "Current Value": ["CurrentValue", "Current Value"],
-            "Evidence": ["Evidence"]
+            "Finding": ["Description", "_item_short"],
+            "Evidence": ["CurrentValue"],
         },
 
         "ItemDetails": {

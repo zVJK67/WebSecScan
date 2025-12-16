@@ -49,40 +49,23 @@ def enrich_finding_dynamic(finding: dict) -> dict:
     
     # Special handling for HTTP Security Headers
     if category == "HTTP Security Headers":
-        missing_headers = (
-            finding.get("MissingHeaders")
-            or finding.get("Missing")
-            or finding.get("HeadersMissing")
-            or []
+        # Get the header name from finding
+        header_name = (
+            finding.get("_item_short") 
+            or finding.get("Header") 
+            or finding.get("Context")
+            or ""
         )
-
-        if isinstance(missing_headers, str):
-            missing_headers = [missing_headers]
-
-        if not missing_headers:
-            return enriched
-
-        header_details = VULNERABILITY_DEFINITIONS["HTTP Security Headers"].get("HeaderDetails", {})
-        impacts, recs = [], []
-
-        for hdr in missing_headers:
-            hdr_key = hdr.strip()
-            detail = header_details.get(hdr_key)
-
-            if not detail:
-                alt = hdr_key.replace("-", " ").title().replace(" ", "-")
-                detail = header_details.get(alt)
-
+        
+        if header_name:
+            header_details = VULNERABILITY_DEFINITIONS["HTTP Security Headers"].get("ItemDetails", {})
+            detail = header_details.get(header_name)
+            
             if detail:
-                if detail.get("Impact"):
-                    impacts.append(f"- {detail['Impact']}")
-                if detail.get("Recommendation"):
-                    recs.append(f"- {detail['Recommendation']}")
-
-        if impacts:
-            enriched["Impact"] = "\n".join(impacts)
-        if recs:
-            enriched["Recommendation"] = "\n".join(recs)
+                if detail.get("Impact") and not enriched.get("Impact"):
+                    enriched["Impact"] = detail["Impact"]
+                if detail.get("Recommendation") and not enriched.get("Recommendation"):
+                    enriched["Recommendation"] = detail["Recommendation"]
     
     # Special handling for Unsafe HTTP Methods
     elif category == "Unsafe HTTP Methods Enabled":
@@ -238,7 +221,7 @@ def main():
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # Tag header findings with proper category
-    header_findings = _tag_findings_with_category(header_findings, "Security Headers")
+    header_findings = _tag_findings_with_category(header_findings, "HTTP Security Headers")
 
     # === Step 2: HTTP Method Check ===
     print(Fore.CYAN + "\n[2/8] Checking HTTP methods..." + Style.RESET_ALL)
@@ -274,26 +257,41 @@ def main():
     print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # Tag server findings with proper category
-    server_findings = _tag_findings_with_category(server_findings, "Server Information")
+    server_findings = _tag_findings_with_category(server_findings, "Server Info")
 
     # === Step 4: Cookie Security Analysis ===
-    # Selenium-based JS cookie capture is required for this system (always enabled).
+    print(Fore.CYAN + "\n[4/8] Checking cookie security..." + Style.RESET_ALL)
     t0 = time.time()
     try:
-        # Always capture JS-created cookies using Selenium (no prompt).
         capture_js = True
-
-        # Call the cookie analyzer (it prints its own formatted output).
         cookie_findings = analyze_cookies(url, include_js_cookies=capture_js)
+
+        # Separate findings by scope and tag appropriately
+        server_side_cookies = []
+        client_side_cookies = []
+        
+        for finding in cookie_findings:
+            scope = finding.get("Scope", "")
+            if "Server-Side" in scope:
+                server_side_cookies.append(finding)
+            elif "Client-Side" in scope:
+                client_side_cookies.append(finding)
+            else:
+                # Default to server-side if scope is unclear
+                server_side_cookies.append(finding)
+        
+        # Tag each group with correct category
+        server_side_cookies = _tag_findings_with_category(server_side_cookies, "Cookie Security (Server-Side)")
+        client_side_cookies = _tag_findings_with_category(client_side_cookies, "Cookie Security (Client-Side)")
+        
+        # Merge back together
+        cookie_findings = server_side_cookies + client_side_cookies
 
     except Exception as e:
         print(Fore.RED + f"[ERROR] Cookie check failed: {e}" + Style.RESET_ALL)
         cookie_findings = []
-    # Print elapsed time for consistency with other steps
-    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
-    # Tag cookie findings with proper category for aggregation later
-    cookie_findings = _tag_findings_with_category(cookie_findings, "Cookie Security")
+    print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
     # === Step 5: CORS Security Analysis (UPDATED) ===
     print(Fore.CYAN + "\n[5/8] Checking Cross-Origin Resource Sharing (CORS) configuration..." + Style.RESET_ALL)

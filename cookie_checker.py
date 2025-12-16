@@ -291,9 +291,7 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
     """
     Analyze cookies set by the server and capture JS-created cookies using Selenium.
     Returns a summary list (cookie_findings) suitable for integration with the rest of the scanner.
-    """
-    print(Fore.CYAN + "\n[4/8] Checking cookie security..." + Style.RESET_ALL)
-    
+    """    
     session = _get_session()
     server_cookies: List[Dict[str, Any]] = []
     client_cookies: List[Dict[str, Any]] = []
@@ -523,7 +521,16 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
                 "Finding": finding_title,
                 "_item_short": item_key,  # THIS IS THE KEY - must match ItemDetails keys
                 "Evidence": _build_cookie_evidence(issue_type, cookie),
-                "Severity": severity
+                "Severity": severity,
+                # Add cookie metadata for template rendering
+                "_cookie_name": cookie.get("Name"),
+                "_cookie_value": cookie.get("Value"),
+                "_cookie_secure": cookie.get("Secure"),
+                "_cookie_httponly": cookie.get("HttpOnly"),
+                "_cookie_samesite": cookie.get("SameSite"),
+                "_cookie_path": cookie.get("Path"),
+                "_cookie_domain": cookie.get("Domain"),
+                "_cookie_expires": cookie.get("Expires")
             })
 
     # -------- Client-side cookies --------
@@ -543,7 +550,16 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
                 "Finding": finding_title,
                 "_item_short": item_key,  # THIS IS THE KEY - must match ItemDetails keys
                 "Evidence": _build_cookie_evidence(issue_type, cookie),
-                "Severity": severity
+                "Severity": severity,
+                # Add cookie metadata for template rendering
+                "_cookie_name": cookie.get("Name"),
+                "_cookie_value": cookie.get("Value"),
+                "_cookie_secure": cookie.get("Secure"),
+                "_cookie_httponly": cookie.get("HttpOnly"),
+                "_cookie_samesite": cookie.get("SameSite"),
+                "_cookie_path": cookie.get("Path"),
+                "_cookie_domain": cookie.get("Domain"),
+                "_cookie_expires": cookie.get("Expires")
             })
 
     return cookie_findings
@@ -604,24 +620,52 @@ def _print_issues(issues: List[Dict[str, Any]], is_server_side: bool = True):
 
 
 def _build_cookie_evidence(issue_type: str, cookie: dict) -> str:
-    raw = cookie.get("Raw")
     name = cookie.get("Name")
     value = cookie.get("Value")
 
-    # Missing flags → show full cookie
+    # Build full attribute string (CLI-equivalent)
+    attrs = []
+
+    if cookie.get("SameSite") not in ("N/A", None, ""):
+        attrs.append(f"SameSite={cookie.get('SameSite')}")
+
+    if cookie.get("Path") not in ("N/A", None, ""):
+        attrs.append(f"Path={cookie.get('Path')}")
+
+    if cookie.get("Domain") not in ("N/A", None, ""):
+        attrs.append(f"Domain={cookie.get('Domain')}")
+
+    if cookie.get("Secure"):
+        attrs.append("Secure")
+
+    if cookie.get("HttpOnly"):
+        attrs.append("HttpOnly")
+
+    attr_str = "; ".join(attrs)
+
+    # Missing flags → MUST show full cookie value
     if issue_type in {"HttpOnly", "Secure", "SameSite"}:
-        if raw:
-            return f"Set-Cookie: {raw}"
-        return f"Cookie: {name}={value}"
+        if cookie.get("Raw"):
+            return f"Set-Cookie: {cookie['Raw']}"
+
+        # Client-side cookie reconstruction
+        if attr_str:
+            return f"document.cookie: {name}={value}; {attr_str}"
+
+        return f"document.cookie: {name}={value}"
 
     # Attribute-specific evidence
-    if issue_type in {"Path", "Overly Broad Path"}:
+    if issue_type == "Path":
         return f"Path={cookie.get('Path', 'N/A')}"
+
     if issue_type == "Domain":
         return f"Domain={cookie.get('Domain', 'N/A')}"
+
     if issue_type in {"Expires/Max-Age", "Excessive Lifetime"}:
         return f"Expires={cookie.get('Expires', 'N/A')}, Max-Age={cookie.get('MaxAge', 'N/A')}"
+
     if issue_type == "Weak Session ID":
         return f"{name}={value}"
 
     return f"Cookie: {name}"
+
