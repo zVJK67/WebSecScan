@@ -1,10 +1,6 @@
-# email_server.py
 """
-Email Server Backend
-
-Handles email sending requests from the interactive HTML report.
-PDF generation is handled CLIENT-SIDE (browser print).
-Server only sends JSON attachment (and metadata).
+Email Server with PDF-safe SVG Chart Rendering
+(Flex-free, WeasyPrint compatible)
 """
 
 from flask import Flask, request, jsonify
@@ -12,8 +8,11 @@ from flask_cors import CORS
 from optional_email import send_report_email
 import json
 import os
+import math
+import re
 from datetime import datetime
 import tempfile
+import traceback
 
 app = Flask(__name__)
 CORS(app)
@@ -24,72 +23,330 @@ SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
 SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
 
+try:
+    from weasyprint import HTML, CSS
+    from weasyprint.text.fonts import FontConfiguration
+    WEASYPRINT_AVAILABLE = True
+except ImportError:
+    WEASYPRINT_AVAILABLE = False
 
+
+# =========================================================
+# SVG PIE CHART (PDF SAFE)
+# =========================================================
+def generate_svg_pie_chart(categories, width=400, height=400):
+    data = []
+    for cat in categories:
+        total = cat.get("high", 0) + cat.get("medium", 0) + cat.get("low", 0)
+        if total > 0:
+            data.append({
+                "name": cat.get("display_name", cat.get("name", "Unknown")),
+                "value": total
+            })
+
+    if not data:
+        return (
+            f'<svg viewBox="0 0 {width} {height}" '
+            f'width="{width}" height="{height}">'
+            '<text x="50%" y="50%" text-anchor="middle" fill="#999">'
+            'No data</text></svg>'
+        )
+
+    colors = [
+        "#FF6B6B", "#FF9F43", "#FFD43B", "#6BCB77",
+        "#4D96FF", "#845EC2", "#00C9A7", "#FF9671"
+    ]
+
+    total = sum(item["value"] for item in data)
+    cx, cy = width / 2, height / 2
+    radius = min(width, height) / 2 - 40
+
+    svg = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="0 0 {width} {height}" '
+        f'width="{width}" height="{height}" '
+        f'preserveAspectRatio="xMidYMid meet">'
+    ]
+
+    angle = -90
+    for i, item in enumerate(data):
+        sweep = item["value"] / total * 360
+        end = angle + sweep
+
+        x1 = cx + radius * math.cos(math.radians(angle))
+        y1 = cy + radius * math.sin(math.radians(angle))
+        x2 = cx + radius * math.cos(math.radians(end))
+        y2 = cy + radius * math.sin(math.radians(end))
+
+        large = 1 if sweep > 180 else 0
+        color = colors[i % len(colors)]
+
+        svg.append(
+            f'<path d="M{cx},{cy} L{x1},{y1} '
+            f'A{radius},{radius} 0 {large},1 {x2},{y2} Z" '
+            f'fill="{color}" stroke="#fff" stroke-width="2"/>'
+        )
+        angle = end
+
+    svg.append("</svg>")
+    return "".join(svg)
+
+
+# =========================================================
+# HTML → PDF CONVERSION
+# =========================================================
+def convert_html_for_pdf(html: str, report_data: dict) -> str:
+    """
+    Enable SVG chart rendering using existing Jinja template logic.
+    """
+    categories = report_data.get("summary", [])
+
+    svg_chart = generate_svg_pie_chart(categories)
+
+    # Inject flags BEFORE </head>
+    inject = f"""
+    <script>
+      window.__USE_SVG_CHART__ = true;
+    </script>
+    """
+
+    html = html.replace("</head>", inject + "</head>")
+
+    # Replace Jinja placeholders safely
+    html = html.replace(
+        "{% if use_svg_chart %}",
+        ""
+    ).replace(
+        "{% else %}",
+        ""
+    ).replace(
+        "{% endif %}",
+        ""
+    )
+
+    html = html.replace(
+        "{{ svg_chart|safe }}",
+        svg_chart
+    )
+
+    # Remove Chart.js
+    html = re.sub(
+        r'<script src="https://cdn\.jsdelivr\.net/npm/chart\.js.*?</script>',
+        "",
+        html,
+        flags=re.DOTALL
+    )
+
+    html = re.sub(
+        r'<script>\s*\(function\(\)\{.*?new Chart.*?\}\)\(\);\s*</script>',
+        "",
+        html,
+        flags=re.DOTALL
+    )
+
+    return html
+
+# =========================================================
+# PDF GENERATION
+# =========================================================
+def generate_pdf_from_html(html, output_path, report_data):
+    if not WEASYPRINT_AVAILABLE:
+        return False, "WeasyPrint not installed"
+
+    try:
+        html = convert_html_for_pdf(html, report_data)
+
+        font_config = FontConfiguration()
+
+        pdf_css = CSS(string="""
+            @page { 
+                size: A4 portrait; 
+                margin: 12mm;
+            }
+
+            body {
+                background: white;
+            }
+
+            .no-print,
+            .export-modal,
+            .export-main-btn,
+            #openExportBtn {
+                display: none !important;
+            }
+                      
+            /* 🚨 1. REMOVE HEIGHT LOCK (THIS WAS THE REAL KILLER) */
+            html, body {
+                height: auto !important;
+            }
+
+            /* 🚨 2. ALLOW PAGE CONTENT TO FLOW */
+            .page {
+                overflow: visible !important;
+            }
+
+            /* 🚨 3. FORCE DETAILS TO PAGE 2 */
+            .details {
+                page-break-before: always;
+            }
+
+            /* ===== CRITICAL: REMOVE FLEXBOX FOR PDF ===== */
+            .summary {
+                display: block !important;
+                page-break-inside: avoid;
+            }
+
+            .left-summary,
+            .right-summary {
+                width: 100% !important;
+                margin: 0 !important;
+                display: block !important;
+            }
+
+            /* ===== FIX: CHART SIZING ===== */
+            .chart-wrapper {
+                min-height: auto !important;
+                height: auto !important;
+                padding: 16px !important;
+                margin: 16px 0 !important;
+                page-break-inside: avoid;
+                display: block !important;
+            }
+
+            .chart-container {
+                width: 100% !important;
+                height: auto !important;
+                display: block !important;
+            }
+
+            .svg-chart-wrapper svg,
+            .chart-container svg {
+                width: 300px !important;
+                height: 300px !important;
+                display: block !important;
+                margin: 0 auto !important;
+            }
+
+            /* ===== FIX: REMOVE BLANK SPACE IN CATEGORIES ===== */
+            .category-section {
+                page-break-inside: auto !important;
+                margin-bottom: 16px !important;
+            }
+
+            .vuln-content {
+                padding: 16px !important;
+            }
+
+            .vuln-section {
+                page-break-inside: avoid;
+            }
+
+            /* ===== FIX: TABLE SPACING ===== */
+            .instances-table {
+                margin-top: 8px !important;
+                page-break-inside: auto;
+            }
+
+            .instances-table tbody tr {
+                page-break-inside: avoid;
+            }
+
+            /* ===== FIX: REMEDIATION BOX ===== */
+            .remediation-box {
+                margin-top: 12px !important;
+                page-break-inside: avoid;
+            }
+
+            /* ===== PRESERVE COLORS ===== */
+            .report-header, 
+            .meta, 
+            .report-footer,
+            .chart-wrapper,
+            .card,
+            .stat-cards .card,
+            .risk-value.high,
+            .risk-value.medium,
+            .risk-value.low,
+            .category-section.risk-high,
+            .category-section.risk-medium,
+            .category-section.risk-low,
+            .remediation-box {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+            }
+
+            /* ===== SUMMARY TABLE COMPACT ===== */
+            .summary-table {
+                margin-top: 10px !important;
+                margin-bottom: 16px !important;
+            }
+
+            .stat-cards {
+                margin-bottom: 12px !important;
+            }
+
+            /* ===== REMOVE EXCESSIVE MARGINS ===== */
+            .details {
+                padding: 16px 32px 24px !important;
+            }
+
+            h2 {
+                margin-top: 8px !important;
+                margin-bottom: 12px !important;
+            }
+            """, font_config=font_config)
+
+        HTML(string=html).write_pdf(
+            output_path,
+            stylesheets=[pdf_css],
+            font_config=font_config
+        )
+
+        return True, None
+
+    except Exception as e:
+        traceback.print_exc()
+        return False, str(e)
+
+
+# =========================================================
+# EMAIL ENDPOINT
+# =========================================================
 @app.route("/send-email", methods=["POST"])
 def send_email():
-    """
-    Expected JSON payload:
-    {
-        "recipient_email": "user@example.com",
-        "report_data": {...},     # REQUIRED (metadata + summary + findings)
-        "target_url": "https://example.com",
-        "include_pdf": true,      # handled client-side
-        "include_json": true
-    }
-    """
     try:
         data = request.get_json()
-        if not data:
-            return jsonify({"error": "No data provided"}), 400
-
         recipient_email = data.get("recipient_email")
         report_data = data.get("report_data")
+        html = data.get("html")
         target_url = data.get("target_url", "Unknown")
-        include_pdf = bool(data.get("include_pdf", False))
-        include_json = bool(data.get("include_json", False))
 
-        if not recipient_email:
-            return jsonify({"error": "Recipient email is required"}), 400
-
-        if not include_pdf and not include_json:
-            return jsonify({"error": "At least one format must be selected"}), 400
-
-        if include_json and not report_data:
-            return jsonify({"error": "JSON data missing"}), 400
-
-        temp_files = []
-        json_file = None
+        include_pdf = data.get("include_pdf", False)
+        include_json = data.get("include_json", False)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        temp_files = []
 
-        # ---------------------------
-        # JSON attachment (server-side)
-        # ---------------------------
+        json_file = None
+        pdf_file = None
+
         if include_json:
-            json_file = os.path.join(
-                tempfile.gettempdir(),
-                f"security_report_{timestamp}.json"
-            )
+            json_file = os.path.join(tempfile.gettempdir(), f"report_{timestamp}.json")
             with open(json_file, "w", encoding="utf-8") as f:
                 json.dump(report_data, f, indent=2, ensure_ascii=False)
-
             temp_files.append(json_file)
-            app.logger.info(f"Generated JSON at {json_file}")
 
-        # ---------------------------
-        # PDF handling (CLIENT-SIDE ONLY)
-        # ---------------------------
         if include_pdf:
-            app.logger.info(
-                "PDF requested – handled client-side via browser print (no server PDF)"
-            )
+            pdf_file = os.path.join(tempfile.gettempdir(), f"report_{timestamp}.pdf")
+            ok, err = generate_pdf_from_html(html, pdf_file, report_data)
+            if not ok:
+                return jsonify({"success": False, "error": err}), 500
+            temp_files.append(pdf_file)
 
-        # ---------------------------
-        # Send email
-        # ---------------------------
         success = send_report_email(
             recipient_email=recipient_email,
-            pdf_file=None,          # IMPORTANT: no server PDF
+            pdf_file=pdf_file,
             json_file=json_file,
             target_url=target_url,
             sender_email=SENDER_EMAIL,
@@ -98,85 +355,27 @@ def send_email():
             smtp_port=SMTP_PORT
         )
 
-        # Cleanup temp files
-        for t in temp_files:
+        for f in temp_files:
             try:
-                if os.path.exists(t):
-                    os.remove(t)
-            except Exception:
-                app.logger.warning(f"Could not delete temp file {t}")
+                os.remove(f)
+            except:
+                pass
 
-        if success:
-            return jsonify({
-                "success": True,
-                "message": f"Report sent to {recipient_email}"
-            }), 200
-        else:
-            return jsonify({
-                "success": False,
-                "error": "Failed to send email (SMTP)"
-            }), 500
+        return jsonify({"success": success})
 
     except Exception as e:
-        app.logger.exception("Unhandled error in /send-email")
+        traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route("/health", methods=["GET"])
-def health_check():
+# =========================================================
+@app.route("/health")
+def health():
     return jsonify({
-        "status": "running",
-        "service": "WebSecScan Email Server",
-        "timestamp": datetime.now().isoformat()
-    }), 200
-
-
-@app.route("/", methods=["GET"])
-def index():
-    return """
-    <html>
-    <head>
-      <title>WebSecScan Email Server</title>
-      <style>
-        body { font-family: Arial; max-width: 800px; margin: 40px auto; }
-        code { background:#eee; padding:2px 6px; border-radius:4px; }
-      </style>
-    </head>
-    <body>
-      <h1>🛡️ WebSecScan Email Server</h1>
-      <p>Status: <strong>Running</strong></p>
-
-      <h3>Endpoints</h3>
-      <ul>
-        <li><code>POST /send-email</code></li>
-        <li><code>GET /health</code></li>
-      </ul>
-
-      <h3>Notes</h3>
-      <ul>
-        <li>PDF is generated by the browser (not server)</li>
-        <li>Server sends JSON attachment only</li>
-        <li>No wkhtmltopdf required</li>
-      </ul>
-    </body>
-    </html>
-    """
-
-
-def main():
-    print("\n" + "=" * 60)
-    print("🛡️  WebSecScan Email Server")
-    print("=" * 60)
-
-    if not SENDER_EMAIL or not SENDER_PASSWORD:
-        print("\n⚠️  WARNING: Email credentials not configured")
-    else:
-        print(f"✓ Sender email: {SENDER_EMAIL}")
-        print(f"✓ SMTP server: {SMTP_SERVER}:{SMTP_PORT}")
-
-    print("\n🚀 Starting server on http://localhost:5000\n")
-    app.run(host="0.0.0.0", port=5000, debug=False)
+        "weasyprint": WEASYPRINT_AVAILABLE,
+        "email_configured": bool(SENDER_EMAIL and SENDER_PASSWORD)
+    })
 
 
 if __name__ == "__main__":
-    main()
+    app.run(host="0.0.0.0", port=5000, debug=True)

@@ -8,6 +8,7 @@ Uses a unified table builder for all categories.
 """
 
 import json
+import math
 from typing import List, Dict, Any
 from datetime import datetime
 from colorama import Fore, Style
@@ -155,13 +156,13 @@ REPORT_TEMPLATE = r"""
       border-radius: 12px;
       padding: 20px 18px;
       border: 2px solid rgba(0,0,0,0.08);
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      min-height: 420px;
-      position: relative;
+
+      /* PDF-safe layout */
+      display: block;
+      text-align: center;
+
+      /* remove forced height */
+      min-height: unset;
     }
 
     .chart-wrapper .card-title {
@@ -174,9 +175,15 @@ REPORT_TEMPLATE = r"""
 
     /* Chart canvas container */
     .chart-container {
-      position: relative;
-      width: 320px;
-      height: 320px;
+      display: block;
+      width: auto;
+      height: auto;
+      margin: 12px auto 0;
+    }
+
+    .chart-container img {
+      display: block;
+      margin: 0 auto;
     }
 
     #categoryChart {
@@ -355,53 +362,135 @@ REPORT_TEMPLATE = r"""
     }
 
     /* print */
-    @page { size: A4 portrait; margin: 12mm; }
-    @media print {
-      body { background: white; }
-      .page { box-shadow:none; border-radius:0; width: auto; }
-      .chart-wrapper, .card, .summary-table { page-break-inside: avoid; }
-      .report-header, .meta, .report-footer { -webkit-print-color-adjust: exact; }
-      .no-print { display:none !important; }
+    @page { 
+      size: A4 portrait; 
+      margin: 12mm;
     }
 
-    .anchor { display:block; padding-top:40px; margin-top:-40px; }
-
-    /* ===== ABSOLUTE PRINT BLOCK ===== */
     @media print {
-      .no-print,
-      .export-modal,
-      .export-main-btn,
-      #openExportBtn,
-      #exportModal,
-      button {
-        display: none !important;
-        visibility: hidden !important;
-        opacity: 0 !important;
-        position: absolute !important;
-        left: -9999px !important;
-      }
 
+      /* Force white background */
       body {
         background: white !important;
         margin: 0 !important;
         padding: 0 !important;
       }
 
+      /* Optimize page container */
       .page {
-        page-break-after: auto !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        width: auto !important;
         margin: 0 !important;
-        width: 100% !important;
-        max-width: 100% !important;
+        page-break-after: auto !important;
       }
 
+      /* =========================================================
+        FIX #1 — KEEP HEADER + SUMMARY + TABLE + CHART TOGETHER
+        ========================================================= */
+
+      .summary {
+        page-break-inside: avoid;
+      }
+
+      .chart-wrapper,
+      .card,
+      .summary-table {
+        page-break-before: auto;
+        page-break-inside: avoid;
+      }
+
+      /* =========================================================
+        FIX #2 — REMOVE HUGE BLANK SPACES IN VULN BOXES
+        ========================================================= */
+
+      /* Allow vulnerability boxes to split naturally */
       .category-section {
-        page-break-inside: avoid !important;
+        page-break-inside: auto;
+        margin-bottom: 16px;
       }
 
-      /* Ensure modal overlay is completely gone */
-      div[style*="position: fixed"],
-      div[style*="position:fixed"] {
+      /* Keep logical blocks readable */
+      .vuln-section,
+      .instances-table tbody tr {
+        page-break-inside: avoid;
+      }
+
+      /* =========================================================
+        PRESERVE COLORS (IMPORTANT FOR PDF)
+        ========================================================= */
+
+      .report-header, 
+      .meta, 
+      .report-footer,
+      .chart-wrapper,
+      .card,
+      .risk-value.high,
+      .risk-value.medium,
+      .risk-value.low,
+      .category-section.risk-high,
+      .category-section.risk-medium,
+      .category-section.risk-low,
+      .remediation-box {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
+
+      /* =========================================================
+        HIDE EXPORT UI COMPLETELY
+        ========================================================= */
+
+      .no-print,
+      .export-modal,
+      .export-main-btn,
+      #openExportBtn,
+      #exportModal,
+      button,
+      [id*="export"],
+      [class*="export"] {
         display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        position: absolute !important;
+        left: -9999px !important;
+        top: -9999px !important;
+        width: 0 !important;
+        height: 0 !important;
+        overflow: hidden !important;
+      }
+
+      /* Remove any overlay/backdrop elements */
+      div[style*="position: fixed"],
+      div[style*="position:fixed"],
+      div[style*="rgba(0,0,0"] {
+        display: none !important;
+      }
+
+      /* =========================================================
+        CHART VISIBILITY SAFETY
+        ========================================================= */
+
+      .chart-wrapper {
+        display: block;
+      }
+
+      .chart-container img {
+        display: block;
+        margin: 0 auto;
+      }
+
+      .chart-wrapper .card-title {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
+
+      /* Ensure stat cards keep color */
+      .stat-cards .card {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
       }
     }
   </style>
@@ -464,7 +553,13 @@ REPORT_TEMPLATE = r"""
         <div class="chart-wrapper" role="img" aria-label="Vulnerability categories chart">
           <div class="card-title">Vulnerability Categories Chart</div>
           <div class="chart-container">
-            <canvas id="categoryChart"></canvas>
+            {% if use_svg_chart %}
+              <!-- Static SVG for PDF export -->
+              {{ svg_chart|safe }}
+            {% else %}
+              <!-- Interactive Chart.js for browser -->
+              <canvas id="categoryChart"></canvas>
+            {% endif %}
           </div>
           <div style="margin-top:16px;font-size:13px;font-weight:700;color:#5b6b7a;">
             Click a slice to jump to that details section.
@@ -938,8 +1033,72 @@ REPORT_TEMPLATE = r"""
         ====================================================== */
       if (!sendEmail.checked) {
 
+        /* ---------- BOTH PDF AND JSON ---------- */
+        if (exportPDF.checked && exportJSON.checked) {
+          // First download JSON
+          try {
+            const data = {
+              scan_metadata: {
+                target_url: "{{ target_url }}",
+                scan_time: "{{ scan_time }}",
+                total_findings: {{ total_findings }},
+                severity_counts: {
+                  High: {{ total_high }},
+                  Medium: {{ total_medium }},
+                  Low: {{ total_low }}
+                }
+              },
+              summary: {{ categories | tojson }},
+              findings: {{ findings_by_category | tojson }}
+            };
+
+            const blob = new Blob(
+              [JSON.stringify(data, null, 2)],
+              { type: "application/json" }
+            );
+
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "security_scan_report.json";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+          } catch (e) {
+            status.textContent = "Failed to generate JSON file.";
+            return;
+          }
+
+          // Then trigger PDF print
+          modal.style.display = "none";
+          
+          // Wait for modal to fully close before printing
+          setTimeout(() => {
+            // Hide the export button before printing
+            openBtn.style.display = "none";
+            
+            // Ensure modal is completely hidden
+            modal.style.visibility = "hidden";
+            modal.style.opacity = "0";
+            
+            // Trigger print dialog
+            window.print();
+            
+            // Restore UI after print dialog closes
+            setTimeout(() => {
+              openBtn.style.display = "";
+              modal.style.visibility = "";
+              modal.style.opacity = "";
+            }, 500);
+          }, 150);
+
+          status.textContent = "JSON downloaded. Opening print dialog for PDF...";
+          return;
+        }
+
         /* ---------- JSON ONLY ---------- */
-        if (exportJSON.checked) {
+        if (exportJSON.checked && !exportPDF.checked) {
           try {
             const data = {
               scan_metadata: {
@@ -970,8 +1129,9 @@ REPORT_TEMPLATE = r"""
             a.remove();
             URL.revokeObjectURL(url);
 
-            status.textContent = "JSON file downloaded to your Downloads folder.";
-            return; // ✅ STOP — NO BACKEND
+            modal.style.display = "none";
+            status.textContent = "JSON file downloaded.";
+            return;
           } catch (e) {
             status.textContent = "Failed to generate JSON file.";
             return;
@@ -979,24 +1139,55 @@ REPORT_TEMPLATE = r"""
         }
 
         /* ---------- PDF ONLY ---------- */
-        if (exportPDF.checked) {
+        if (exportPDF.checked && !exportJSON.checked) {
           modal.style.display = "none";
-          openBtn.style.display = "none";
-
+          
           setTimeout(() => {
+            // Hide the export button
+            openBtn.style.display = "none";
+            
+            // Ensure modal is completely hidden
+            modal.style.visibility = "hidden";
+            modal.style.opacity = "0";
+            
+            // Trigger print
             window.print();
+            
+            // Restore after print
             setTimeout(() => {
               openBtn.style.display = "";
+              modal.style.visibility = "";
+              modal.style.opacity = "";
             }, 500);
           }, 150);
 
-          return; // ✅ STOP — NO BACKEND
+          return;
         }
+      }
+
+      function prepareChartForPdf() {
+        const canvas = document.getElementById("categoryChart");
+        if (!canvas) return;
+
+        const chart = Chart.getChart(canvas);
+        if (!chart) return;
+
+        // Convert Chart.js canvas → image
+        const img = document.createElement("img");
+        img.src = chart.toBase64Image();
+        img.style.width = "320px";
+        img.style.height = "320px";
+        img.style.display = "block";
+        img.style.margin = "0 auto";
+
+        canvas.replaceWith(img);
       }
 
       /* ======================================================
         CASE 2: SEND TO EMAIL (BACKEND REQUIRED)
         ====================================================== */
+      prepareChartForPdf();
+
       const payload = {
         recipient_email: emailInput.value,
         include_pdf: exportPDF.checked,
@@ -1021,6 +1212,7 @@ REPORT_TEMPLATE = r"""
 
       try {
         confirmBtn.disabled = true;
+        status.textContent = "Sending email...";
 
         const res = await fetch(EMAIL_API, {
           method: "POST",
@@ -1029,12 +1221,18 @@ REPORT_TEMPLATE = r"""
         });
 
         const json = await res.json();
-        status.textContent = json.success
-          ? "Email sent successfully."
-          : "Export failed.";
+        
+        if (json.success) {
+          status.textContent = "✅ Email sent successfully!";
+          status.style.color = "#28a745";
+        } else {
+          status.textContent = "❌ " + (json.error || "Export failed.");
+          status.style.color = "#dc3545";
+        }
 
       } catch (e) {
-        status.textContent = "Export failed.";
+        status.textContent = "❌ Failed to send email: " + e.message;
+        status.style.color = "#dc3545";
       } finally {
         confirmBtn.disabled = false;
       }
@@ -1384,6 +1582,80 @@ def _compute_category_risk_generic(cat_name, flist, category_defs):
 # A4 enforcement helper (returns inline style)
 def _page_style_for_a4(force_a4: bool):
     return ' style="width:210mm;max-width:210mm;margin:0 auto;"' if force_a4 else ""
+
+
+def _generate_pie_chart_svg(categories: List[Dict], width: int = 320, height: int = 320) -> str:
+    """Generate SVG pie chart for PDF export (WeasyPrint compatible)."""
+    data = []
+    for cat in categories:
+        total = cat.get('high', 0) + cat.get('medium', 0) + cat.get('low', 0)
+        if total > 0:
+            data.append({
+                'name': cat.get('display_name') or cat.get('name', 'Unknown'),
+                'value': total
+            })
+    
+    if not data:
+        return f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"><text x="50%" y="50%" text-anchor="middle" fill="#999">No data</text></svg>'
+    
+    colors = ['#FF6B6B', '#FF9F43', '#FFD43B', '#6BCB77', '#4D96FF', '#845EC2', '#00C9A7', '#FF9671']
+    total = sum(item['value'] for item in data)
+    
+    cx = width // 2
+    cy = height // 2
+    radius = min(width, height) // 2 - 40
+    
+    svg_parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '<style>',
+        '.chart-slice { stroke: white; stroke-width: 2; }',
+        '.legend-text { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 11px; fill: #333; }',
+        '</style>'
+    ]
+    
+    # Draw slices
+    start_angle = -90
+    for i, item in enumerate(data):
+        angle = (item['value'] / total) * 360
+        end_angle = start_angle + angle
+        
+        start_rad = math.radians(start_angle)
+        end_rad = math.radians(end_angle)
+        
+        x1 = cx + radius * math.cos(start_rad)
+        y1 = cy + radius * math.sin(start_rad)
+        x2 = cx + radius * math.cos(end_rad)
+        y2 = cy + radius * math.sin(end_rad)
+        
+        large_arc = 1 if angle > 180 else 0
+        color = colors[i % len(colors)]
+        
+        path = f'<path class="chart-slice" d="M {cx},{cy} L {x1},{y1} A {radius},{radius} 0 {large_arc},1 {x2},{y2} Z" fill="{color}"/>'
+        svg_parts.append(path)
+        
+        start_angle = end_angle
+    
+    # Center circle (donut)
+    inner_radius = radius * 0.6
+    svg_parts.append(f'<circle cx="{cx}" cy="{cy}" r="{inner_radius}" fill="white"/>')
+    
+    # Legend
+    legend_x = width - 130
+    legend_y = 30
+    
+    for i, item in enumerate(data):
+        color = colors[i % len(colors)]
+        y = legend_y + (i * 22)
+        
+        svg_parts.append(f'<rect x="{legend_x}" y="{y-9}" width="10" height="10" fill="{color}"/>')
+        
+        text = item['name'][:18]
+        if len(item['name']) > 18:
+            text += '...'
+        svg_parts.append(f'<text class="legend-text" x="{legend_x + 15}" y="{y}">{text}</text>')
+    
+    svg_parts.append('</svg>')
+    return '\n'.join(svg_parts)
 
 
 def generate_interactive_html_report(
