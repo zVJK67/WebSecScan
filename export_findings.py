@@ -6,7 +6,7 @@ Exports security scan findings to HTML, JSON, and PDF formats.
 Generates interactive HTML reports with client-side export functionality.
 Uses a unified table builder for all categories.
 """
-
+import os
 import json
 import math
 from typing import List, Dict, Any
@@ -25,15 +25,82 @@ except ImportError:
         return findings
     VULNERABILITY_DEFINITIONS = {}
 
+LAST_SCAN_RESULTS = {
+    "findings": [],
+    "summary": []
+}
 
-def export_to_json(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, int]],
-                   filename: str = "security_scan_report.json", target_url: str = None) -> bool:
-    """Export findings to a JSON file.""" 
+# Persist scan results for backend export (CLI → Flask bridge)
+CACHE_PATH = os.path.join(os.path.dirname(__file__), "last_scan_results.json")
+
+
+def export_to_json(
+    findings: List[Dict[str, Any]],
+    summary,
+    filename: str = "security_scan_report.json",
+    target_url: str = None
+) -> bool:
+    """
+    Export findings to a JSON file.
+    - Severity is derived from CVSS (no hardcoding)
+    - Informational findings have Severity=Info and CVSS=null
+    - Severity totals are computed from normalized findings
+    - Supports summary as dict or list
+    """
     try:
-        total_high = sum(counts.get("High", 0) for counts in summary.values())
-        total_medium = sum(counts.get("Medium", 0) for counts in summary.values())
-        total_low = sum(counts.get("Low", 0) for counts in summary.values())
+        # =====================================================
+        # Helper: derive severity from CVSS
+        # =====================================================
+        def severity_from_cvss(cvss: str):
+            if not cvss:
+                return None
+            try:
+                score = float(str(cvss).split()[0])
+            except Exception:
+                return None
 
+            if score >= 7.0:
+                return "High"
+            elif score >= 4.0:
+                return "Medium"
+            else:
+                return "Low"
+
+        # =====================================================
+        # Normalize findings (Severity & CVSS)
+        # =====================================================
+        for f in findings:
+            # Informational findings
+            if f.get("Status") == "Informational":
+                f["Severity"] = "Info"
+                f["CVSS"] = None
+                continue
+
+            # Derive severity from CVSS if available
+            derived = severity_from_cvss(f.get("CVSS"))
+            if derived:
+                f["Severity"] = derived
+
+        # =====================================================
+        # Compute severity totals from normalized findings
+        # =====================================================
+        total_high = sum(1 for f in findings if f.get("Severity") == "High")
+        total_medium = sum(1 for f in findings if f.get("Severity") == "Medium")
+        total_low = sum(1 for f in findings if f.get("Severity") == "Low")
+
+        # =====================================================
+        # Normalize summary (dict OR list)
+        # =====================================================
+        if isinstance(summary, dict):
+            summary_out = list(summary.values())
+        elif isinstance(summary, list):
+            summary_out = summary
+        else:
+            summary_out = []
+
+        # =====================================================
+        # Build report
+        # =====================================================
         report = {
             "scan_metadata": {
                 "target_url": target_url or "Unknown",
@@ -45,11 +112,14 @@ def export_to_json(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, 
                     "Low": total_low
                 }
             },
-            "summary": summary,
+            "summary": summary_out,
             "findings": findings
         }
 
-        with open(filename, 'w', encoding='utf-8') as f:
+        # =====================================================
+        # Write JSON file
+        # =====================================================
+        with open(filename, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
 
         print(Fore.GREEN + f"✅ JSON report exported to {filename}" + Style.RESET_ALL)
@@ -1033,134 +1103,86 @@ REPORT_TEMPLATE = r"""
         ====================================================== */
       if (!sendEmail.checked) {
 
-        /* ---------- BOTH PDF AND JSON ---------- */
-        if (exportPDF.checked && exportJSON.checked) {
-          // First download JSON
+        // ---------- JSON ONLY ----------
+        if (exportJSON.checked && !exportPDF.checked) {
           try {
-            const data = {
-              scan_metadata: {
-                target_url: "{{ target_url }}",
-                scan_time: "{{ scan_time }}",
-                total_findings: {{ total_findings }},
-                severity_counts: {
-                  High: {{ total_high }},
-                  Medium: {{ total_medium }},
-                  Low: {{ total_low }}
-                }
-              },
-              summary: {{ categories | tojson }},
-              findings: {{ findings_by_category | tojson }}
-            };
+            const res = await fetch("http://localhost:5000/export-json", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                target_url: "{{ target_url }}"
+              })
+            });
 
-            const blob = new Blob(
-              [JSON.stringify(data, null, 2)],
-              { type: "application/json" }
-            );
-
+            const blob = await res.blob();
             const url = URL.createObjectURL(blob);
+
             const a = document.createElement("a");
             a.href = url;
             a.download = "security_scan_report.json";
-            document.body.appendChild(a);
             a.click();
-            a.remove();
+
+            URL.revokeObjectURL(url);
+            modal.style.display = "none";
+            status.textContent = "JSON downloaded.";
+            return;
+          } catch (e) {
+            status.textContent = "Failed to export JSON.";
+            return;
+          }
+        }
+
+        // ---------- PDF ONLY ----------
+        if (exportPDF.checked && !exportJSON.checked) {
+          modal.style.display = "none";
+
+          setTimeout(() => {
+            openBtn.style.display = "none";
+            window.print();
+            setTimeout(() => {
+              openBtn.style.display = "";
+            }, 500);
+          }, 150);
+
+          return;
+        }
+
+        // ---------- PDF + JSON ----------
+        if (exportPDF.checked && exportJSON.checked) {
+          try {
+            const res = await fetch("http://localhost:5000/export-json", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                target_url: "{{ target_url }}"
+              })
+            });
+
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "security_scan_report.json";
+            a.click();
+
             URL.revokeObjectURL(url);
           } catch (e) {
-            status.textContent = "Failed to generate JSON file.";
+            status.textContent = "Failed to export JSON.";
             return;
           }
 
-          // Then trigger PDF print
           modal.style.display = "none";
-          
-          // Wait for modal to fully close before printing
+
           setTimeout(() => {
-            // Hide the export button before printing
             openBtn.style.display = "none";
-            
-            // Ensure modal is completely hidden
-            modal.style.visibility = "hidden";
-            modal.style.opacity = "0";
-            
-            // Trigger print dialog
             window.print();
-            
-            // Restore UI after print dialog closes
             setTimeout(() => {
               openBtn.style.display = "";
-              modal.style.visibility = "";
-              modal.style.opacity = "";
             }, 500);
           }, 150);
 
           status.textContent = "JSON downloaded. Opening print dialog for PDF...";
-          return;
-        }
-
-        /* ---------- JSON ONLY ---------- */
-        if (exportJSON.checked && !exportPDF.checked) {
-          try {
-            const data = {
-              scan_metadata: {
-                target_url: "{{ target_url }}",
-                scan_time: "{{ scan_time }}",
-                total_findings: {{ total_findings }},
-                severity_counts: {
-                  High: {{ total_high }},
-                  Medium: {{ total_medium }},
-                  Low: {{ total_low }}
-                }
-              },
-              summary: {{ categories | tojson }},
-              findings: {{ findings_by_category | tojson }}
-            };
-
-            const blob = new Blob(
-              [JSON.stringify(data, null, 2)],
-              { type: "application/json" }
-            );
-
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = "security_scan_report.json";
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-
-            modal.style.display = "none";
-            status.textContent = "JSON file downloaded.";
-            return;
-          } catch (e) {
-            status.textContent = "Failed to generate JSON file.";
-            return;
-          }
-        }
-
-        /* ---------- PDF ONLY ---------- */
-        if (exportPDF.checked && !exportJSON.checked) {
-          modal.style.display = "none";
-          
-          setTimeout(() => {
-            // Hide the export button
-            openBtn.style.display = "none";
-            
-            // Ensure modal is completely hidden
-            modal.style.visibility = "hidden";
-            modal.style.opacity = "0";
-            
-            // Trigger print
-            window.print();
-            
-            // Restore after print
-            setTimeout(() => {
-              openBtn.style.display = "";
-              modal.style.visibility = "";
-              modal.style.opacity = "";
-            }, 500);
-          }, 150);
-
           return;
         }
       }
@@ -1194,18 +1216,8 @@ REPORT_TEMPLATE = r"""
         include_json: exportJSON.checked,
         target_url: "{{ target_url }}",
         report_data: {
-          scan_metadata: {
-            target_url: "{{ target_url }}",
-            scan_time: "{{ scan_time }}",
-            total_findings: {{ total_findings }},
-            severity_counts: {
-              High: {{ total_high }},
-              Medium: {{ total_medium }},
-              Low: {{ total_low }}
-            }
-          },
-          summary: {{ categories | tojson }},
-          findings: {{ findings_by_category | tojson }}
+          summary: {},
+          findings: []
         },
         html: document.documentElement.outerHTML
       };
@@ -1579,6 +1591,25 @@ def _compute_category_risk_generic(cat_name, flist, category_defs):
     return {"severity": None, "cvss": None}
 
 
+def severity_from_cvss(cvss: str) -> str | None:
+    """
+    Derive severity from CVSS score.
+    """
+    if not cvss:
+        return None
+    try:
+        score = float(cvss.split()[0])
+    except Exception:
+        return None
+
+    if score >= 7.0:
+        return "High"
+    elif score >= 4.0:
+        return "Medium"
+    else:
+        return "Low"
+
+
 # A4 enforcement helper (returns inline style)
 def _page_style_for_a4(force_a4: bool):
     return ' style="width:210mm;max-width:210mm;margin:0 auto;"' if force_a4 else ""
@@ -1815,6 +1846,20 @@ def generate_interactive_html_report(
             table_rows=table_rows,
             page_style=_page_style_for_a4(force_a4)
         )
+
+        # ===============================
+        # Store last scan results (Option A)
+        # ===============================
+        global LAST_SCAN_RESULTS
+        LAST_SCAN_RESULTS = {
+            "findings": enriched_findings,
+            "summary": categories
+        }
+
+        # Persist scan results for Flask export
+        CACHE_PATH = os.path.join(os.path.dirname(__file__), "last_scan_results.json")
+        with open(CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(LAST_SCAN_RESULTS, f, indent=2, ensure_ascii=False)
 
         with open(filename, "w", encoding="utf-8") as f:
             f.write(rendered)

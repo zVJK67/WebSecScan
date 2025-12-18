@@ -13,6 +13,8 @@ import re
 from datetime import datetime
 import tempfile
 import traceback
+from export_findings import export_to_json
+from flask import send_file
 
 app = Flask(__name__)
 CORS(app)
@@ -317,8 +319,8 @@ def generate_pdf_from_html(html, output_path, report_data):
 def send_email():
     try:
         data = request.get_json()
+
         recipient_email = data.get("recipient_email")
-        report_data = data.get("report_data")
         html = data.get("html")
         target_url = data.get("target_url", "Unknown")
 
@@ -331,19 +333,65 @@ def send_email():
         json_file = None
         pdf_file = None
 
+        # =====================================================
+        # LOAD LAST SCAN RESULTS FROM DISK (CLI → Flask bridge)
+        # =====================================================
+        CACHE_PATH = os.path.join(
+            os.path.dirname(__file__),
+            "last_scan_results.json"
+        )
+
+        if not os.path.exists(CACHE_PATH):
+            return jsonify({
+                "success": False,
+                "error": "No scan results found. Please run a scan first."
+            }), 400
+
+        with open(CACHE_PATH, "r", encoding="utf-8") as f:
+            scan_data = json.load(f)
+
+        findings = scan_data.get("findings", [])
+        summary = scan_data.get("summary", [])
+
+        # =====================================================
+        # JSON ATTACHMENT
+        # =====================================================
         if include_json:
-            json_file = os.path.join(tempfile.gettempdir(), f"report_{timestamp}.json")
-            with open(json_file, "w", encoding="utf-8") as f:
-                json.dump(report_data, f, indent=2, ensure_ascii=False)
+            json_file = os.path.join(
+                tempfile.gettempdir(),
+                f"report_{timestamp}.json"
+            )
+
+            export_to_json(
+                findings=findings,
+                summary=summary,
+                filename=json_file,
+                target_url=target_url
+            )
+
             temp_files.append(json_file)
 
+        # =====================================================
+        # PDF ATTACHMENT
+        # =====================================================
         if include_pdf:
-            pdf_file = os.path.join(tempfile.gettempdir(), f"report_{timestamp}.pdf")
-            ok, err = generate_pdf_from_html(html, pdf_file, report_data)
+            pdf_file = os.path.join(
+                tempfile.gettempdir(),
+                f"report_{timestamp}.pdf"
+            )
+
+            ok, err = generate_pdf_from_html(html, pdf_file, {
+                "summary": summary
+            })
+
             if not ok:
                 return jsonify({"success": False, "error": err}), 500
+
             temp_files.append(pdf_file)
 
+        # =====================================================
+        # SEND EMAIL
+        # =====================================================
         success = send_report_email(
             recipient_email=recipient_email,
             pdf_file=pdf_file,
@@ -355,6 +403,7 @@ def send_email():
             smtp_port=SMTP_PORT
         )
 
+        # Cleanup temp files
         for f in temp_files:
             try:
                 os.remove(f)
@@ -376,6 +425,43 @@ def health():
         "email_configured": bool(SENDER_EMAIL and SENDER_PASSWORD)
     })
 
+@app.route("/export-json", methods=["POST"])
+def export_json_api():
+    CACHE_PATH = os.path.join(
+        os.path.dirname(__file__),
+        "last_scan_results.json"
+    )
+
+    if not os.path.exists(CACHE_PATH):
+        return jsonify({
+            "success": False,
+            "error": "No scan results available. Run scan first."
+        }), 400
+
+    with open(CACHE_PATH, "r", encoding="utf-8") as f:
+        scan_data = json.load(f)
+
+    findings = scan_data.get("findings", [])
+    summary = scan_data.get("summary", [])
+
+    target_url = (request.get_json() or {}).get("target_url", "Unknown")
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+    tmp.close()
+
+    export_to_json(
+        findings=findings,
+        summary=summary,
+        filename=tmp.name,
+        target_url=target_url
+    )
+
+    return send_file(
+        tmp.name,
+        as_attachment=True,
+        download_name="security_scan_report.json",
+        mimetype="application/json"
+    )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
