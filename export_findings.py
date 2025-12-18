@@ -76,7 +76,11 @@ def export_to_json(
                 f["CVSS"] = None
                 continue
 
-            # Derive severity from CVSS if available
+            # Skip Directory Exposure completely (category-level risk only)
+            if f.get("Category") == "Directory Exposure":
+                continue
+
+            # Derive severity from CVSS for per-item categories only
             derived = severity_from_cvss(f.get("CVSS"))
             if derived:
                 f["Severity"] = derived

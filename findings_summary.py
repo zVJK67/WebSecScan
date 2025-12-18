@@ -72,6 +72,20 @@ CATEGORY_CVSS_MAP = {
 }
 
 
+def normalize_category_for_cvss(category: str) -> str:
+    """
+    Normalize category names to match CATEGORY_CVSS_MAP keys.
+    """
+    mapping = {
+        "HTTP Security Headers": "Security Headers",
+        "Cookie Security (Client-Side)": "Cookie Security",
+        "Cookie Security (Server-Side)": "Cookie Security",
+        "Server Info": "Server Information",
+        "HTTP Methods": "HTTP Method"
+    }
+    return mapping.get(category, category)
+
+
 def normalize_findings(findings: List[Dict[str, Any]], force_category: str = None, exclude_safe: bool = True) -> List[Dict[str, Any]]:
     """
     Normalize findings to ensure they all have Category, Severity, and Description.
@@ -139,7 +153,7 @@ def normalize_findings(findings: List[Dict[str, Any]], force_category: str = Non
             finding["Category"] = "Unknown"
         
         # Ensure Severity exists
-        if not finding.get("Severity"):
+        if not finding.get("Severity") and finding.get("Category") != "Directory Exposure":
             finding["Severity"] = "Low"
         
         # Ensure Description exists
@@ -260,26 +274,17 @@ def generate_summary(findings: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]
 
 
 def calculate_category_score(category: str, count: int, cvss_map: Dict[str, Dict[str, str]]) -> int:
-    """
-    Calculate a score for sorting categories by severity.
-    Higher score = more severe issues.
-    
-    Args:
-        category: Category name
-        count: Number of findings
-        cvss_map: CVSS mapping with severity info
-        
-    Returns:
-        Integer score (High=100, Medium=10, Low=1) * count
-    """
+    # Normalize category name so it matches CATEGORY_CVSS_MAP keys
+    category = normalize_category_for_cvss(category)
+
     severity = cvss_map.get(category, {}).get("severity", "Low")
-    
+
     severity_weights = {
         "High": 100,
         "Medium": 10,
         "Low": 1
     }
-    
+
     weight = severity_weights.get(severity, 1)
     return weight * count
 
@@ -333,13 +338,19 @@ def print_summary_table(summary: Dict[str, Dict[str, int]], title: str = "Securi
         finding_count = counts["count"]
         
         # Get CVSS info for this category
-        cvss_info = cvss_map.get(category, {
+        cvss_key = normalize_category_for_cvss(category)
+        cvss_info = cvss_map.get(cvss_key, {
             "severity": "Low",
             "cvss": "N/A",
             "cvss_vector": ""
         })
         
+        # Prefer dynamic severity if findings exist
         severity = cvss_info.get("severity", "Low")
+        if summary.get(category, {}).get("count", 0) > 0:
+            # trust findings severity when available
+            severity = cvss_overrides.get(cvss_key, {}).get("severity", severity)
+
         cvss = cvss_info.get("cvss", "N/A")
         
         # Determine status
@@ -372,10 +383,25 @@ def print_summary_table(summary: Dict[str, Dict[str, int]], title: str = "Securi
     print("-" * 120)
     
     # Determine overall severity
-    has_high = any(cvss_map.get(cat, {}).get("severity") == "High" and summary.get(cat, {}).get("count", 0) > 0 
-                   for cat in summary.keys())
-    has_medium = any(cvss_map.get(cat, {}).get("severity") == "Medium" and summary.get(cat, {}).get("count", 0) > 0 
-                     for cat in summary.keys())
+    has_high = False
+    has_medium = False
+
+    for cat, data in summary.items():
+        if data.get("count", 0) <= 0:
+            continue
+
+        key = normalize_category_for_cvss(cat)
+
+        sev = cvss_overrides.get(key, {}).get(
+            "severity",
+            cvss_map.get(key, {}).get("severity")
+        )
+
+        if sev == "High":
+            has_high = True
+        elif sev == "Medium":
+            has_medium = True
+
     
     if has_high:
         overall_severity = "High"
