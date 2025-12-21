@@ -1,30 +1,30 @@
 # main.py
-from banner import print_banner
-from get_header import parse_headers, print_headers, print_options_response, get_allowed_methods
-from http_header import analyze_security_headers, print_findings
-from http_method import check_and_print_http_methods
-from cookie_checker import analyze_cookies
-from cors_checker import analyze_cors
-from ssl_tls import run_ssl_check, check_ssl_tls
-from server_info import get_server_info, print_server_info
-from findings_summary import normalize_findings, generate_summary, print_summary_table, compute_cvss_overrides_from_findings
-from path_traversal import test_path_traversal, print_path_traversal_results
-from directory_scan import scan_common_paths, print_dir_scan_results
-from export_findings import generate_interactive_html_report, export_to_json
-from vulnerability_definitions import VULNERABILITY_DEFINITIONS, enrich_finding_with_details
-
-
-from colorama import Fore, Style, init
-import urllib.parse
+import os
 import sys
 import time
-import webbrowser
-import os
-from datetime import datetime
 import signal
 import requests
+import argparse
+import webbrowser
+import urllib.parse
+from datetime import datetime
+from colorama import Fore, Style, init
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+from banner import print_banner
+from http_client import parse_headers
+from http_header import analyze_security_headers, print_findings
+from http_method import check_and_print_http_methods
+from server_info import get_server_info, print_server_info
+from cookie_checker import analyze_cookies
+from cors_checker import analyze_cors
+from directory_scan import scan_common_paths, print_dir_scan_results
+from path_traversal import test_path_traversal, print_path_traversal_results
+from ssl_tls import run_ssl_check
+from findings_summary import normalize_findings, generate_summary, print_summary_table, compute_cvss_overrides_from_findings
+from export_findings import generate_interactive_html_report
+from vulnerability_definitions import VULNERABILITY_DEFINITIONS, enrich_finding_with_details
 
 
 # initialize colorama
@@ -35,59 +35,6 @@ def handle_interrupt(sig, frame):
     sys.exit(0)
 # Capture Ctrl+C and exit gracefully
 signal.signal(signal.SIGINT, handle_interrupt)
-
-
-def enrich_finding_dynamic(finding: dict) -> dict:
-    """
-    Enrich a single finding, but for HTTP Security Headers produce
-    Impact/Recommendation only for the missing headers reported by the scanner.
-    For Unsafe HTTP Methods, produce Impact only for the specific methods detected.
-    """
-    enriched = enrich_finding_with_details(finding)
-
-    category = (finding.get("Category") or enriched.get("Category") or "").strip()
-    
-    # Special handling for HTTP Security Headers
-    if category == "HTTP Security Headers":
-        # Get the header name from finding
-        header_name = (
-            finding.get("_item_short") 
-            or finding.get("Header") 
-            or finding.get("Context")
-            or ""
-        )
-        
-        if header_name:
-            header_details = VULNERABILITY_DEFINITIONS["HTTP Security Headers"].get("ItemDetails", {})
-            detail = header_details.get(header_name)
-            
-            if detail:
-                if detail.get("Impact") and not enriched.get("Impact"):
-                    enriched["Impact"] = detail["Impact"]
-                if detail.get("Recommendation") and not enriched.get("Recommendation"):
-                    enriched["Recommendation"] = detail["Recommendation"]
-    
-    # Special handling for Unsafe HTTP Methods
-    elif category == "Unsafe HTTP Methods Enabled":
-        # Ensure DisplayName is set
-        vuln_def = VULNERABILITY_DEFINITIONS.get(category, {})
-        if vuln_def.get("DisplayName"):
-            enriched["DisplayName"] = vuln_def["DisplayName"]
-        
-        # Get the specific method from the finding
-        method = finding.get("Header") or finding.get("Method") or ""
-        method_details = vuln_def.get("MethodDetails", {})
-        
-        if method and method in method_details:
-            method_info = method_details[method]
-            if method_info.get("Impact"):
-                enriched["Impact"] = method_info["Impact"]
-        
-        # Use category-level recommendation (same for all methods)
-        if vuln_def.get("Recommendation"):
-            enriched["Recommendation"] = vuln_def["Recommendation"]
-
-    return enriched
 
 
 def normalize_and_validate_url(raw_url: str) -> str:
@@ -111,51 +58,61 @@ def _tag_findings_with_category(findings_list, category_name):
     return normalize_findings(findings_list, force_category=category_name)
 
 
-def _print_path_traversal_findings(pt_findings):
-    """Pretty, grouped output for path traversal results."""
-    if not pt_findings:
-        return
+def parse_args():
+    parser = argparse.ArgumentParser(
+        prog="websecscan",
+        description="WebSecScan - Web Security Misconfiguration Analyzer"
+    )
 
-    for f in pt_findings:
-        print()
-        print(Fore.WHITE + "Path Traversal" + Style.RESET_ALL)
-        print(Fore.WHITE + "---------------------------------------" + Style.RESET_ALL)
-        sev_color = {"High": Fore.RED, "Medium": Fore.YELLOW, "Low": Fore.GREEN}.get(f.get("Severity", "Low"), Fore.WHITE)
-        print(f"Severity: {sev_color}{f.get('Severity', 'Low')}{Style.RESET_ALL}")
+    parser.add_argument(
+        "-u", "--url",
+        help="Target URL (e.g. https://example.com)"
+    )
 
-        endpoint = f.get("Endpoint") or f.get("Path") or "/"
-        print(f"Endpoint: {endpoint}")
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable verbose output (raw headers, protocol details)"
+    )
 
-        payloads = f.get("Payloads") or []
-        if payloads:
-            print("\nPayloads triggering:")
-            for p in payloads:
-                print(f"  {p}")
+    parser.add_argument(
+        "--path-tests",
+        type=int,
+        default=None,
+        help="Number of path traversal test cases (default: prompt / 300)"
+    )
 
-        if f.get("Behavior"):
-            print(f"\nBehavior: {f['Behavior']}")
+    parser.add_argument(
+        "--no-html",
+        action="store_true",
+        help="Do not generate HTML report"
+    )
 
-        interp = f.get("Interpretation")
-        if interp:
-            print(f"\nPossible interpretation: {interp}")
+    parser.add_argument(
+        "--no-open",
+        action="store_true",
+        help="Do not open HTML report in browser"
+    )
 
-        if f.get("Recommendation"):
-            print("\nRecommendation:")
-            for line in f["Recommendation"].split("\n"):
-                print(line)
-
-        if f.get("Details"):
-            print(f"\nDetails: {f['Details']}")
-
-        if f.get("Status") is not None:
-            print(f"HTTP Status (example): {f['Status']}")
+    return parser.parse_args()
 
 
 def main():
+
     print_banner()
 
-    # === Step 0: Ask for URL ===
-    raw = input(Fore.WHITE + "\nEnter an URL to scan (e.g. example.com or https://example.com): " + Style.RESET_ALL).strip()
+    args = parse_args()
+
+    # === Step 0: Get and normalize URL (CLI or interactive) ===
+    if args.url:
+        raw = args.url.strip()
+    else:
+        raw = input(
+            Fore.WHITE +
+            "\nEnter an URL to scan (e.g. example.com or https://example.com): "
+            + Style.RESET_ALL
+        ).strip()
+
     try:
         url = normalize_and_validate_url(raw)
     except ValueError as e:
@@ -164,8 +121,13 @@ def main():
 
     print(Fore.YELLOW + f"\nNormalized target URL: {url}" + Style.RESET_ALL)
 
-    # Verbosity toggle (controls noisy prints like raw header/OPTIONS dumps)
-    verbose = input("Verbose output (raw headers / OPTIONS details)? (y/n): ").strip().lower() == 'y'
+    if args.url:
+    # CLI mode → use flag
+        verbose = args.verbose
+    else:
+        # Interactive mode → prompt
+        # Verbosity toggle (controls noisy prints like raw header/OPTIONS dumps)
+        verbose = input("Enable verbose output? (y/n): ").strip().lower() == 'y'
 
     # NOTE: removed interactive "Verify SSL certificates?" prompt per request.
     # All HTTP requests use verify=False so scans continue even with bad certs.
@@ -231,7 +193,7 @@ def main():
         #  - perform an OPTIONS request and print the raw OPTIONS response,
         #  - parse the Allow (or AC-Allow-Methods) header,
         #  - detect unsafe methods and print the findings.
-        method_findings = check_and_print_http_methods(url, timeout=6)
+        method_findings = check_and_print_http_methods(url, verbose=verbose, timeout=6)
         # method_findings is a list, tag appropriately below
     except Exception as e:
         print(Fore.RED + f"[ERROR] HTTP method check failed: {e}" + Style.RESET_ALL)
@@ -264,7 +226,7 @@ def main():
     t0 = time.time()
     try:
         capture_js = True
-        cookie_findings = analyze_cookies(url, include_js_cookies=capture_js)
+        cookie_findings = analyze_cookies(url, verbose=verbose, include_js_cookies=capture_js)
 
         # Separate findings by scope and tag appropriately
         server_side_cookies = []
@@ -330,15 +292,20 @@ def main():
     print(Fore.CYAN + "\n[7/8] Checking for basic Path Traversal patterns..." + Style.RESET_ALL)
     
     # Ask for test count
-    test_count_input = input("\nHow many test run? (press Enter for default run 300): ").strip()
-    if test_count_input:
-        try:
-            max_tests = int(test_count_input)
-        except ValueError:
-            print(Fore.YELLOW + "Invalid input, using default (300)" + Style.RESET_ALL)
-            max_tests = 300
+    if args.path_tests is not None:
+        max_tests = args.path_tests
     else:
-        max_tests = 300
+        test_count_input = input(
+            "\nHow many test run? (press Enter for default run 300): "
+        ).strip()
+        if test_count_input:
+            try:
+                max_tests = int(test_count_input)
+            except ValueError:
+                print(Fore.YELLOW + "Invalid input, using default (300)" + Style.RESET_ALL)
+                max_tests = 300
+        else:
+            max_tests = 300
     
     t0 = time.time()
     try:
@@ -375,7 +342,7 @@ def main():
     # ========================================================================
     # === FINDINGS SUMMARY: Aggregate all findings and display summary table
     # ========================================================================
-    print(Fore.BLUE + "Generating Summary..." + Style.RESET_ALL)
+    print(Fore.BLUE + "\nGenerating Summary..." + Style.RESET_ALL)
 
     # Combine all findings into one list (same as before)
     all_findings = []
@@ -410,14 +377,16 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     html_filename = f"security_scan_report_{timestamp}.html"
 
-    print(Fore.CYAN + "\nGenerating interactive HTML report..." + Style.RESET_ALL)
+    success = True
 
-    success = generate_interactive_html_report(
-        findings=all_findings,
-        summary=summary,
-        filename=html_filename,
-        target_url=url
-    )
+    if not args.no_html:
+        print(Fore.CYAN + "\nGenerating interactive HTML report..." + Style.RESET_ALL)
+        success = generate_interactive_html_report(
+            findings=all_findings,
+            summary=summary,
+            filename=html_filename,
+            target_url=url
+        )
 
     if success:
         print(Fore.GREEN + f"\n✅ Report generated successfully!" + Style.RESET_ALL)
@@ -429,21 +398,19 @@ def main():
     # === ENDING BANNER
     # ========================================================================
 
-    print(Fore.GREEN + "\n========================================================================================================================" + Style.RESET_ALL)
-    print(Fore.GREEN + "                    Security Scan Completed ! Thank you for using WebSecScan" + Style.RESET_ALL)
-    print(Fore.GREEN + "========================================================================================================================" + Style.RESET_ALL)
+    print(Fore.BLUE + "\n========================================================================================================================" + Style.RESET_ALL)
+    print(Fore.BLUE + "                    Security Scan Completed ! Thank you for using WebSecScan" + Style.RESET_ALL)
+    print(Fore.BLUE + "========================================================================================================================" + Style.RESET_ALL)
 
     # Wait for user before opening browser
-    input(Fore.YELLOW + "\nPress Enter to view the interactive HTML report..." + Style.RESET_ALL)
-
-    if success:
-        try:
+    if success and not args.no_open:
+        if args.url:
+            # CLI mode → auto open
             webbrowser.open('file://' + os.path.abspath(html_filename))
-            print(Fore.GREEN + "✓ Opened report in default browser" + Style.RESET_ALL)
-        except Exception as e:
-            print(Fore.RED + f"✗ Could not open browser: {e}" + Style.RESET_ALL)
-            print(Fore.YELLOW + f"Please open manually: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
-
+        else:
+            # Interactive → wait for user
+            input(Fore.MAGENTA + "\nPress Enter to view the interactive HTML report..." + Style.RESET_ALL)
+            webbrowser.open('file://' + os.path.abspath(html_filename))
 
 if __name__ == "__main__":
     main()

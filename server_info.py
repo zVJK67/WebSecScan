@@ -259,7 +259,7 @@ def parse_server_header(server_value: str) -> Dict[str, Optional[str]]:
         "extra": m.group("extra")
     }
 
-def get_server_info(target_url: str, timeout: int = 10, session: Optional[requests.Session] = None) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+def get_server_info(target_url: str, timeout: int = 10, session: Optional[requests.Session] = None, verbose=False) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """
     Gather server information and analyze header exposures.
 
@@ -455,32 +455,33 @@ def get_server_info(target_url: str, timeout: int = 10, session: Optional[reques
         })
         return info, findings
 
-def print_server_info(info: Dict[str, Any], findings: List[Dict[str, Any]]) -> None:
+def print_server_info(info: Dict[str, Any], findings: List[Dict[str, Any]], verbose=False) -> None:
     """
     Print server information and findings in the new format.
     """
     print(Fore.CYAN + "\nServer Information Disclousre" + Style.RESET_ALL)
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
     
-    # Target information with asterisk borders
-    print(Fore.WHITE + f"Details"+ Style.RESET_ALL)
-    print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
-    print(Fore.WHITE + f"Target URL: {info.get('url')}")
-    print(Fore.WHITE + f"Hostname: {info.get('hostname')}")
-    ips = info.get("ips") or []
-    if ips:
-        print(Fore.WHITE + f"Resolved IPs: {', '.join(ips)}")
-    else:
-        print(Fore.WHITE + "Resolved IPs: N/A")
-    print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
-    
-    # Risk Rating section
-    print(Fore.WHITE + "\nRisk Rating:")
-    print(Fore.WHITE + f"Severity: {CATEGORY_CVSS['severity']}")
-    print(Fore.WHITE + f"CVSS: {CATEGORY_CVSS['score']} ({CATEGORY_CVSS['vector']})")
-    
-    # Findings section
-    if findings:
+    if verbose:
+        # Target information with asterisk borders
+        print(Fore.WHITE + f"Details"+ Style.RESET_ALL)
+        print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
+        print(Fore.WHITE + f"Target URL: {info.get('url')}")
+        print(Fore.WHITE + f"Hostname: {info.get('hostname')}")
+        ips = info.get("ips") or []
+        if ips:
+            print(Fore.WHITE + f"Resolved IPs: {', '.join(ips)}")
+        else:
+            print(Fore.WHITE + "Resolved IPs: N/A")
+        print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
+        
+    if findings:    
+        # Risk Rating section
+        print(Fore.WHITE + "\nRisk Rating:")
+        print(Fore.WHITE + f"Severity: {CATEGORY_CVSS['severity']}")
+        print(Fore.WHITE + f"CVSS: {CATEGORY_CVSS['score']} ({CATEGORY_CVSS['vector']})")
+        
+        # Findings section
         print(Fore.WHITE + "\nFindings:")
         print(Fore.CYAN + f"``````````````````````````````````````````````````````````````````````````````````" + Style.RESET_ALL)
         

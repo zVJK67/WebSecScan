@@ -183,6 +183,7 @@ def print_dir_scan_results(findings: List[Dict]) -> None:
 
     if not findings:
         print(Fore.GREEN + "✓ No sensitive files or directories exposed" + Style.RESET_ALL)
+        print(Fore.MAGENTA + "══════════════════════════════════════════════════════════════" + Style.RESET_ALL)
         return
 
     overall = _overall_severity(findings)

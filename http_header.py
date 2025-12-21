@@ -11,7 +11,7 @@ Your system is categorical; only vulnerabilities (final findings) have a risk ra
 The Risk Rating printed here is kept fixed as in the original design.
 """
 
-def analyze_security_headers(headers: Dict[str, str], is_https: bool = True) -> List[Dict[str, Any]]:
+def analyze_security_headers(headers: Dict[str, str], is_https: bool = True, verbose=False) -> List[Dict[str, Any]]:
     findings: List[Dict[str, Any]] = []
 
     # Normalize headers
@@ -229,30 +229,11 @@ def print_findings(findings: List[Dict[str, Any]], raw_headers: Dict[str, str], 
             print(f"{key}: {value}")
         print(Fore.YELLOW + "*" * 60 + Style.RESET_ALL)
 
-    # ============================================================
-    # NON-VERBOSE MODE — show SUMMARY-ONLY headers
-    # ============================================================
-    else:
-        print(Fore.WHITE + "GET Response (summary headers):" + Style.RESET_ALL)
-        print(Fore.YELLOW + "*" * 60 + Style.RESET_ALL)
-
-        keys_of_interest = [
-            "Content-Security-Policy", "Strict-Transport-Security", "X-Frame-Options",
-            "X-XSS-Protection", "X-Content-Type-Options", "Cache-Control",
-            "Referrer-Policy", "Content-Type", "Permissions-Policy"
-        ]
-
-        for k in keys_of_interest:
-            v = raw_headers.get(k) or raw_headers.get(k.lower()) or "(not set)"
-            print(f"{k}: {v}")
-
-        print(Fore.YELLOW + "*" * 60 + Style.RESET_ALL)
-
-    # Summary line
-    print(Fore.WHITE + f"\nTotal Issues Detected: {Fore.YELLOW}{len(issues)}{Style.RESET_ALL}")
-    print(Fore.WHITE + f"Missing Headers: {Fore.RED}{missing_count}{Style.RESET_ALL} | "
-          f"Misconfigured: {Fore.YELLOW}{misconfigured_count}{Style.RESET_ALL}")
-    print(Fore.WHITE + f"Informational Findings: {Fore.CYAN}{info_count}{Style.RESET_ALL}")
+        # Summary line
+        print(Fore.WHITE + f"\nTotal Issues Detected: {Fore.YELLOW}{len(issues)}{Style.RESET_ALL}")
+        print(Fore.WHITE + f"Missing Headers: {Fore.RED}{missing_count}{Style.RESET_ALL} | "
+            f"Misconfigured: {Fore.YELLOW}{misconfigured_count}{Style.RESET_ALL}")
+        print(Fore.WHITE + f"Informational Findings: {Fore.CYAN}{info_count}{Style.RESET_ALL}")
 
     # Fixed risk rating (your system is categorical; do not change)
     print(Fore.WHITE + "\nRisk Rating:" + Style.RESET_ALL)

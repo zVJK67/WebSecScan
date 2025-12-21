@@ -278,6 +278,7 @@ def print_path_traversal_results(findings: List[Dict]) -> None:
 
     if not findings:
         print(Fore.GREEN + "✓ No path traversal vulnerabilities detected" + Style.RESET_ALL)
+        print(Fore.MAGENTA + "══════════════════════════════════════════════════════════════" + Style.RESET_ALL)
         return
 
     has_direct_evidence = any(

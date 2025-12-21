@@ -625,49 +625,50 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
     # ---------------------------
     # Print friendly summary blocks (certificate / protocol / cipher / https)
     # ---------------------------
-    # Protocols
-    print(Fore.WHITE + "Protocol Versions:" + Style.RESET_ALL)
-    proto_supported_display = ", ".join(supported) if supported else ("Unknown (openssl missing or probe failed)" if _openssl_available() is False else "Unknown")
-    print(Fore.WHITE + f"  Supported: {proto_supported_display}" + Style.RESET_ALL)
-    if deprecated:
-        print(Fore.RED + f"  Deprecated Versions Detected: {', '.join(deprecated)}" + Style.RESET_ALL)
+    if verbose:
+       # Protocols
+        print(Fore.WHITE + "Protocol Versions:" + Style.RESET_ALL)
+        proto_supported_display = ", ".join(supported) if supported else ("Unknown (openssl missing or probe failed)" if _openssl_available() is False else "Unknown")
+        print(Fore.WHITE + f"  Supported: {proto_supported_display}" + Style.RESET_ALL)
+        if deprecated:
+            print(Fore.RED + f"  Deprecated Versions Detected: {', '.join(deprecated)}" + Style.RESET_ALL)
 
-    # Certificate block
-    if cert:
-        print(Fore.WHITE + "\nSSL Certificate Information:" + Style.RESET_ALL)
-        print(Fore.WHITE + f"  Issuer: {cert.get('issuer','Unknown')}" + Style.RESET_ALL)
-        print(Fore.WHITE + f"  Signature Algorithm: {cert.get('signature_algorithm','Unknown')}" + Style.RESET_ALL)
-        key_type = cert.get('key_type', 'Unknown')
-        key_size = cert.get('key_size', 'Unknown')
-        keyinfo = key_type + (f" {key_size}-bit" if key_size and key_size != 'Unknown' else "")
-        print(Fore.WHITE + f"  Key Type / Size: {keyinfo}" + Style.RESET_ALL)
-        print(Fore.WHITE + f"  Valid From: {cert.get('valid_from','N/A')}" + Style.RESET_ALL)
-        print(Fore.WHITE + f"  Expiry Date: {cert.get('expiry_date','N/A')}" + Style.RESET_ALL)
-        print(Fore.WHITE + f"  Days Until Expiry: {cert.get('days_until_expiry')}" + Style.RESET_ALL)
-    else:
-        if verification_error:
-            print(Fore.YELLOW + "\nSSL Certificate Information: Unable to obtain certificate details due to validation error." + Style.RESET_ALL)
-            print(Fore.YELLOW + f"  Validation error: {verification_error}" + Style.RESET_ALL)
+        # Certificate block
+        if cert:
+            print(Fore.WHITE + "\nSSL Certificate Information:" + Style.RESET_ALL)
+            print(Fore.WHITE + f"  Issuer: {cert.get('issuer','Unknown')}" + Style.RESET_ALL)
+            print(Fore.WHITE + f"  Signature Algorithm: {cert.get('signature_algorithm','Unknown')}" + Style.RESET_ALL)
+            key_type = cert.get('key_type', 'Unknown')
+            key_size = cert.get('key_size', 'Unknown')
+            keyinfo = key_type + (f" {key_size}-bit" if key_size and key_size != 'Unknown' else "")
+            print(Fore.WHITE + f"  Key Type / Size: {keyinfo}" + Style.RESET_ALL)
+            print(Fore.WHITE + f"  Valid From: {cert.get('valid_from','N/A')}" + Style.RESET_ALL)
+            print(Fore.WHITE + f"  Expiry Date: {cert.get('expiry_date','N/A')}" + Style.RESET_ALL)
+            print(Fore.WHITE + f"  Days Until Expiry: {cert.get('days_until_expiry')}" + Style.RESET_ALL)
+        else:
+            if verification_error:
+                print(Fore.YELLOW + "\nSSL Certificate Information: Unable to obtain certificate details due to validation error." + Style.RESET_ALL)
+                print(Fore.YELLOW + f"  Validation error: {verification_error}" + Style.RESET_ALL)
 
-    # Cipher
-    print(Fore.WHITE + "\nCipher Suites:" + Style.RESET_ALL)
-    print(Fore.WHITE + f"  Negotiated Cipher: {negotiated_cipher if negotiated_cipher else 'N/A'}" + Style.RESET_ALL)
-    if weak_ciphers:
-        print(Fore.RED + f"  Weak Ciphers Detected: {', '.join(weak_ciphers)}" + Style.RESET_ALL)
-    print(Fore.WHITE + f"  Forward Secrecy: {'Yes' if forward_secrecy else 'No'}" + Style.RESET_ALL)
-    if cipher_probe.get("openssl_available") is False:
-        print(Fore.YELLOW + "  Note: openssl binary not found; protocol/cipher probing was limited." + Style.RESET_ALL)
+        # Cipher
+        print(Fore.WHITE + "\nCipher Suites:" + Style.RESET_ALL)
+        print(Fore.WHITE + f"  Negotiated Cipher: {negotiated_cipher if negotiated_cipher else 'N/A'}" + Style.RESET_ALL)
+        if weak_ciphers:
+            print(Fore.RED + f"  Weak Ciphers Detected: {', '.join(weak_ciphers)}" + Style.RESET_ALL)
+        print(Fore.WHITE + f"  Forward Secrecy: {'Yes' if forward_secrecy else 'No'}" + Style.RESET_ALL)
+        if cipher_probe.get("openssl_available") is False:
+            print(Fore.YELLOW + "  Note: openssl binary not found; protocol/cipher probing was limited." + Style.RESET_ALL)
 
-    # HTTPS support summary
-    print(Fore.WHITE + "\nHTTPS Support:" + Style.RESET_ALL)
-    print(Fore.WHITE + f"  HTTPS Supported: {'Yes' if https_supported else 'No'}" + Style.RESET_ALL)
-    print(Fore.WHITE + f"  HTTP → HTTPS Redirect: {'Yes' if redirect_ok else 'No'}" + Style.RESET_ALL)
-    if isinstance(hsts, dict):
-        print(Fore.WHITE + ("  HSTS: Present" if hsts.get("present") else "  HSTS: Not Present") + Style.RESET_ALL)
-    else:
-        print(Fore.WHITE + "  HSTS: Unknown" + Style.RESET_ALL)
+        # HTTPS support summary
+        print(Fore.WHITE + "\nHTTPS Support:" + Style.RESET_ALL)
+        print(Fore.WHITE + f"  HTTPS Supported: {'Yes' if https_supported else 'No'}" + Style.RESET_ALL)
+        print(Fore.WHITE + f"  HTTP → HTTPS Redirect: {'Yes' if redirect_ok else 'No'}" + Style.RESET_ALL)
+        if isinstance(hsts, dict):
+            print(Fore.WHITE + ("  HSTS: Present" if hsts.get("present") else "  HSTS: Not Present") + Style.RESET_ALL)
+        else:
+            print(Fore.WHITE + "  HSTS: Unknown" + Style.RESET_ALL)
 
-    print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
+        print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
 
     # ---------------------------
     # Final risk rating block (only print if there are findings)

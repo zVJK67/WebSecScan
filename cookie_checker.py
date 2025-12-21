@@ -287,7 +287,7 @@ def _dedupe_issues(issues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             out.append(it)
     return out
 
-def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str, Any]]:
+def analyze_cookies(url: str, include_js_cookies: bool = True, verbose: bool = False) -> List[Dict[str, Any]]:
     """
     Analyze cookies set by the server and capture JS-created cookies using Selenium.
     Returns a summary list (cookie_findings) suitable for integration with the rest of the scanner.
@@ -404,24 +404,34 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
     # === 4. Print formatted output ===
     print(Fore.CYAN + "\nCookie & Session Security Configuration" + Style.RESET_ALL)
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
-    print(Fore.WHITE + "Risk Rating:" + Style.RESET_ALL)
-    print(f"Severity: {severity}")
-    print(f"CVSS: {cvss}")
 
-    # [a] Server-Side Findings
-    print(Fore.MAGENTA + "\n[a]Server-Side Findings" + Style.RESET_ALL)
+    has_findings = bool(server_issues or client_issues)
+    if has_findings:
+        print(Fore.WHITE + "Risk Rating:" + Style.RESET_ALL)
+        print(f"Severity: {severity}")
+        print(f"CVSS: {cvss}")
+
+    # [a] Server-Side Cookies
+    print(Fore.MAGENTA + "\n[a] Server-Side Cookies" + Style.RESET_ALL)
     print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
+
     if server_cookies:
-        # print raw Set-Cookie lines we collected (if any)
-        if raw_set_cookies:
-            for raw in raw_set_cookies:
-                print(f"Set-Cookie: {raw}")
-        else:
-            # From CookieJar
-            for c in server_cookies:
-                print(f"Cookie: {c['Name']}={c['Value']}")
+        if verbose:
+            # ONLY raw dump is verbose
+            if raw_set_cookies:
+                for raw in raw_set_cookies:
+                    print(f"Set-Cookie: {raw}")
+            else:
+                for c in server_cookies:
+                    print(f"Cookie: {c['Name']}={c['Value']}")
     else:
         print("[!] No server-side cookies detected.")
+        print(
+            Fore.YELLOW +
+            "    Cookies may be set only after authentication or specific user actions.\n"
+            "    Manual verification is recommended for protected areas."
+            + Style.RESET_ALL
+        )
         print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
     
     print("\nFindings:")
@@ -431,41 +441,36 @@ def analyze_cookies(url: str, include_js_cookies: bool = True) -> List[Dict[str,
     elif server_cookies:
         print(Fore.GREEN + "✓ No issues found.\n" + Style.RESET_ALL)
     else:
-        print(Fore.YELLOW + "[!] No findings as no server-side cookies found in server response.\n" + Style.RESET_ALL)
+        print(Fore.YELLOW + "[!] No server-side cookie issues detected.\n" + Style.RESET_ALL)
 
     print(Fore.MAGENTA + "~" * 80 + Style.RESET_ALL)
 
-    # [b] Client-Side Findings
-    print(Fore.MAGENTA + "\n[b]Client-Side Findings" + Style.RESET_ALL)
+    # [b] Client-Side Cookies
+    print(Fore.MAGENTA + "\n[b] Client-Side Cookies" + Style.RESET_ALL)
     print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
-    if client_cookies:
-        for c in client_cookies:
-            # Build ordered attributes list for clear, consistent printing
-            attrs = []
-            if c.get("Secure"):
-                attrs.append("Secure")
-            if c.get("HttpOnly"):
-                attrs.append("HttpOnly")
-            if c.get("SameSite") not in ["N/A", None, ""]:
-                attrs.append(f"SameSite={c.get('SameSite')}")
-            if c.get("Path") and c.get("Path") != "N/A":
-                attrs.append(f"Path={c.get('Path')}")
-            if c.get("Domain") and c.get("Domain") != "N/A":
-                attrs.append(f"Domain={c.get('Domain')}")
-            if c.get("Expires") and c.get("Expires") != "N/A":
-                attrs.append(f"Expires={c.get('Expires')}")
-            attrs_str = "; ".join(attrs) if attrs else "(no attributes)"
 
-            # Prefer to show raw if available (some cookies will have Raw=None)
-            if c.get("Raw"):
-                # Raw string could be like "name=value; Path=/; ..." — include it as Set-Cookie-like output
-                print(f"document.cookie (raw): {c.get('Raw')}")
-            else:
-                # Show a clean, JS-style representation so it's clear it's from the browser store
+    if client_cookies:
+        if verbose:
+            for c in client_cookies:
+                attrs = []
+                if c.get("Secure"):
+                    attrs.append("Secure")
+                if c.get("HttpOnly"):
+                    attrs.append("HttpOnly")
+                if c.get("SameSite") not in ("N/A", None, ""):
+                    attrs.append(f"SameSite={c.get('SameSite')}")
+                attrs_str = "; ".join(attrs) if attrs else "(no attributes)"
                 print(f"document.cookie: {c.get('Name')}={c.get('Value')}; {attrs_str}")
     else:
         print("[!] No client-side cookies detected.")
-    print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
+        print(
+            Fore.YELLOW +
+            "    Cookies may be created dynamically via JavaScript after user interaction.\n"
+            "    Manual verification is recommended."
+            + Style.RESET_ALL
+        )
+        print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
+        
 
     print("\nFindings:")
     print(Fore.CYAN + f"``````````````````````````````````````````````````````````````````````````````````" + Style.RESET_ALL)

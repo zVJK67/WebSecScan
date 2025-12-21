@@ -145,7 +145,7 @@ def _print_raw_options_response(resp: Optional[requests.Response]) -> None:
     print(Fore.CYAN + "**********************************************************" + Style.RESET_ALL)
 
 
-def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, Any]]:
+def check_and_print_http_methods(url: str, timeout: int = 6, verbose: bool = False) -> List[Dict[str, Any]]:
     """Perform passive HTTP method analysis via OPTIONS."""
     print(Fore.CYAN + "\nHTTP Method Security Check" + Style.RESET_ALL)
     print(Fore.MAGENTA + "══════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
@@ -156,7 +156,8 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
     except requests.exceptions.RequestException as e:
         print(Fore.YELLOW + f"⚠️ OPTIONS request failed: {e}" + Style.RESET_ALL)
 
-    _print_raw_options_response(resp)
+    if verbose:
+        _print_raw_options_response(resp)
 
     methods_hdr = resp.headers.get("Allow") if resp else None
     methods_list = _normalize_methods_input(methods_hdr)
@@ -171,8 +172,9 @@ def check_and_print_http_methods(url: str, timeout: int = 6) -> List[Dict[str, A
     findings = analyze_http_methods_from_list(methods_list)
     unsafe_methods = [m for m in methods_list if m not in SAFE_METHODS]
 
-    print(Fore.RED + "[!] 'Allow' header disclosed supported HTTP methods." + Style.RESET_ALL)
-    print(f"Detected Potentially Unsafe Methods: {len(unsafe_methods)}")
+    if verbose:
+        print(Fore.RED + "[!] 'Allow' header disclosed supported HTTP methods." + Style.RESET_ALL)
+        print(f"Detected Potentially Unsafe Methods: {len(unsafe_methods)}")
 
     # ✅ Risk rating ONLY if findings exist
     if findings:
