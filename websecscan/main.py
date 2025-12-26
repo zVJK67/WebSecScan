@@ -12,19 +12,19 @@ from colorama import Fore, Style, init
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-from banner import print_banner
-from http_client import parse_headers
-from http_header import analyze_security_headers, print_findings
-from http_method import check_and_print_http_methods
-from server_info import get_server_info, print_server_info
-from cookie_checker import analyze_cookies
-from cors_checker import analyze_cors
-from directory_scan import scan_common_paths, print_dir_scan_results
-from path_traversal import test_path_traversal, print_path_traversal_results
-from ssl_tls import run_ssl_check
-from findings_summary import normalize_findings, generate_summary, print_summary_table, compute_cvss_overrides_from_findings
-from export_findings import generate_interactive_html_report
-from vulnerability_definitions import VULNERABILITY_DEFINITIONS, enrich_finding_with_details
+from websecscan.banner import print_banner
+from websecscan.http_client import parse_headers
+from websecscan.http_header import analyze_security_headers, print_findings
+from websecscan.http_method import check_and_print_http_methods
+from websecscan.server_info import get_server_info, print_server_info
+from websecscan.cookie_checker import analyze_cookies
+from websecscan.cors_checker import analyze_cors
+from websecscan.directory_scan import scan_common_paths, print_dir_scan_results
+from websecscan.path_traversal import test_path_traversal, print_path_traversal_results
+from websecscan.ssl_tls import run_ssl_check
+from websecscan.findings_summary import normalize_findings, generate_summary, print_summary_table, compute_cvss_overrides_from_findings
+from websecscan.export_findings import generate_interactive_html_report
+from websecscan.vulnerability_definitions import VULNERABILITY_DEFINITIONS, enrich_finding_with_details
 
 
 # initialize colorama
@@ -73,7 +73,7 @@ AVAILABLE_MODULES = {
 def parse_args():
     parser = argparse.ArgumentParser(
         prog="websecscan",
-        description="WebSecScan - Web Security Misconfiguration Analyzer"
+        description="WebSecScan - Web Security Misconfiguration Scanner"
     )
 
     parser.add_argument(
@@ -174,7 +174,7 @@ def main():
     else:
         # Interactive mode → prompt
         # Verbosity toggle (controls noisy prints like raw header/OPTIONS dumps)
-        verbose = input("Enable verbose output? (y/n): ").strip().lower() == 'y'
+        verbose = input("\n[?] Enable verbose output? (y/n): ").strip().lower() == 'y'
 
     # NOTE: removed interactive "Verify SSL certificates?" prompt per request.
     # All HTTP requests use verify=False so scans continue even with bad certs.

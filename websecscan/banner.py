@@ -4,7 +4,7 @@ import datetime
 # Initialize colorama so styles auto-reset after each print
 init(autoreset=True)
 
-def print_banner(title="WebSecScan — Web Security Misconfiguration Analyzer",
+def print_banner(title="WebSecScan — Web Security Misconfiguration Scanner",
                  author="Developed by Lee Zhi Hui"):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     banner = r"""
@@ -18,8 +18,8 @@ def print_banner(title="WebSecScan — Web Security Misconfiguration Analyzer",
     `--'   '--' `------'`------'  `-----' `------'   `-----' `-----'    `-----' `--' `--'`--'  `--' 
 """
     print(Fore.CYAN + banner)
-    print(Fore.YELLOW + title)
-    print(Fore.MAGENTA + author)
-    print(Fore.WHITE + f"Scan started at: {now}")
-    print(Fore.WHITE + "======================================================================")
+    print(Fore.BLUE + title)
+    print(Fore.BLACK + author)
+    print(Fore.WHITE + f"\nScan started at: {now}")
+    print(Fore.MAGENTA + "======================================================================")
 

@@ -1,5 +1,21 @@
+# Virtual environments
 venv/
+.venv/
+
+# Python cache
 __pycache__/
 *.pyc
+
+# Environment variables
 .env
+
+# OS files
 .DS_Store
+
+# Python packaging / build artifacts
+*.egg-info/
+build/
+dist/
+
+# VS Code (optional but recommended)
+.vscode/
