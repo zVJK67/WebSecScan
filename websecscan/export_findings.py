@@ -18,7 +18,7 @@ from jinja2 import Environment, select_autoescape, Undefined
 
 # vulnerability definitions (enrichment + config)
 try:
-    from test3 import enrich_all_findings, VULNERABILITY_DEFINITIONS
+    from websecscan.vulnerability_definitions import enrich_all_findings, VULNERABILITY_DEFINITIONS
 except ImportError:
     # Fallback if vulnerability_definitions.py is not available
     def enrich_all_findings(findings):
@@ -710,7 +710,7 @@ REPORT_TEMPLATE = r"""
           <div class="vuln-content">
               <div class="vuln-section">
                 <div class="section-title">Description</div>
-                  {% set desc = cat_def.get('Description') or (first_finding.get('Description') if first_finding else 'No description provided.') %}
+                  {% set desc = cat_def.get('Description') if cat_def.get('Description') else first_finding.get('Description') %}
                   <div class="section-content">
                     {% for para in desc.split('\n\n') %}
                       <p>{{ para | trim | replace('\n', '<br/>') | safe }}</p>
@@ -1356,7 +1356,7 @@ def _rows_generic(flist, col_map):
     
     Example:
       col_map = [
-        ("Finding", ["_item_short","Header","Description"]),
+        ("Finding", ["Title","_item_short","Header"]),
         ("Evidence", ["CurrentValue","Current Value","Evidence"])
       ]
     
@@ -1710,14 +1710,17 @@ def generate_interactive_html_report(
 
         # Categories that are PER-FINDING (allowed to have _item_short)
         PER_ITEM_CATEGORIES = {
-            "HTTP Security Headers",
-            "Server Info",
-            "Cookie Security (Server-Side)",
-            "Cookie Security (Client-Side)",
-            "CORS Security",
-            "SSL/TLS",
-            "HTTP Methods"
+          "HTTP Security Headers",
+          "Server Info",
+          "Cookie Security (Server-Side)",
+          "Cookie Security (Client-Side)",
+          "CORS Security",
+          "SSL/TLS",
+          "HTTP Methods",
+          "Directory Exposure",
+          "Path Traversal"
         }
+
 
         # Match vulnerability definitions
         category_defs: Dict[str, Dict[str, Any]] = {}
@@ -1736,14 +1739,19 @@ def generate_interactive_html_report(
                 if vuln_def.get("DisplayName") and not finding.get("DisplayName"):
                     finding["DisplayName"] = vuln_def["DisplayName"]
 
+                # FIX: ensure Finding field exists for tables & CLI
+                if finding.get("Title") and not finding.get("Finding"):
+                    finding["Finding"] = finding["Title"]
+
+
                 # ----------------------------
                 # FIX 1: ONLY set _item_short for PER-ITEM categories
                 # ----------------------------
                 if cat in PER_ITEM_CATEGORIES:
                   raw_item = (
-                      finding.get("Method")
+                      finding.get("_item_short")
+                      or finding.get("Method")
                       or finding.get("Header")
-                      or finding.get("Finding")
                       or finding.get("Context")
                       or finding.get("Cookie")
                   )

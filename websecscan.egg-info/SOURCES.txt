@@ -5,6 +5,7 @@ websecscan/cookie_checker.py
 websecscan/cors_checker.py
 websecscan/directory_scan.py
 websecscan/email_server.py
+websecscan/email_service.py
 websecscan/export_findings.py
 websecscan/findings_summary.py
 websecscan/http_client.py

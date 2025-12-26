@@ -24,7 +24,8 @@ from websecscan.path_traversal import test_path_traversal, print_path_traversal_
 from websecscan.ssl_tls import run_ssl_check
 from websecscan.findings_summary import normalize_findings, generate_summary, print_summary_table, compute_cvss_overrides_from_findings
 from websecscan.export_findings import generate_interactive_html_report
-from websecscan.vulnerability_definitions import VULNERABILITY_DEFINITIONS, enrich_finding_with_details
+from websecscan.vulnerability_definitions import VULNERABILITY_DEFINITIONS, enrich_all_findings
+from websecscan.email_service import start_email_server
 
 
 # initialize colorama
@@ -147,6 +148,8 @@ def main():
 
     print_banner()
 
+    start_email_server()
+
     args = parse_args()
     enabled_modules = resolve_enabled_modules(args)
 
@@ -249,7 +252,7 @@ def main():
             method_findings = []
         print(Fore.WHITE + f"(completed in {time.time() - t0:.2f}s)" + Style.RESET_ALL)
 
-        method_findings = _tag_findings_with_category(method_findings, "HTTP Method")
+        method_findings = _tag_findings_with_category(method_findings, "HTTP Methods")
 
     # === Step 3: Server Info Check (ENHANCED) ===
     # Replaced to match requested output format while keeping server_info.py unchanged.
@@ -437,13 +440,14 @@ def main():
     success = True
 
     if not args.no_html:
-        print(Fore.CYAN + "\nGenerating interactive HTML report..." + Style.RESET_ALL)
-        success = generate_interactive_html_report(
-            findings=all_findings,
+
+        generate_interactive_html_report(
+            findings=all_findings,   # ← PASS RAW ONLY
             summary=summary,
             filename=html_filename,
             target_url=url
         )
+
 
     if success:
         print(Fore.GREEN + f"\n✅ Report generated successfully!" + Style.RESET_ALL)

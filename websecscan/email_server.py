@@ -5,7 +5,7 @@ Email Server with PDF-safe SVG Chart Rendering
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from optional_email import send_report_email
+from websecscan.optional_email import send_report_email
 import json
 import os
 import math
@@ -13,7 +13,7 @@ import re
 from datetime import datetime
 import tempfile
 import traceback
-from export_findings import export_to_json
+from websecscan.export_findings import export_to_json
 from flask import send_file
 
 app = Flask(__name__)
@@ -464,4 +464,4 @@ def export_json_api():
     )
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="127.0.0.1", port=5000, debug=False)
