@@ -1,24 +1,3 @@
-"""
-Security Findings Summary Generator
-
-This module aggregates findings from multiple security scanners and generates
-a summary table ordered by severity.
-
-Usage:
-    from findings_summary import generate_summary, print_summary_table
-    
-    # Collect findings from all scanners
-    all_findings = []
-    all_findings.extend(dir_scan_findings)
-    all_findings.extend(cors_findings)
-    all_findings.extend(ssl_findings)
-    
-    # Generate and print summary
-    summary = generate_summary(all_findings)
-    cvss_overrides = compute_cvss_overrides_from_findings(all_findings)
-    print_summary_table(summary, cvss_overrides=cvss_overrides)
-"""
-
 from typing import List, Dict, Any
 from collections import defaultdict
 from colorama import Fore, Style, init
@@ -26,9 +5,7 @@ from colorama import Fore, Style, init
 # Initialize colorama
 init(autoreset=True)
 
-
 # Predefined CVSS mapping for each category
-# In findings_summary.py, ensure CATEGORY_CVSS_MAP has entries for all categories
 CATEGORY_CVSS_MAP = {
     "Security Headers": {
         "severity": "Low",
@@ -113,7 +90,7 @@ def normalize_findings(findings: List[Dict[str, Any]], force_category: str = Non
             # IMPORTANT: Only exclude if it's CLEARLY a "good" status
             # Be very specific to avoid false exclusions
             truly_safe_statuses = [
-                "safe",                    # HTTP Methods: Status="Safe"
+                "safe",                   # HTTP Methods: Status="Safe"
                 "not exposed",            # Server Info: Status="Not exposed"
                 "configured correctly",   # Headers: Status="Configured correctly"
             ]

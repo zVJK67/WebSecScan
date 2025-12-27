@@ -19,3 +19,7 @@ dist/
 
 # VS Code (optional but recommended)
 .vscode/
+
+#generated files
+security_scan_report_*.html
+
