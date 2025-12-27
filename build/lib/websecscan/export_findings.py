@@ -436,64 +436,46 @@ REPORT_TEMPLATE = r"""
     }
 
     /* print */
-    @page { 
-      size: A4 portrait; 
-      margin: 12mm;
-    }
 
     @media print {
+      @page { 
+        size: A4 portrait; 
+        margin: 15mm;
+      }
 
-      /* Force white background */
       body {
         background: white !important;
         margin: 0 !important;
         padding: 0 !important;
       }
 
-      /* Optimize page container */
       .page {
         box-shadow: none !important;
         border-radius: 0 !important;
         width: auto !important;
         margin: 0 !important;
+      }
+
+      /* Remove all page-break restrictions - let content flow naturally */
+      * {
+        page-break-inside: auto !important;
+        page-break-before: auto !important;
         page-break-after: auto !important;
       }
 
-      /* =========================================================
-        FIX #1 — KEEP HEADER + SUMMARY + TABLE + CHART TOGETHER
-        ========================================================= */
-
-      .summary {
-        page-break-inside: avoid;
+      /* Only keep headers with their immediate content */
+      .vuln-header,
+      .section-title,
+      .details h2 {
+        page-break-after: avoid !important;
       }
 
-      .chart-wrapper,
-      .card,
-      .summary-table {
-        page-break-before: auto;
-        page-break-inside: avoid;
+      /* Keep table headers with at least one row */
+      .instances-table thead {
+        display: table-header-group;
       }
 
-      /* =========================================================
-        FIX #2 — REMOVE HUGE BLANK SPACES IN VULN BOXES
-        ========================================================= */
-
-      /* Allow vulnerability boxes to split naturally */
-      .category-section {
-        page-break-inside: auto;
-        margin-bottom: 16px;
-      }
-
-      /* Keep logical blocks readable */
-      .vuln-section,
-      .instances-table tbody tr {
-        page-break-inside: avoid;
-      }
-
-      /* =========================================================
-        PRESERVE COLORS (IMPORTANT FOR PDF)
-        ========================================================= */
-
+      /* Preserve colors */
       .report-header, 
       .meta, 
       .report-footer,
@@ -505,16 +487,14 @@ REPORT_TEMPLATE = r"""
       .category-section.risk-high,
       .category-section.risk-medium,
       .category-section.risk-low,
-      .remediation-box {
+      .remediation-box,
+      .stat-cards .card {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
         color-adjust: exact !important;
       }
 
-      /* =========================================================
-        HIDE EXPORT UI COMPLETELY
-        ========================================================= */
-
+      /* Hide export UI */
       .no-print,
       .export-modal,
       .export-main-btn,
@@ -525,26 +505,9 @@ REPORT_TEMPLATE = r"""
       [class*="export"] {
         display: none !important;
         visibility: hidden !important;
-        opacity: 0 !important;
-        position: absolute !important;
-        left: -9999px !important;
-        top: -9999px !important;
-        width: 0 !important;
-        height: 0 !important;
-        overflow: hidden !important;
       }
 
-      /* Remove any overlay/backdrop elements */
-      div[style*="position: fixed"],
-      div[style*="position:fixed"],
-      div[style*="rgba(0,0,0"] {
-        display: none !important;
-      }
-
-      /* =========================================================
-        CHART VISIBILITY SAFETY
-        ========================================================= */
-
+      /* Chart visibility */
       .chart-wrapper {
         display: block;
       }
@@ -552,19 +515,6 @@ REPORT_TEMPLATE = r"""
       .chart-container img {
         display: block;
         margin: 0 auto;
-      }
-
-      .chart-wrapper .card-title {
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-        color-adjust: exact !important;
-      }
-
-      /* Ensure stat cards keep color */
-      .stat-cards .card {
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-        color-adjust: exact !important;
       }
     }
   </style>
@@ -613,10 +563,20 @@ REPORT_TEMPLATE = r"""
             {% for c in categories %}
             <tr>
               <td style="font-weight:700; color:#452829">{{ c.display_name }}</td>
-              <td style="font-weight:700; color:Red">{{ c.high }}</td>
-              <td style="font-weight:700; color:Orange">{{ c.medium }}</td>
-              <td style="font-weight:700; color:Green">{{ c.low }}</td>
-              <td style="font-weight:800; color:#452829">{{ (c.high|int + c.medium|int + c.low|int) }}</td>
+              {% set cat_severity = category_stats.get(c.name, {}).get('severity', 'Low') %}
+              {% set total = (c.high|int + c.medium|int + c.low|int) %}
+              
+              {# Show total in the column matching category severity #}
+              <td style="font-weight:700; color:Red">
+                {% if cat_severity == 'High' %}{{ total }}{% else %}0{% endif %}
+              </td>
+              <td style="font-weight:700; color:Orange">
+                {% if cat_severity == 'Medium' %}{{ total }}{% else %}0{% endif %}
+              </td>
+              <td style="font-weight:700; color:Green">
+                {% if cat_severity == 'Low' %}{{ total }}{% else %}0{% endif %}
+              </td>
+              <td style="font-weight:800; color:#452829">{{ total }}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -725,6 +685,7 @@ REPORT_TEMPLATE = r"""
                   {% set stats = category_stats.get(cat_name, {}) %}
                   {% set sev = stats.get('severity') %}
                   {% set cvss_label = stats.get('cvss') %}
+                  {% set cvss_vector = stats.get('cvss_vector', '') %}
 
                   <div class="risk-item">
                     <span class="risk-label">Severity:</span>
@@ -735,7 +696,7 @@ REPORT_TEMPLATE = r"""
                     {% elif sev == 'Low' %}
                       <span class="risk-value low">Low</span>
                     {% else %}
-                      {# fallback to previous category-count-based display if no stats (no findings) #}
+                      {# fallback #}
                       {% if c.high > 0 %}
                         <span class="risk-value high">High</span>
                       {% elif c.medium > 0 %}
@@ -751,7 +712,12 @@ REPORT_TEMPLATE = r"""
                     {% set sev_class = 'low' %}
                     {% if sev == 'High' %}{% set sev_class = 'high' %}
                     {% elif sev == 'Medium' %}{% set sev_class = 'medium' %}{% endif %}
-                    <span class="risk-value {{ sev_class }}">{{ cvss_label }}</span>
+                    <span class="risk-value {{ sev_class }}">
+                      {{ cvss_label }}
+                      {% if cvss_vector %}
+                        ({{ cvss_vector }})
+                      {% endif %}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -982,79 +948,108 @@ REPORT_TEMPLATE = r"""
   <!-- Chart.js script -->
   <script>
     (function(){
-      const categories = [
-        {% for c in categories %}
-          { name: {{ c.name|tojson }}, high: {{ c.high|int }}, medium: {{ c.medium|int }}, low: {{ c.low|int }} }{% if not loop.last %},{% endif %}
-        {% endfor %}
-      ];
-      const labels = categories.map(c => c.name);
-      const values = categories.map(c => (c.high + c.medium + c.low));
-      const palette = ['#FF6B6B','#FF9F43','#FFD43B','#6BCB77','#4D96FF','#845EC2','#00C9A7','#FF9671'];
-      const colors = labels.map((_,i)=>palette[i%palette.length]);
+      // Wait for DOM to be fully loaded
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initChart);
+      } else {
+        initChart();
+      }
+      
+      function initChart() {
+        const canvas = document.getElementById('categoryChart');
+        if (!canvas) {
+          console.error('Chart canvas not found');
+          return;
+        }
+        
+        const categories = [
+          {% for c in categories %}
+            { name: {{ c.name|tojson }}, high: {{ c.high|int }}, medium: {{ c.medium|int }}, low: {{ c.low|int }} }{% if not loop.last %},{% endif %}
+          {% endfor %}
+        ];
+        
+        const labels = categories.map(c => c.name);
+        const values = categories.map(c => (c.high + c.medium + c.low));
+        const palette = ['#FF6B6B','#FF9F43','#FFD43B','#6BCB77','#4D96FF','#845EC2','#00C9A7','#FF9671'];
+        const colors = labels.map((_,i)=>palette[i%palette.length]);
 
-      const ctx = document.getElementById('categoryChart').getContext('2d');
-      const categoryChart = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-          labels,
-          datasets: [{
-            data: values,
-            backgroundColor: colors,
-            borderWidth: 2,
-            borderColor: '#fff',
-            hoverOffset: 8,
-            spacing: 2
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: true,
-          plugins: {
-            legend: {
-              position: 'right',
-              labels: { 
-                boxWidth: 14, 
-                padding: 10, 
-                usePointStyle: true,
-                font: {
-                  size: 12
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          console.error('Cannot get canvas context');
+          return;
+        }
+        
+        const categoryChart = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels,
+            datasets: [{
+              data: values,
+              backgroundColor: colors,
+              borderWidth: 2,
+              borderColor: '#fff',
+              hoverOffset: 8,
+              spacing: 2
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+              legend: {
+                position: 'right',
+                labels: { 
+                  boxWidth: 14, 
+                  padding: 10, 
+                  usePointStyle: true,
+                  font: {
+                    size: 12
+                  }
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => `${ctx.label}: ${ctx.raw} findings`
                 }
               }
             },
-            tooltip: {
-              callbacks: {
-                label: (ctx) => `${ctx.label}: ${ctx.raw} findings`
+            onClick(evt) {
+              const points = categoryChart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+              if (!points.length) return;
+              const idx = points[0].index;
+              
+              // Use the original category name
+              const catName = categories[idx].name;
+              
+              // Try anchor first
+              const anchorId = 'anchor-' + idx;
+              const el = document.getElementById(anchorId);
+              if (el) { 
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' }); 
+                return; 
+              }
+              
+              // Fallback to data-category
+              const sec = document.querySelector(`[data-category="${catName}"]`);
+              if (sec) {
+                sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }
             }
-          },
-          onClick(evt) {
-            const points = categoryChart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
-            if (!points.length) return;
-            const idx = points[0].index;
-            const anchorId = 'anchor-' + idx;
-            const el = document.getElementById(anchorId);
-            if (el) { 
-              el.scrollIntoView({ behavior: 'smooth', block: 'start' }); 
-              return; 
-            }
-            const catName = labels[idx];
-            const sec = document.querySelector(`[data-category="${catName}"]`);
-            if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        }
-      });
-
-      // keyboard accessibility for chart wrapper
-      const chartWrapper = document.querySelector('.chart-wrapper');
-      if (chartWrapper) {
-        chartWrapper.setAttribute('tabindex','0');
-        chartWrapper.addEventListener('keydown', (e)=>{
-          if (e.key === 'Enter' || e.key === ' ') {
-            const details = document.getElementById('details');
-            if (details) details.scrollIntoView({ behavior: 'smooth' });
-            e.preventDefault();
           }
         });
+
+        // Keyboard accessibility
+        const chartWrapper = document.querySelector('.chart-wrapper');
+        if (chartWrapper) {
+          chartWrapper.setAttribute('tabindex','0');
+          chartWrapper.addEventListener('keydown', (e)=>{
+            if (e.key === 'Enter' || e.key === ' ') {
+              const details = document.getElementById('details');
+              if (details) details.scrollIntoView({ behavior: 'smooth' });
+              e.preventDefault();
+            }
+          });
+        }
       }
     })();
   </script>
@@ -1812,18 +1807,53 @@ def generate_interactive_html_report(
             c_def = category_defs.get(catname, {})
             c["display_name"] = c_def.get("DisplayName") or catname
 
-        # Totals
-        total_high = sum(c["high"] for c in categories)
-        total_medium = sum(c["medium"] for c in categories)
-        total_low = sum(c["low"] for c in categories)
+        # FIX: Build totals based on CATEGORY severity, not per-finding counts
+        total_high = 0
+        total_medium = 0
+        total_low = 0
+
+        for c in categories:
+            cat_name = c["name"]
+            total_findings_in_cat = c["high"] + c["medium"] + c["low"]
+            
+            # Get the category-level severity from summary
+            if cat_name in summary:
+                cat_severity = summary[cat_name]["severity"]
+                
+                # Add the ENTIRE category's findings to the appropriate severity bucket
+                if cat_severity == "High":
+                    total_high += total_findings_in_cat
+                elif cat_severity == "Medium":
+                    total_medium += total_findings_in_cat
+                elif cat_severity == "Low":
+                    total_low += total_findings_in_cat
+
         total_findings = total_high + total_medium + total_low
 
         # Category-level risk stats
         category_stats = {}
-        for cat_name, flist in findings_by_category.items():
-            category_stats[cat_name] = _compute_category_risk_generic(
-                cat_name, flist, category_defs
-            )
+
+        for cat_name in findings_by_category.keys():
+            if cat_name in summary:
+                category_stats[cat_name] = {
+                    "severity": summary[cat_name]["severity"],
+                    "cvss": summary[cat_name]["cvss"],
+                    "cvss_vector": summary[cat_name].get("cvss_vector", "")  # ← ADD THIS
+                }
+            else:
+                # Fallback logic...
+                from websecscan.findings_summary import CATEGORY_CVSS_MAP, normalize_category_for_cvss
+                normalized_cat = normalize_category_for_cvss(cat_name)
+                cat_defaults = CATEGORY_CVSS_MAP.get(normalized_cat, {})
+                
+                if cat_defaults:
+                    cvss_num = str(cat_defaults.get('cvss', 'N/A'))
+                    cvss_vec = cat_defaults.get('cvss_vector', '')
+                    category_stats[cat_name] = {
+                        "severity": cat_defaults.get("severity", "Low"),
+                        "cvss": cvss_num,
+                        "cvss_vector": cvss_vec  # ← ADD THIS
+                    }
 
         # Build tables
         table_schema: Dict[str, List[str]] = {}
@@ -1876,7 +1906,6 @@ def generate_interactive_html_report(
         with open(filename, "w", encoding="utf-8") as f:
             f.write(rendered)
 
-        print(Fore.GREEN + f"✅ Interactive HTML report generated: {filename}" + Style.RESET_ALL)
         return True
 
     except Exception as e:

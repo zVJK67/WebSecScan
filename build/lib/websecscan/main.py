@@ -9,6 +9,7 @@ import webbrowser
 import urllib.parse
 from datetime import datetime
 from colorama import Fore, Style, init
+from collections import defaultdict
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -22,9 +23,9 @@ from websecscan.cors_checker import analyze_cors
 from websecscan.directory_scan import scan_common_paths, print_dir_scan_results
 from websecscan.path_traversal import test_path_traversal, print_path_traversal_results
 from websecscan.ssl_tls import run_ssl_check
-from websecscan.findings_summary import normalize_findings, generate_summary, print_summary_table, compute_cvss_overrides_from_findings
+from websecscan.findings_summary import normalize_findings, print_summary_table, compute_cvss_overrides_from_findings, CATEGORY_CVSS_MAP, normalize_category_for_cvss
 from websecscan.export_findings import generate_interactive_html_report
-from websecscan.vulnerability_definitions import VULNERABILITY_DEFINITIONS, enrich_all_findings
+from websecscan.vulnerability_definitions import VULNERABILITY_DEFINITIONS
 from websecscan.email_service import start_email_server
 
 
@@ -85,7 +86,7 @@ def parse_args():
     parser.add_argument(
         "-v", "--verbose",
         action="store_true",
-        help="Enable verbose output (raw headers, protocol details)"
+        help="Enable verbose output to inspect raw responses and other technical details"
     )
 
     parser.add_argument(
@@ -264,7 +265,7 @@ def main():
             # call the existing function (no change to server_info.py)
             info, server_findings = get_server_info(url, timeout=10)
             # print the server info using the module's printer (it already formats the block)
-            print_server_info(info, server_findings)
+            print_server_info(info, server_findings, verbose=verbose)
 
         except Exception as e:
             print(Fore.RED + f"[ERROR] Server info check failed: {e}" + Style.RESET_ALL)
@@ -404,7 +405,7 @@ def main():
     # ========================================================================
     print(Fore.BLUE + "\nGenerating Summary..." + Style.RESET_ALL)
 
-    # Combine all findings into one list (same as before)
+    # Combine all findings into one list
     all_findings = []
     all_findings.extend(header_findings or [])
     all_findings.extend(method_findings or [])
@@ -415,19 +416,103 @@ def main():
     all_findings.extend(pt_findings or [])
     all_findings.extend(ssl_findings or [])
 
-    
-
     # Normalize findings (ensures Category/Severity/Description present and removes clear "safe" items)
     normalized = normalize_findings(all_findings, exclude_safe=True)
 
-    # Generate summary
-    summary = generate_summary(normalized)
+    # Helper functions for CVSS/Severity extraction
+    def _numeric_cvss(cvss):
+        try:
+            return float(str(cvss).split()[0])
+        except Exception:
+            return 0.0
 
-    # Compute dynamic CVSS overrides
+    def _severity_from_cvss(score: float) -> str:
+        if score >= 7.0:
+            return "High"
+        elif score >= 4.0:
+            return "Medium"
+        return "Low"
+
+    # Group findings by category
+    grouped = defaultdict(list)
+    for f in normalized:
+        grouped[f["Category"]].append(f)
+
+    # STEP 1: Compute dynamic CVSS overrides (for special rules)
     cvss_overrides = compute_cvss_overrides_from_findings(normalized)
 
-    # Print table with overrides
-    print_summary_table(summary, title="Security Scan Results Summary", cvss_overrides=cvss_overrides)
+    # STEP 2: Build summary with proper fallback hierarchy
+    summary = {}
+
+    for category, flist in grouped.items():
+        cvss_vector = ""  # Initialize outside the conditionals
+        
+        # Priority 1: Check for dynamic override
+        if category in cvss_overrides:
+            override = cvss_overrides[category]
+            severity = override["severity"]
+            cvss_score = override["cvss"]
+            cvss_vector = override.get("cvss_vector", "")
+            # FIX: Show score with vector for CLI (just number)
+            cvss_display = str(cvss_score)
+        else:
+            # Priority 2: Use category-level defaults from CATEGORY_CVSS_MAP
+            normalized_cat = normalize_category_for_cvss(category)
+            cat_defaults = CATEGORY_CVSS_MAP.get(normalized_cat, {})
+            
+            if cat_defaults:
+                severity = cat_defaults.get("severity", "Low")
+                cvss_score = cat_defaults.get("cvss", "N/A")
+                cvss_vector = cat_defaults.get("cvss_vector", "")
+                # FIX: Show score with vector for CLI (just number)
+                cvss_display = str(cvss_score)
+            else:
+                # Priority 3: Last resort - extract max from per-finding CVSS
+                scores = [
+                    _numeric_cvss(f.get("CVSS"))
+                    for f in flist
+                    if f.get("CVSS") is not None
+                ]
+                
+                max_score = max(scores) if scores else 0.0
+                severity = _severity_from_cvss(max_score) if max_score > 0 else "Low"
+                cvss_display = f"{max_score:.1f}" if max_score > 0 else "—"
+                cvss_vector = ""  # No vector for per-finding fallback
+        
+        summary[category] = {
+            "severity": severity,
+            "cvss": cvss_display,
+            "cvss_vector": cvss_vector,  # ← ADD THIS LINE
+            "count": len(flist)
+        }
+        
+    # STEP 3: Print the summary table
+    # Add display names to match HTML report
+
+    for category in summary.keys():
+        # Try to get display name from vulnerability definitions
+        vuln_def = VULNERABILITY_DEFINITIONS.get(category, {})
+        display_name = vuln_def.get("DisplayName")
+        
+        # Fallback to manual mapping if not in definitions
+        if not display_name:
+            display_name_map = {
+                "HTTP Security Headers": "Misconfigured HTTP Security Header",
+                "Server Info": "Server Information Disclosure",
+                "Cookie Security (Server-Side)": "Improper Cookie and Session Security Configuration",
+                "Cookie Security (Client-Side)": "Improper Cookie and Session Security Configuration",
+                "CORS Security": "Cross-Origin Resource Sharing (CORS) Misconfiguration",
+                "Directory Exposure": "Sensitive Directory and File Exposure",
+                "Path Traversal": "Path Traversal Vulnerability",
+                "SSL/TLS": "Weak or Misconfigured SSL/TLS",
+                "HTTP Methods": "HTTP Methods"
+            }
+            display_name = display_name_map.get(category, category)
+        
+        # Store display name in summary
+        summary[category]["display_name"] = display_name
+
+    print_summary_table(summary, title="Security Findings Summary")
 
     # ========================================================================
     # === ALWAYS GENERATE INTERACTIVE HTML REPORT (NO PROMPTS)
@@ -442,16 +527,17 @@ def main():
     if not args.no_html:
 
         generate_interactive_html_report(
-            findings=all_findings,   # ← PASS RAW ONLY
+            findings=all_findings,   
             summary=summary,
             filename=html_filename,
             target_url=url
         )
 
-
     if success:
-        print(Fore.GREEN + f"\n✅ Report generated successfully!" + Style.RESET_ALL)
-        print(Fore.CYAN + f"   📁 File: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
+        print(Fore.GREEN + f"\n✅ Scan completed successfully!" + Style.RESET_ALL)
+        if not args.no_html:
+            print(Fore.CYAN + f"   📁 HTML Report: {os.path.abspath(html_filename)}" + Style.RESET_ALL)
+
     else:
         print(Fore.RED + "\n✗ Failed to generate report" + Style.RESET_ALL)
 
@@ -460,11 +546,12 @@ def main():
     # ========================================================================
 
     print(Fore.BLUE + "\n========================================================================================================================" + Style.RESET_ALL)
-    print(Fore.BLUE + "                    Security Scan Completed ! Thank you for using WebSecScan" + Style.RESET_ALL)
+    print(Fore.BLUE + "                                Thank you for using WebSecScan" + Style.RESET_ALL)
     print(Fore.BLUE + "========================================================================================================================" + Style.RESET_ALL)
 
     # Wait for user before opening browser
-    if success and not args.no_open:
+    if success and not args.no_open and not args.no_html:
+
         if args.url:
             # CLI mode → auto open
             webbrowser.open('file://' + os.path.abspath(html_filename))

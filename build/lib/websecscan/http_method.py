@@ -182,8 +182,8 @@ def check_and_print_http_methods(url: str, timeout: int = 6, verbose: bool = Fal
         cvss = _severity_to_cvss(severity)
 
         print(Fore.WHITE + "\nRisk Rating:" + Style.RESET_ALL)
-        print(f"{Fore.YELLOW}Severity: {severity}{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}CVSS: {cvss}{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}Severity: {severity}{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}CVSS: {cvss}{Style.RESET_ALL}")
 
     print("\nFindings:")
     print("``````````````````````````````````````````````````````````")

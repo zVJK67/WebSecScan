@@ -28,6 +28,7 @@ init(autoreset=True)
 
 
 # Predefined CVSS mapping for each category
+# In findings_summary.py, ensure CATEGORY_CVSS_MAP has entries for all categories
 CATEGORY_CVSS_MAP = {
     "Security Headers": {
         "severity": "Low",
@@ -35,8 +36,8 @@ CATEGORY_CVSS_MAP = {
         "cvss_vector": "AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N"
     },
     "HTTP Method": {
-        "severity": "Medium",  # Default, can be overridden
-        "cvss": "5.3",  # Default, can be overridden
+        "severity": "Medium",
+        "cvss": "5.3",
         "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
     },
     "Server Information": {
@@ -55,9 +56,9 @@ CATEGORY_CVSS_MAP = {
         "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:L/A:N"
     },
     "Directory Exposure": {
-        "severity": "Medium",
-        "cvss": "5.3",
-        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+        "severity": "High",   
+        "cvss": "8.2",         
+        "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
     },
     "Path Traversal": {
         "severity": "High",
@@ -65,8 +66,8 @@ CATEGORY_CVSS_MAP = {
         "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
     },
     "SSL/TLS": {
-        "severity": "Medium",  # Default, can be overridden
-        "cvss": "5.3",  # Default, can be overridden
+        "severity": "Medium",
+        "cvss": "5.3",
         "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
     }
 }
@@ -176,16 +177,12 @@ def normalize_findings(findings: List[Dict[str, Any]], force_category: str = Non
 
 def compute_cvss_overrides_from_findings(findings: List[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
     """
-    Compute dynamic CVSS overrides for categories that have conditional severity/CVSS.
-    Currently handles:
-    - HTTP Method: Low (3.7) if only OPTIONS, Medium (5.3) otherwise
-    - SSL/TLS: High (9.8) if HTTPS not supported, Medium (5.3) otherwise
+    Compute dynamic CVSS overrides for categories with conditional severity/CVSS.
     
-    Args:
-        findings: List of all findings
-        
-    Returns:
-        Dictionary mapping category names to {severity, cvss, cvss_vector}
+    Handles:
+    - HTTP Methods: Low (3.7) if only OPTIONS, Medium (5.3) otherwise
+    - SSL/TLS: High (9.8) if HTTPS not supported, Medium (5.3) otherwise
+    - Path Traversal: High (7.5) if direct evidence, Medium (5.3) otherwise
     """
     overrides = {}
     
@@ -196,38 +193,42 @@ def compute_cvss_overrides_from_findings(findings: List[Dict[str, Any]]) -> Dict
         by_category[cat].append(f)
     
     # --- HTTP Method Dynamic Logic ---
-    if "HTTP Method" in by_category:
-        http_findings = by_category["HTTP Method"]
-        # Check if only OPTIONS method is unsafe
+    if "HTTP Method" in by_category or "HTTP Methods" in by_category:
+        http_findings = by_category.get("HTTP Method", []) or by_category.get("HTTP Methods", [])
+        
         methods = []
         for f in http_findings:
-            method = f.get("Method", "")
+            method = f.get("Method", "") or f.get("_item_short", "")
             if method:
-                methods.append(method.upper())
+                method_clean = method.upper()
+                if ":" in method_clean:
+                    method_clean = method_clean.split(":", 1)[1].strip()
+                methods.append(method_clean)
         
-        # If only OPTIONS is present, use Low severity
+        # Use the category name that actually exists in findings
+        category_key = "HTTP Methods" if "HTTP Methods" in by_category else "HTTP Method"
+        
         if set(methods) == {"OPTIONS"}:
-            overrides["HTTP Method"] = {
+            overrides[category_key] = {
                 "severity": "Low",
                 "cvss": "3.7",
                 "cvss_vector": "AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N"
             }
         else:
-            # Default Medium severity
-            overrides["HTTP Method"] = {
+            overrides[category_key] = {
                 "severity": "Medium",
                 "cvss": "5.3",
                 "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
             }
     
-    # --- SSL/TLS Dynamic Logic (NEW) ---
+    # --- SSL/TLS Dynamic Logic ---
     if "SSL/TLS" in by_category:
         ssl_findings = by_category["SSL/TLS"]
         
-        # Check if "HTTPS Not Supported" is present
         has_https_not_supported = any(
             "HTTPS Not Supported" in f.get("Description", "")
             or "HTTPS not supported" in f.get("Description", "")
+            or "HTTPS Not Supported" in f.get("Title", "")
             or "No TLS listener" in f.get("Current Value", "")
             or "No TLS listener" in f.get("Evidence", "")
             or "No TLS listener" in f.get("CurrentValue", "")
@@ -235,174 +236,137 @@ def compute_cvss_overrides_from_findings(findings: List[Dict[str, Any]]) -> Dict
         )
         
         if has_https_not_supported:
-            # High severity ONLY for HTTPS not supported
             overrides["SSL/TLS"] = {
                 "severity": "High",
                 "cvss": "9.8",
                 "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
             }
         else:
-            # Default Medium severity for all other SSL/TLS issues
             overrides["SSL/TLS"] = {
                 "severity": "Medium",
                 "cvss": "5.3",
                 "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
             }
     
+    # --- Path Traversal Dynamic Logic ---
+    if "Path Traversal" in by_category:
+        pt_findings = by_category["Path Traversal"]
+        
+        has_direct_evidence = any(
+            "Direct evidence" in (f.get("Behavior") or "")
+            or "Direct evidence" in (f.get("Evidence") or "")
+            for f in pt_findings
+        )
+        
+        if has_direct_evidence:
+            overrides["Path Traversal"] = {
+                "severity": "High",
+                "cvss": "7.5",
+                "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
+            }
+        else:
+            overrides["Path Traversal"] = {
+                "severity": "Medium",
+                "cvss": "5.3",
+                "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+            }
+    
+    # --- NEW: Directory Exposure Dynamic Logic ---
+    # The directory_scan.py module already computes severity dynamically
+    # We extract it from the findings and use that
+    if "Directory Exposure" in by_category:
+        dir_findings = by_category["Directory Exposure"]
+        
+        if dir_findings:
+            # Import the helper from directory_scan module
+            from websecscan.directory_scan import _severity_for, _cvss_for, _overall_severity
+            
+            # Use the scanner's own logic to determine severity
+            overall_sev = _overall_severity(dir_findings)
+            overall_cvss = _cvss_for(overall_sev)
+            
+            # Extract just the numeric score (e.g., "8.2" from "8.2 (AV:N/AC:L...)")
+            cvss_num = overall_cvss.split()[0] if overall_cvss else "8.2"
+            
+            overrides["Directory Exposure"] = {
+                "severity": overall_sev,
+                "cvss": cvss_num,
+                "cvss_vector": overall_cvss.split("(")[1].rstrip(")") if "(" in overall_cvss else ""
+            }
+    
     return overrides
 
 
-def generate_summary(findings: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
+def print_summary_table(
+    summary: Dict[str, Dict[str, any]],
+    title: str = "Security Findings Summary",
+):
     """
-    Generate a summary of findings grouped by category with counts.
-    Note: This now just counts findings per category (no severity breakdown).
-    
-    Args:
-        findings: List of finding dictionaries with 'Category' keys
-        
-    Returns:
-        Dictionary mapping category names to finding counts
-        Example: {'CORS Security': {'count': 3}, 'Security Headers': {'count': 11}, ...}
+    Print a clean, tidy summary table.
+    Columns:
+    Category | Severity | CVSS Score | Number of Findings
     """
-    summary = defaultdict(lambda: {"count": 0})
-    
-    for finding in findings:
-        category = finding.get("Category", "Unknown")
-        summary[category]["count"] += 1
-    
-    return dict(summary)
 
-
-def calculate_category_score(category: str, count: int, cvss_map: Dict[str, Dict[str, str]]) -> int:
-    # Normalize category name so it matches CATEGORY_CVSS_MAP keys
-    category = normalize_category_for_cvss(category)
-
-    severity = cvss_map.get(category, {}).get("severity", "Low")
-
-    severity_weights = {
-        "High": 100,
-        "Medium": 10,
-        "Low": 1
-    }
-
-    weight = severity_weights.get(severity, 1)
-    return weight * count
-
-
-def print_summary_table(summary: Dict[str, Dict[str, int]], title: str = "Security Findings Summary", cvss_overrides: Dict[str, Dict[str, str]] = None):
-    """
-    Print a formatted summary table matching the new design:
-    Category | Severity | CVSS Score | Number of Findings | Status
-    
-    Args:
-        summary: Dictionary from generate_summary()
-        title: Optional title for the table
-        cvss_overrides: Optional dictionary of dynamic CVSS overrides from compute_cvss_overrides_from_findings()
-    """
     if not summary:
         print(Fore.GREEN + f"\n{title}")
         print("=" * 120)
         print("✅ No security findings detected.")
         print("=" * 120 + "\n")
         return
-    
-    # Merge predefined CVSS with overrides
-    cvss_map = CATEGORY_CVSS_MAP.copy()
-    if cvss_overrides:
-        for cat, override in cvss_overrides.items():
-            if cat in cvss_map:
-                cvss_map[cat].update(override)
-    
-    # Sort categories by severity score (highest first)
-    sorted_categories = sorted(
-        summary.items(),
-        key=lambda x: calculate_category_score(x[0], x[1]["count"], cvss_map),
-        reverse=True
-    )
-    
-    # Calculate totals
-    total_findings = sum(counts["count"] for _, counts in sorted_categories)
-    
-    # Print header
+
     print(Fore.CYAN + f"\n{title}")
     print("=" * 120)
-    print(Fore.WHITE + f"Total Findings: {total_findings}")
-    print("=" * 120 + "\n")
-    
-    # Table header
-    print(f"{Fore.WHITE}{'Category':<40} {'Severity':<12} {'CVSS Score':<20} {'Number of Findings':<22} {'Status':<20}")
-    print("-" * 120)
-    
-    # Print each category
-    for category, counts in sorted_categories:
-        finding_count = counts["count"]
-        
-        # Get CVSS info for this category
-        cvss_key = normalize_category_for_cvss(category)
-        cvss_info = cvss_map.get(cvss_key, {
-            "severity": "Low",
-            "cvss": "N/A",
-            "cvss_vector": ""
-        })
-        
-        # Prefer dynamic severity if findings exist
-        severity = cvss_info.get("severity", "Low")
-        if summary.get(category, {}).get("count", 0) > 0:
-            # trust findings severity when available
-            severity = cvss_overrides.get(cvss_key, {}).get("severity", severity)
 
-        cvss = cvss_info.get("cvss", "N/A")
-        
-        # Determine status
-        status = "✗ Issues found" if finding_count > 0 else "✓ No issues"
-        
-        # Color code based on severity
-        if severity == "High":
-            severity_color = Fore.RED
-            category_color = Fore.RED
-        elif severity == "Medium":
-            severity_color = Fore.YELLOW
-            category_color = Fore.YELLOW
-        else:
-            severity_color = Fore.GREEN
-            category_color = Fore.GREEN
-        
-        # Status color
-        status_color = Fore.RED if finding_count > 0 else Fore.GREEN
-        
-        # Format finding count
-        finding_text = f"{finding_count} finding{'s' if finding_count != 1 else ''}"
-        
-        print(f"{category_color}{category:<40}{Style.RESET_ALL} "
-              f"{severity_color}{severity:<12}{Style.RESET_ALL} "
-              f"{Fore.WHITE}{cvss:<20}{Style.RESET_ALL} "
-              f"{Fore.WHITE}{finding_text:<22}{Style.RESET_ALL} "
-              f"{status_color}{status:<20}{Style.RESET_ALL}")
-    
-    # Add "Overall" row
+    # Table header (ONLY 4 COLUMNS)
+    print(
+        f"{Fore.WHITE}"
+        f"{'Category':<70} "
+        f"{'Severity':<10} "
+        f"{'CVSS Score':<13} "
+        f"{'Number of Findings':<20}"
+    )
     print("-" * 120)
-    
-    # Determine overall severity
+
+    severity_rank = {"High": 3, "Medium": 2, "Low": 1}
+
+    # Sort by severity then by finding count
+    sorted_items = sorted(
+        summary.items(),
+        key=lambda x: (severity_rank.get(x[1]["severity"], 0), x[1]["count"]),
+        reverse=True
+    )
+
+    total_findings = 0
     has_high = False
     has_medium = False
 
-    for cat, data in summary.items():
-        if data.get("count", 0) <= 0:
-            continue
+    for category, data in sorted_items:
+        severity = data["severity"]
+        cvss = data["cvss"]
+        count = data["count"]
+        display_name = data.get("display_name", category)
 
-        key = normalize_category_for_cvss(cat)
+        total_findings += count
 
-        sev = cvss_overrides.get(key, {}).get(
-            "severity",
-            cvss_map.get(key, {}).get("severity")
+        if severity == "High":
+            sev_color = Fore.RED
+            has_high = True
+        elif severity == "Medium":
+            sev_color = Fore.YELLOW
+            has_medium = True
+        else:
+            sev_color = Fore.GREEN
+
+        print(
+            f"{sev_color}{display_name:<70}{Style.RESET_ALL} "
+            f"{sev_color}{severity:<10}{Style.RESET_ALL} "
+            f"{sev_color}{cvss:<13}{Style.RESET_ALL} "
+            f"{Fore.WHITE}{count:<20}{Style.RESET_ALL}"
         )
 
-        if sev == "High":
-            has_high = True
-        elif sev == "Medium":
-            has_medium = True
+    print("-" * 120)
 
-    
+    # Overall severity
     if has_high:
         overall_severity = "High"
         overall_color = Fore.RED
@@ -412,120 +376,13 @@ def print_summary_table(summary: Dict[str, Dict[str, int]], title: str = "Securi
     else:
         overall_severity = "Low"
         overall_color = Fore.GREEN
-    
-    overall_status = "⚠ Security weaknesses detected"
-    overall_status_color = Fore.YELLOW
-    
-    print(f"{Fore.CYAN}{'Overall':<40}{Style.RESET_ALL} "
-          f"{overall_color}{overall_severity:<12}{Style.RESET_ALL} "
-          f"{Fore.WHITE}{'—':<20}{Style.RESET_ALL} "
-          f"{Fore.WHITE}{'—':<22}{Style.RESET_ALL} "
-          f"{overall_status_color}{overall_status:<20}{Style.RESET_ALL}")
-    
+
+    # Overall row (INCLUDES TOTAL FINDINGS)
+    print(
+        f"{Fore.CYAN}{'Overall':<70}{Style.RESET_ALL} "
+        f"{overall_color}{overall_severity:<10}{Style.RESET_ALL} "
+        f"{Fore.WHITE}{'—':<13}{Style.RESET_ALL} "
+        f"{Fore.WHITE}{total_findings:<20}{Style.RESET_ALL}"
+    )
+
     print("=" * 120 + "\n")
-
-
-def print_detailed_findings(findings: List[Dict[str, Any]], category_filter: str = None):
-    """
-    Print detailed findings, optionally filtered by category.
-    
-    Args:
-        findings: List of finding dictionaries
-        category_filter: Optional category name to filter by
-    """
-    if category_filter:
-        findings = [f for f in findings if f.get("Category") == category_filter]
-        print(Fore.CYAN + f"\nDetailed Findings for: {category_filter}")
-    else:
-        print(Fore.CYAN + "\nDetailed Findings (All Categories)")
-    
-    print("=" * 80 + "\n")
-    
-    if not findings:
-        print(Fore.GREEN + "No findings to display.\n")
-        return
-    
-    # Sort by severity
-    severity_order = {"High": 0, "Medium": 1, "Low": 2}
-    sorted_findings = sorted(
-        findings,
-        key=lambda f: (severity_order.get(f.get("Severity", "Low"), 3), f.get("Category", ""))
-    )
-    
-    for idx, finding in enumerate(sorted_findings, 1):
-        severity = finding.get("Severity", "Low")
-        category = finding.get("Category", "Unknown")
-        description = finding.get("Description", "No description")
-        
-        # Color based on severity
-        sev_color = {"High": Fore.RED, "Medium": Fore.YELLOW, "Low": Fore.GREEN}.get(severity, Fore.WHITE)
-        
-        print(f"{Fore.WHITE}{idx}. [{category}]{Style.RESET_ALL}")
-        print(f"   Severity: {sev_color}{severity}{Style.RESET_ALL}")
-        print(f"   {description}")
-        
-        # Print additional context if available
-        if "URL" in finding and finding["URL"]:
-            print(f"   URL: {finding['URL']}")
-        if "Context" in finding and finding["Context"]:
-            print(f"   Context: {finding['Context']}")
-        if "Recommendation" in finding and finding["Recommendation"]:
-            print(f"   {Fore.CYAN}→ {finding['Recommendation']}{Style.RESET_ALL}")
-        
-        print()
-
-
-def export_summary_csv(summary: Dict[str, Dict[str, int]], filename: str = "security_findings_summary.csv", cvss_overrides: Dict[str, Dict[str, str]] = None):
-    """
-    Export the summary table to a CSV file.
-    
-    Args:
-        summary: Dictionary from generate_summary()
-        filename: Output CSV filename
-        cvss_overrides: Optional dictionary of dynamic CVSS overrides
-    """
-    import csv
-    
-    # Merge predefined CVSS with overrides
-    cvss_map = CATEGORY_CVSS_MAP.copy()
-    if cvss_overrides:
-        for cat, override in cvss_overrides.items():
-            if cat in cvss_map:
-                cvss_map[cat].update(override)
-    
-    # Sort categories by severity
-    sorted_categories = sorted(
-        summary.items(),
-        key=lambda x: calculate_category_score(x[0], x[1]["count"], cvss_map),
-        reverse=True
-    )
-    
-    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(['Category', 'Severity', 'CVSS Score', 'Number of Findings', 'Status'])
-        
-        for category, counts in sorted_categories:
-            finding_count = counts["count"]
-            cvss_info = cvss_map.get(category, {"severity": "Low", "cvss": "N/A"})
-            severity = cvss_info.get("severity", "Low")
-            cvss = cvss_info.get("cvss", "N/A")
-            status = "Issues found" if finding_count > 0 else "No issues"
-            
-            writer.writerow([category, severity, cvss, finding_count, status])
-        
-        # Overall row
-        has_high = any(cvss_map.get(cat, {}).get("severity") == "High" and summary.get(cat, {}).get("count", 0) > 0 
-                       for cat in summary.keys())
-        has_medium = any(cvss_map.get(cat, {}).get("severity") == "Medium" and summary.get(cat, {}).get("count", 0) > 0 
-                         for cat in summary.keys())
-        
-        if has_high:
-            overall_severity = "High"
-        elif has_medium:
-            overall_severity = "Medium"
-        else:
-            overall_severity = "Low"
-        
-        writer.writerow(['Overall', overall_severity, '—', '—', 'Security weaknesses detected'])
-    
-    print(Fore.GREEN + f"✅ Summary exported to {filename}\n" + Style.RESET_ALL)
