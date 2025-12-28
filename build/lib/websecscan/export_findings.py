@@ -1,11 +1,5 @@
 # export_findings.py
-"""
-Export Findings Module
 
-Exports security scan findings to HTML, JSON, and PDF formats.
-Generates interactive HTML reports with client-side export functionality.
-Uses a unified table builder for all categories.
-"""
 import os
 import json
 import math

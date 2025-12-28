@@ -115,11 +115,11 @@ def analyze_http_methods_from_list(methods_list: List[str]) -> List[Dict[str, An
 def _print_raw_options_response(resp: Optional[requests.Response]) -> None:
     """Print raw OPTIONS response (status + headers)."""
     print(Fore.WHITE + "OPTIONS Response:" + Style.RESET_ALL)
-    print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
+    print(Fore.YELLOW + "*" * 60 + Style.RESET_ALL)
 
     if resp is None:
         print("(No response received)")
-        print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
+        print(Fore.YELLOW + "*" * 60 + Style.RESET_ALL)
         return
 
     print(Fore.WHITE + f"HTTP/1.1 {resp.status_code} {resp.reason}")
@@ -142,13 +142,13 @@ def _print_raw_options_response(resp: Optional[requests.Response]) -> None:
         if k not in printed:
             print(Fore.WHITE + f"{k}: {v}")
 
-    print(Fore.CYAN + "**********************************************************" + Style.RESET_ALL)
+    print(Fore.YELLOW + "*" * 60 + Style.RESET_ALL)
 
 
 def check_and_print_http_methods(url: str, timeout: int = 6, verbose: bool = False) -> List[Dict[str, Any]]:
     """Perform passive HTTP method analysis via OPTIONS."""
     print(Fore.CYAN + "\nHTTP Method Security Check" + Style.RESET_ALL)
-    print(Fore.MAGENTA + "══════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
     resp = None
     try:
@@ -166,7 +166,7 @@ def check_and_print_http_methods(url: str, timeout: int = 6, verbose: bool = Fal
     if not methods_list:
         print(Fore.YELLOW + "[!] Server did not disclose supported HTTP methods." + Style.RESET_ALL)
         print("Note: Absence of Allow header does not guarantee security.")
-        print(Fore.MAGENTA + "══════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+        print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
         return []
 
     findings = analyze_http_methods_from_list(methods_list)
@@ -186,7 +186,8 @@ def check_and_print_http_methods(url: str, timeout: int = 6, verbose: bool = Fal
         print(f"{Fore.WHITE}CVSS: {cvss}{Style.RESET_ALL}")
 
     print("\nFindings:")
-    print("``````````````````````````````````````````````````````````")
+    print(Fore.CYAN + "`" * 80 + Style.RESET_ALL)
+
     if findings:
         for i, f in enumerate(findings, 1):
             print(f"{i}. {f['Method']}")
@@ -201,6 +202,6 @@ def check_and_print_http_methods(url: str, timeout: int = 6, verbose: bool = Fal
     print("Disable unused or unsafe HTTP methods at the web server or application level.")
     print("Use allowlists and proper access controls.")
 
-    print(Fore.MAGENTA + "══════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
+    print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
     return findings
