@@ -7,13 +7,10 @@ from urllib3.util.retry import Retry
 from colorama import Fore, Style, init
 import urllib3
 
-# initialize colorama (if not already in main)
 init(autoreset=True)
 
-# Suppress urllib3 InsecureRequestWarning since we intentionally skip cert verification
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- Helpers ---
 def _normalize_url(url: str) -> str:
     """Ensure URL has a scheme (http/https)"""
     parsed = urlparse(url)
@@ -60,22 +57,12 @@ def analyze_cors(
     timeout: int = 10,
     verbose: bool = False
 ) -> List[Dict[str, Any]]:
-    """
-    Perform comprehensive CORS security analysis.
 
-    Tests:
-      1. Original GET and OPTIONS (no Origin header)
-      2. Probe GET with attacker Origin
-      3. Probe OPTIONS preflight with attacker Origin
-
-    Returns:
-        List of findings with Category, Type, Detail, and Recommendation
-    """
     target = _normalize_url(url)
     session = _get_session()
     findings: List[Dict[str, Any]] = []
 
-    # Use the fake_origin argument — do not prompt inside this module.
+    # Use the fake_origin argument 
     if verbose:
         print("\nPerforming CORS test with Target URL and a Test Origin...")
         print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
@@ -83,7 +70,7 @@ def analyze_cors(
         print(f"Test Origin: {fake_origin}\n")
         print(Fore.YELLOW + f"Response status:" + Style.RESET_ALL)
 
-    # --- Step 1: Original requests (no Origin) ---
+    # Original requests (no Origin) 
     orig_get = None
     orig_options = None
     probe_get = None
@@ -107,7 +94,7 @@ def analyze_cors(
             print(f"{Fore.YELLOW}Original OPTIONS failed: {e}{Style.RESET_ALL}")
         orig_options = None
 
-    # --- Step 2: Probe with fake origin ---
+    # Probe with fake origin 
     probe_headers = {"Origin": fake_origin}
     try:
         probe_get = session.get(target, headers=probe_headers, timeout=timeout)
@@ -149,7 +136,6 @@ def analyze_cors(
     probe_get_h = cors_subset(probe_get)
     probe_options_h = cors_subset(probe_options)
 
-    # --- Display observed headers (verbose mode only) ---
     if verbose:
         print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
         print("\nTesting Result")
@@ -213,14 +199,14 @@ def analyze_cors(
 
     wildcard_seen = allow_origin == "*"
 
-    # --- Build findings list (will be numbered sequentially when printed) ---
+    # --- Build findings list  ---
 
     # Finding type 1: Wildcard Origin (*) Allowed
     if wildcard_seen:
         findings.append({
             "Category": "CORS Security",
             "Type": "Wildcard Origin (*) Allowed",
-            "Header": "Wildcard Origin (*) Allowed",  # For table display
+            "Header": "Wildcard Origin (*) Allowed",  
             "_item_short": "Wildcard Origin Allowed",
             "CurrentValue": f"Access-Control-Allow-Origin: {allow_origin}",
             "Recommendation": "Specify only trusted, legitimate domains instead of using a wildcard *."
@@ -231,7 +217,7 @@ def analyze_cors(
         findings.append({
             "Category": "CORS Security",
             "Type": "Credentials Allowed for All Origins",
-            "Header": "Credentials Allowed for All Origins",  # For table display
+            "Header": "Credentials Allowed for All Origins",  
             "_item_short": "Credentials Allowed for All Origins",
             "CurrentValue": f"Access-Control-Allow-Credentials: true + Access-Control-Allow-Origin: *",
             "Recommendation": "Only enable credentials for specific trusted domains. Ensure Allow-Credentials: true is never used with Allow-Origin: *."
@@ -244,7 +230,7 @@ def analyze_cors(
             findings.append({
                 "Category": "CORS Security",
                 "Type": "Unsafe Origin Reflection",
-                "Header": "Unsafe Origin Reflection",  # For table display
+                "Header": "Unsafe Origin Reflection", 
                 "_item_short": "Unsafe Origin Reflection",
                 "CurrentValue": f"Access-Control-Allow-Origin: {allowed}",      
                 "Detail": "The server reflects whatever Origin the request sends, meaning it trusts unknown domains.",
@@ -332,7 +318,6 @@ def analyze_cors(
                     "Recommendation": "Update the preflight validation to reject unapproved origins before responding with CORS permissions."
                 })
 
-    # --- Print findings in the desired format ---
     print(Fore.CYAN + f"\nCORS Security Analysis" + Style.RESET_ALL)
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 

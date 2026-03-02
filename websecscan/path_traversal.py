@@ -23,19 +23,16 @@ from urllib3.util.retry import Retry
 from colorama import Fore, Style
 import urllib3
 
-# Suppress InsecureRequestWarning because HTTP-level probes intentionally skip cert verification
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# =========================
 # Configuration
-# =========================
 MAX_INSPECT_BYTES = 2048  # Limit content inspection to reduce data exposure
 
 # Default payloads and probes (safe, non-exploitative)
 TRAVERSAL_PAYLOADS = [
     "../etc/passwd", "../../etc/passwd", "../../../etc/passwd",
     "../../../../../../etc/passwd",
-    "..%2f..%2fetc%2fpasswd",  # url-encoded
+    "..%2f..%2fetc%2fpasswd",  
     "../..\\..\\windows\\win.ini",
 ]
 

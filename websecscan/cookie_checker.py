@@ -21,7 +21,6 @@ def _get_session(retries: int = 2, backoff: float = 0.2) -> requests.Session:
     s.mount("http://", adapter)
     s.mount("https://", adapter)
     s.headers.update({"User-Agent": "WebSecScan/1.0"})
-    # IMPORTANT: scanner design — skip certificate verification for HTTP-level checks
     s.verify = False
     return s
 
@@ -56,10 +55,8 @@ def _extract_set_cookie_headers(response: requests.Response) -> List[str]:
                         for sc in scs:
                             if sc and sc.strip():
                                 headers_list.append(sc.strip())
-                        # continue to next candidate (we already extracted from raw)
                         continue
         except Exception:
-            # ignore and fallback to header dict
             pass
 
         # Fallback: look at resp.headers (CaseInsensitiveDict). May contain a single combined Set-Cookie.
@@ -82,9 +79,7 @@ def _extract_set_cookie_headers(response: requests.Response) -> List[str]:
     return out
 
 def _parse_set_cookie_header(raw_sc: str) -> Dict[str, Any]:
-    """
-    Parse a single Set-Cookie header string into attributes.
-    """
+
     result: Dict[str, Any] = {
         "Name": None,
         "Value": None,
@@ -113,7 +108,6 @@ def _parse_set_cookie_header(raw_sc: str) -> Dict[str, Any]:
             result["Name"] = cookie_key
             result["Value"] = morsel.value
 
-    # Extract attributes (case-insensitive)
     attr_re = re.compile(r'(?i)(?:;\s*|^)(?P<attr>Secure|HttpOnly|SameSite|Domain|Path|Expires|Max-Age)(?:=(?P<val>[^;]+))?')
     for m in attr_re.finditer(raw_sc):
         attr = m.group("attr").lower()
@@ -183,10 +177,7 @@ def _check_weak_session_id(value: str) -> bool:
     return False
 
 def _parse_expiry_days(expires_str: str, max_age_str: str) -> Optional[int]:
-    """
-    Parse expiry time and return days until expiration.
-    Returns None if cannot parse or if session cookie (no expiry).
-    """
+
     if max_age_str != "N/A":
         try:
             seconds = int(max_age_str)
@@ -288,21 +279,16 @@ def _dedupe_issues(issues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 def analyze_cookies(url: str, include_js_cookies: bool = True, verbose: bool = False) -> List[Dict[str, Any]]:
-    """
-    Analyze cookies set by the server and capture JS-created cookies using Selenium.
-    Returns a summary list (cookie_findings) suitable for integration with the rest of the scanner.
-    """    
+
     session = _get_session()
     server_cookies: List[Dict[str, Any]] = []
     client_cookies: List[Dict[str, Any]] = []
 
-    # === 1. Fetch cookies from HTTP response ===
+    # Fetch cookies from HTTP response 
     try:
-        # Use the session (which has verify=False)
         resp = session.get(url, timeout=10)
     except requests.exceptions.SSLError as e:
-        # Very unlikely here because session.verify=False, but handle gracefully
-        print(Fore.YELLOW + f"⚠️ TLS verification failed while fetching cookies for {url}: {e}" + Style.RESET_ALL)
+        print(Fore.YELLOW + f"TLS verification failed while fetching cookies for {url}: {e}" + Style.RESET_ALL)
         print(Fore.YELLOW + "   Retrying without certificate verification to continue the scan..." + Style.RESET_ALL)
         try:
             resp = session.get(url, timeout=10, verify=False)
@@ -310,7 +296,6 @@ def analyze_cookies(url: str, include_js_cookies: bool = True, verbose: bool = F
             print(Fore.RED + f"[ERROR] Could not fetch cookies from {url}: {e2}" + Style.RESET_ALL)
             return []
     except requests.RequestException as e:
-        # Friendly, short message for the user
         print(Fore.RED + f"[ERROR] Could not fetch cookies from {url}: {e}" + Style.RESET_ALL)
         print(Fore.YELLOW + "   The scanner will continue; no server-side cookies were collected." + Style.RESET_ALL)
         return []
@@ -340,7 +325,7 @@ def analyze_cookies(url: str, include_js_cookies: bool = True, verbose: bool = F
                 }
                 server_cookies.append(parsed)
 
-    # === 2. Fetch client-side JS cookies using Selenium ===
+    # Fetch client-side JS cookies using Selenium 
     if include_js_cookies:
         try:
             from selenium import webdriver
@@ -372,10 +357,9 @@ def analyze_cookies(url: str, include_js_cookies: bool = True, verbose: bool = F
                 client_cookies.append(parsed)
 
         except Exception:
-            # Silently skip if Selenium not available or fails
             pass
 
-    # === 3. Analyze cookies and detect issues ===
+    # Analyze cookies and detect issues 
     server_issues = _analyze_cookie_list(server_cookies, is_server_side=True)
     client_issues = _analyze_cookie_list(client_cookies, is_server_side=False)
 
@@ -401,7 +385,7 @@ def analyze_cookies(url: str, include_js_cookies: bool = True, verbose: bool = F
         severity = "Info"
         cvss = "N/A"
 
-    # === 4. Print formatted output ===
+    # Print formatted output 
     print(Fore.CYAN + "\nCookie & Session Security Configuration" + Style.RESET_ALL)
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
@@ -417,7 +401,6 @@ def analyze_cookies(url: str, include_js_cookies: bool = True, verbose: bool = F
 
     if server_cookies:
         if verbose:
-            # ONLY raw dump is verbose
             if raw_set_cookies:
                 for raw in raw_set_cookies:
                     print(f"Set-Cookie: {raw}")
@@ -483,7 +466,7 @@ def analyze_cookies(url: str, include_js_cookies: bool = True, verbose: bool = F
 
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
-    # === 5. Return findings for summary (category-level severity) ===
+    # Return findings for summary (category-level severity) 
     cookie_findings: List[Dict[str, Any]] = []
 
     # MAPPING: Display title -> ItemDetails key
@@ -524,10 +507,9 @@ def analyze_cookies(url: str, include_js_cookies: bool = True, verbose: bool = F
                 "Category": "Cookie Security (Server-Side)",
                 "Scope": "Server-Side",
                 "Finding": finding_title,
-                "_item_short": item_key,  # THIS IS THE KEY - must match ItemDetails keys
+                "_item_short": item_key,  
                 "Evidence": _build_cookie_evidence(issue_type, cookie),
                 "Severity": severity,
-                # Add cookie metadata for template rendering
                 "_cookie_name": cookie.get("Name"),
                 "_cookie_value": cookie.get("Value"),
                 "_cookie_secure": cookie.get("Secure"),
@@ -553,10 +535,9 @@ def analyze_cookies(url: str, include_js_cookies: bool = True, verbose: bool = F
                 "Category": "Cookie Security (Client-Side)",
                 "Scope": "Client-Side",
                 "Finding": finding_title,
-                "_item_short": item_key,  # THIS IS THE KEY - must match ItemDetails keys
+                "_item_short": item_key,  
                 "Evidence": _build_cookie_evidence(issue_type, cookie),
                 "Severity": severity,
-                # Add cookie metadata for template rendering
                 "_cookie_name": cookie.get("Name"),
                 "_cookie_value": cookie.get("Value"),
                 "_cookie_secure": cookie.get("Secure"),
@@ -617,7 +598,6 @@ def _print_issues(issues: List[Dict[str, Any]], is_server_side: bool = True):
             if it not in all_types:
                 all_types.append(it)
 
-    # Print numbered findings
     for idx, issue_type in enumerate(all_types, 1):
         title, recommendation = issue_map.get(issue_type, (issue_type, "Review cookie configuration."))
         print(f"{idx}. {title}")

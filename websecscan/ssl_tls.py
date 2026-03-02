@@ -1,13 +1,3 @@
-# ssl_check.py
-# Minimal SSL/TLS scanner for FYP
-# - Verified handshake (verify ON)
-# - Non-verified handshake (verify OFF) to detect TLS presence
-# - Protocol version probing (openssl if available)
-# - Cipher suite observation (openssl if available)
-# - HTTP -> HTTPS redirect check and HSTS header read (verify=False allowed)
-#
-# Outputs human-friendly findings list suitable for integration with main.py
-
 import ssl
 import socket
 import datetime
@@ -20,20 +10,17 @@ import requests
 from typing import List, Dict, Any, Tuple, Optional
 from colorama import Fore, Style
 
-OPENSSL_TIMEOUT = 8  # seconds for openssl subprocess
+OPENSSL_TIMEOUT = 8  
 
-# Silence SSL warnings for verify=False
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
-# ----------------------
 # OpenSSL subprocess helpers (used for protocol/cipher probing)
-# ----------------------
 def _run_openssl(host: str, port: int = 443,
                  proto_flag: Optional[str] = None,
                  timeout: int = OPENSSL_TIMEOUT) -> Optional[str]:
-    # Build the command correctly: openssl s_client [proto_flag] -connect ...
+    # Build the command: openssl s_client [proto_flag] -connect ...
     cmd = ["openssl", "s_client"]
     if proto_flag:
         cmd.append(proto_flag)
@@ -143,12 +130,7 @@ def _probe_protocols_with_openssl(host: str, port: int = 443) -> Tuple[List[str]
 
 
 def _probe_cipher_and_tempkey(host: str, port: int = 443, tls_version: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Observe negotiated cipher and server temp key (DH) via openssl.
-    Returns a dict with keys:
-      negotiated_cipher, weak_ciphers (list), forward_secrecy (bool),
-      dh_key_bits (int or None), openssl_available, openssl_output
-    """
+
     res = {
         "negotiated_cipher": None,
         "weak_ciphers": [],
@@ -188,9 +170,7 @@ def _probe_cipher_and_tempkey(host: str, port: int = 443, tls_version: Optional[
     return res
 
 
-# ----------------------
 # Certificate helpers (python ssl)
-# ----------------------
 def _get_cert_via_ssl_ctx(host: str, port: int = 443, verify: bool = True, timeout: int = 5) -> Tuple[Optional[dict], Optional[str]]:
     """
     Perform a TLS handshake using python ssl.
@@ -208,7 +188,6 @@ def _get_cert_via_ssl_ctx(host: str, port: int = 443, verify: bool = True, timeo
         with socket.create_connection((host, port), timeout=timeout) as sock:
             with ctx.wrap_socket(sock, server_hostname=host) as ss:
                 cert = ss.getpeercert()
-                # TLS version string (may be None on some platforms)
                 tls_ver = ss.version()
                 return {"cert": cert, "tls_version": tls_ver}, None
     except Exception as e:
@@ -250,7 +229,6 @@ def get_certificate_details(host: str, port: int = 443) -> Optional[Dict[str, An
             return None
         cert = res.get("cert") or {}
         parsed = {}
-        # issuer
         issuer = "Unknown"
         try:
             iss = dict(x[0] for x in cert.get("issuer", []))
@@ -259,7 +237,6 @@ def get_certificate_details(host: str, port: int = 443) -> Optional[Dict[str, An
             issuer = "Unknown"
         parsed["issuer"] = issuer
 
-        # signature / key info via getpeercert binary if possible (best-effort)
         # Try to fetch binary cert via a non-verified handshake if necessary
         der = None
         try:
@@ -323,7 +300,6 @@ def get_certificate_details(host: str, port: int = 443) -> Optional[Dict[str, An
                         curve_map = {"prime256v1": "P-256", "secp384r1": "P-384", "secp521r1": "P-521"}
                         key_type = f"ECDSA {curve_map.get(oid, oid)}"
 
-        # dates
         nb_dt, na_dt = _parse_cert_dates(cert)
         valid_from = nb_dt.strftime("%Y-%m-%d") if nb_dt else None
         expiry = na_dt.strftime("%Y-%m-%d") if na_dt else None
@@ -348,14 +324,9 @@ def get_certificate_details(host: str, port: int = 443) -> Optional[Dict[str, An
         return None
 
 
-# ----------------------
 # HTTP -> HTTPS redirect + HSTS check
-# ----------------------
 def check_http_redirect_and_hsts(target_url: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
-    """
-    Check http://host redirect -> https and detect HSTS header.
-    Returns (http_to_https_redirect_bool, hsts_dict_or_None)
-    """
+
     p = urllib.parse.urlparse(target_url)
     hostname = p.hostname
     if not hostname:
@@ -375,7 +346,7 @@ def check_http_redirect_and_hsts(target_url: str) -> Tuple[bool, Optional[Dict[s
     except Exception:
         redirect_ok = False
 
-    # HSTS: try HTTPS (verify=False so we can read header even on bad cert)
+    # HSTS: try HTTPS 
     hsts = None
     try:
         https_url = f"https://{hostname}"
@@ -401,14 +372,9 @@ def check_http_redirect_and_hsts(target_url: str) -> Tuple[bool, Optional[Dict[s
     return redirect_ok, hsts
 
 
-# ----------------------
 # Public API: run_ssl_check
-# ----------------------
 def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]]:
-    """
-    Run SSL/TLS checks and print friendly output.
-    Returns a list of findings (dicts) suitable for integration with main.py.
-    """
+
     findings: List[Dict[str, Any]] = []
 
     p = urllib.parse.urlparse(target_url)
@@ -446,12 +412,11 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
         if nv_res and not nv_err:
             https_supported = True
             tls_version = nv_res.get("tls_version")
-            # best-effort: do not re-run full cert parsing here
             certificate_info = certificate_info or {}
         else:
             nonverified_error = nv_err
 
-    # 3) If no TLS detected -> print notice + findings and stop further probing
+    # 3) If no TLS detected, print notice + findings and stop further probing
     if not https_supported:
         evidence = verification_error or nonverified_error or "TLS handshake failed"
 
@@ -472,14 +437,12 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
         }
         findings.append(finding)
 
-        # Print risk rating block (High + CVSS 9.8 as requested)
         print(Fore.WHITE + "\nRisk Rating:" + Style.RESET_ALL)
         print(Fore.WHITE + "Severity: High" + Style.RESET_ALL)
         print(Fore.WHITE + "CVSS: 9.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)" + Style.RESET_ALL)
         print(Fore.WHITE + "\nFindings:" + Style.RESET_ALL)
         print(Fore.CYAN + "`" * 88 + Style.RESET_ALL)
 
-        # Format the single finding exactly as requested
         print(Fore.WHITE + "1. HTTPS Not Supported" + Style.RESET_ALL)
         print(Fore.WHITE + f"   Current Value: {finding['Current Value']}" + Style.RESET_ALL)
         print(Fore.WHITE + f"   Evidence: {finding['Evidence']}" + Style.RESET_ALL)
@@ -488,7 +451,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
         print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
         return findings
 
-    # 4) TLS present -> proceed to protocol/cipher probing (use openssl if available)
+    # 4) TLS present then proceed to protocol/cipher probing 
     supported, deprecated, proto_note = _probe_protocols_with_openssl(host, port)
     cipher_probe = _probe_cipher_and_tempkey(host, port, tls_version=tls_version)
     negotiated_cipher = cipher_probe.get("negotiated_cipher")
@@ -497,7 +460,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
 
     # 5) Collect findings based on results
 
-    # Certificate validation error (if any) is High
+    # Certificate validation error 
     if verification_error:
         findings.append({
             "Category": "SSL/TLS",
@@ -509,7 +472,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
             "Recommendation": "Install a valid SSL certificate from a trusted CA and ensure the certificate matches the host name."
         })
 
-    # Protocols: deprecated -> Medium
+    # Protocols: deprecated 
     if deprecated:
         findings.append({
             "Category": "SSL/TLS",
@@ -521,7 +484,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
             "Recommendation": "Disable deprecated versions. Only allow TLS 1.2 and TLS 1.3."
         })
 
-    # Weak ciphers -> Medium
+    # Weak ciphers 
     if weak_ciphers:
         findings.append({
             "Category": "SSL/TLS",
@@ -622,9 +585,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
             "Recommendation": "Add Strict-Transport-Security: max-age=31536000; includeSubDomains; preload"
         })
 
-    # ---------------------------
-    # Print friendly summary blocks (certificate / protocol / cipher / https)
-    # ---------------------------
+    # Print summary blocks (certificate / protocol / cipher / https)
     if verbose:
        # Protocols
         print(Fore.WHITE + "Protocol Versions:" + Style.RESET_ALL)
@@ -670,9 +631,7 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
 
         print(Fore.YELLOW + "**********************************************************" + Style.RESET_ALL)
 
-    # ---------------------------
-    # Final risk rating block (only print if there are findings)
-    # ---------------------------
+    # Final risk rating block 
     if findings:
         severities = [f.get("Severity", "Low") for f in findings]
         if "High" in severities:
@@ -713,24 +672,9 @@ def run_ssl_check(target_url: str, verbose: bool = False) -> List[Dict[str, Any]
     return findings
 
 
-# ----------------------
 # Lightweight status function for main.py summary table
-# ----------------------
 def check_ssl_tls(hostname: str) -> Dict[str, Any]:
-    """
-    Simple status checker used by main.py summary table.
-    Returns a small dict:
-      {
-        "host": hostname,
-        "https_supported": bool,
-        "tls_version": str or None,
-        "certificate_valid": bool,
-        "certificate_expiry": "YYYY-MM-DD" or None,
-        "days_until_expiry": int or None,
-        "issuer": str or None,
-        "error": None or error message
-      }
-    """
+
     result = {
         "host": hostname,
         "https_supported": False,

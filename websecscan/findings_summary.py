@@ -2,7 +2,6 @@ from typing import List, Dict, Any
 from collections import defaultdict
 from colorama import Fore, Style, init
 
-# Initialize colorama
 init(autoreset=True)
 
 # Predefined CVSS mapping for each category
@@ -51,9 +50,7 @@ CATEGORY_CVSS_MAP = {
 
 
 def normalize_category_for_cvss(category: str) -> str:
-    """
-    Normalize category names to match CATEGORY_CVSS_MAP keys.
-    """
+    """    Normalize category names to match CATEGORY_CVSS_MAP keys.    """
     mapping = {
         "HTTP Security Headers": "Security Headers",
         "Cookie Security (Client-Side)": "Cookie Security",
@@ -65,34 +62,19 @@ def normalize_category_for_cvss(category: str) -> str:
 
 
 def normalize_findings(findings: List[Dict[str, Any]], force_category: str = None, exclude_safe: bool = True) -> List[Dict[str, Any]]:
-    """
-    Normalize findings to ensure they all have Category, Severity, and Description.
-    If force_category is provided, it will override any existing Category.
-    
-    Args:
-        findings: List of finding dictionaries
-        force_category: Optional category name to force on all findings
-        exclude_safe: If True, exclude findings that are informational/non-issues only
-        
-    Returns:
-        Normalized list of findings
-    """
+
     normalized = []
     
     for f in (findings or []):
-        # Create a copy to avoid mutating the original
         finding = f.copy()
         
-        # Skip "safe" findings if exclude_safe is True
         if exclude_safe:
             status = str(finding.get("Status", "")).lower()
-            
-            # IMPORTANT: Only exclude if it's CLEARLY a "good" status
-            # Be very specific to avoid false exclusions
+
             truly_safe_statuses = [
-                "safe",                   # HTTP Methods: Status="Safe"
-                "not exposed",            # Server Info: Status="Not exposed"
-                "configured correctly",   # Headers: Status="Configured correctly"
+                "safe",                   
+                "not exposed",            
+                "configured correctly",   
             ]
             
             # Check if status exactly matches or is a safe variant
@@ -102,12 +84,11 @@ def normalize_findings(findings: List[Dict[str, Any]], force_category: str = Non
                     is_safe = True
                     break
             
-            # Additional check: if it explicitly says things are OK in the description/recommendation
+            # If it explicitly says things are OK in the description/recommendation
             if not is_safe:
                 desc = str(finding.get("Description", "")).lower()
                 rec = str(finding.get("Recommendation", "")).lower()
                 
-                # These phrases indicate informational/good findings
                 good_phrases = [
                     "no issues detected",
                     "properly configured",
@@ -123,11 +104,10 @@ def normalize_findings(findings: List[Dict[str, Any]], force_category: str = Non
             if is_safe:
                 continue
         
-        # Force category if specified (this fixes the duplication issue)
+        # Force category if specified 
         if force_category:
             finding["Category"] = force_category
         elif not finding.get("Category"):
-            # Fallback to "Unknown" if no category at all
             finding["Category"] = "Unknown"
         
         # Ensure Severity exists
@@ -149,18 +129,8 @@ def normalize_findings(findings: List[Dict[str, Any]], force_category: str = Non
     return normalized
 
 
-# Add this to the compute_cvss_overrides_from_findings() function in findings_summary.py
-# Add it right after the HTTP Method logic
-
 def compute_cvss_overrides_from_findings(findings: List[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
-    """
-    Compute dynamic CVSS overrides for categories with conditional severity/CVSS.
-    
-    Handles:
-    - HTTP Methods: Low (3.7) if only OPTIONS, Medium (5.3) otherwise
-    - SSL/TLS: High (9.8) if HTTPS not supported, Medium (5.3) otherwise
-    - Path Traversal: High (7.5) if direct evidence, Medium (5.3) otherwise
-    """
+
     overrides = {}
     
     # Group findings by category
@@ -182,7 +152,6 @@ def compute_cvss_overrides_from_findings(findings: List[Dict[str, Any]]) -> Dict
                     method_clean = method_clean.split(":", 1)[1].strip()
                 methods.append(method_clean)
         
-        # Use the category name that actually exists in findings
         category_key = "HTTP Methods" if "HTTP Methods" in by_category else "HTTP Method"
         
         if set(methods) == {"OPTIONS"}:
@@ -247,22 +216,16 @@ def compute_cvss_overrides_from_findings(findings: List[Dict[str, Any]]) -> Dict
                 "cvss": "5.3",
                 "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
             }
-    
-    # --- NEW: Directory Exposure Dynamic Logic ---
-    # The directory_scan.py module already computes severity dynamically
-    # We extract it from the findings and use that
+    # --- Directory Scan Dynamic Logic ---
     if "Directory Exposure" in by_category:
         dir_findings = by_category["Directory Exposure"]
         
         if dir_findings:
-            # Import the helper from directory_scan module
             from websecscan.directory_scan import _severity_for, _cvss_for, _overall_severity
             
-            # Use the scanner's own logic to determine severity
             overall_sev = _overall_severity(dir_findings)
             overall_cvss = _cvss_for(overall_sev)
             
-            # Extract just the numeric score (e.g., "8.2" from "8.2 (AV:N/AC:L...)")
             cvss_num = overall_cvss.split()[0] if overall_cvss else "8.2"
             
             overrides["Directory Exposure"] = {
@@ -274,27 +237,19 @@ def compute_cvss_overrides_from_findings(findings: List[Dict[str, Any]]) -> Dict
     return overrides
 
 
-def print_summary_table(
-    summary: Dict[str, Dict[str, any]],
-    title: str = "Security Findings Summary",
-):
-    """
-    Print a clean, tidy summary table.
-    Columns:
-    Category | Severity | CVSS Score | Number of Findings
-    """
+def print_summary_table(summary: Dict[str, Dict[str, any]], title: str = "Security Findings Summary",):
 
     if not summary:
         print(Fore.GREEN + f"\n{title}")
         print("=" * 120)
-        print("✅ No security findings detected.")
+        print("✓ No security findings detected.")
         print("=" * 120 + "\n")
         return
 
     print(Fore.CYAN + f"\n{title}")
     print("=" * 120)
 
-    # Table header (ONLY 4 COLUMNS)
+    # Table header 
     print(
         f"{Fore.WHITE}"
         f"{'Category':<70} "
@@ -354,7 +309,7 @@ def print_summary_table(
         overall_severity = "Low"
         overall_color = Fore.GREEN
 
-    # Overall row (INCLUDES TOTAL FINDINGS)
+    # Overall row 
     print(
         f"{Fore.CYAN}{'Overall':<70}{Style.RESET_ALL} "
         f"{overall_color}{overall_severity:<10}{Style.RESET_ALL} "

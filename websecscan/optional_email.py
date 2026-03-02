@@ -1,23 +1,6 @@
 #optional_email.py
-"""
-Optional Email Module
-
-Sends security scan reports via email using SMTP.
-Supports sending PDF and JSON attachments.
-
-Usage:
-    from optional_email import send_report_email
-    
-    success = send_report_email(
-        recipient_email="user@example.com",
-        pdf_file="report.pdf",
-        json_file="report.json",
-        target_url="https://example.com"
-    )
-"""
-
-import smtplib
 import os
+import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -27,10 +10,9 @@ from typing import Optional
 
 
 # Default SMTP Configuration
-# You can modify these or pass custom values
 DEFAULT_SMTP_CONFIG = {
-    "smtp_server": "smtp.gmail.com",  # Gmail SMTP server
-    "smtp_port": 587,                  # TLS port
+    "smtp_server": "smtp.gmail.com",  
+    "smtp_port": 587,                  
     "use_tls": True
 }
 
@@ -46,28 +28,6 @@ def send_report_email(
     smtp_port: Optional[int] = None,
     use_tls: bool = True
 ) -> bool:
-    """
-    Send security scan report via email with optional PDF and JSON attachments.
-    
-    Args:
-        recipient_email: Email address to send the report to
-        pdf_file: Path to PDF report file (optional)
-        json_file: Path to JSON report file (optional)
-        target_url: Target URL that was scanned
-        sender_email: Sender's email address (will prompt if not provided)
-        sender_password: Sender's email password (will prompt if not provided)
-        smtp_server: SMTP server address (defaults to Gmail)
-        smtp_port: SMTP server port (defaults to 587)
-        use_tls: Whether to use TLS encryption (default: True)
-        
-    Returns:
-        True if email sent successfully, False otherwise
-        
-    Notes:
-        - For Gmail, you need to use an "App Password" instead of your regular password
-        - Enable "2-Step Verification" in your Google Account
-        - Generate App Password at: https://myaccount.google.com/apppasswords
-    """
     
     # Use default SMTP config if not provided
     if smtp_server is None:
@@ -220,53 +180,14 @@ Web Security Misconfiguration Analyzer
         return False
 
 
-def get_smtp_config_interactive():
-    """
-    Interactive prompt to get SMTP configuration from user.
-    Returns a dictionary with SMTP settings.
-    """
-    print("\n⚙️  SMTP Server Configuration")
-    print("-" * 50)
-    print("Common SMTP servers:")
-    print("  1. Gmail: smtp.gmail.com:587")
-    print("  2. Outlook/Hotmail: smtp-mail.outlook.com:587")
-    print("  3. Yahoo: smtp.mail.yahoo.com:587")
-    print("  4. Custom")
-    
-    choice = input("\nSelect SMTP server (1-4, default: 1): ").strip()
-    
-    if choice == "2":
-        smtp_server = "smtp-mail.outlook.com"
-        smtp_port = 587
-    elif choice == "3":
-        smtp_server = "smtp.mail.yahoo.com"
-        smtp_port = 587
-    elif choice == "4":
-        smtp_server = input("Enter SMTP server address: ").strip()
-        smtp_port = int(input("Enter SMTP port (usually 587 or 465): ").strip() or "587")
-    else:  # Default to Gmail
-        smtp_server = "smtp.gmail.com"
-        smtp_port = 587
-    
-    use_tls = input("Use TLS encryption? (Y/n): ").strip().lower() != 'n'
-    
-    return {
-        "smtp_server": smtp_server,
-        "smtp_port": smtp_port,
-        "use_tls": use_tls
-    }
-
-
 # Example usage and testing
 if __name__ == "__main__":
     print("WebSecScan Email Module - Test Mode")
     print("=" * 50)
     
-    # Test configuration
     test_recipient = input("Enter recipient email for test: ").strip()
     
     if test_recipient:
-        # You would normally have actual report files here
         print("\nNote: This is a test. Make sure you have test files ready.")
         pdf_test = input("Enter PDF file path (or press Enter to skip): ").strip()
         json_test = input("Enter JSON file path (or press Enter to skip): ").strip()

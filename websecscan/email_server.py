@@ -1,11 +1,3 @@
-"""
-Email Server with PDF-safe SVG Chart Rendering
-(Flex-free, WeasyPrint compatible)
-"""
-
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from websecscan.optional_email import send_report_email
 import json
 import os
 import math
@@ -13,8 +5,12 @@ import re
 from datetime import datetime
 import tempfile
 import traceback
-from websecscan.export_findings import export_to_json
 from flask import send_file
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from websecscan.optional_email import send_report_email
+from websecscan.export_findings import export_to_json
+
 
 app = Flask(__name__)
 CORS(app)
@@ -33,9 +29,7 @@ except ImportError:
     WEASYPRINT_AVAILABLE = False
 
 
-# =========================================================
 # SVG PIE CHART (PDF SAFE)
-# =========================================================
 def generate_svg_pie_chart(categories, width=400, height=400):
     data = []
     for cat in categories:
@@ -94,9 +88,7 @@ def generate_svg_pie_chart(categories, width=400, height=400):
     return "".join(svg)
 
 
-# =========================================================
 # HTML → PDF CONVERSION
-# =========================================================
 def convert_html_for_pdf(html: str, report_data: dict) -> str:
     """
     Enable SVG chart rendering using existing Jinja template logic.
@@ -148,9 +140,7 @@ def convert_html_for_pdf(html: str, report_data: dict) -> str:
 
     return html
 
-# =========================================================
 # PDF GENERATION
-# =========================================================
 def generate_pdf_from_html(html, output_path, report_data):
     if not WEASYPRINT_AVAILABLE:
         return False, "WeasyPrint not installed"
@@ -312,9 +302,7 @@ def generate_pdf_from_html(html, output_path, report_data):
         return False, str(e)
 
 
-# =========================================================
 # EMAIL ENDPOINT
-# =========================================================
 @app.route("/send-email", methods=["POST"])
 def send_email():
     try:
@@ -333,9 +321,7 @@ def send_email():
         json_file = None
         pdf_file = None
 
-        # =====================================================
         # LOAD LAST SCAN RESULTS FROM DISK (CLI → Flask bridge)
-        # =====================================================
         CACHE_PATH = os.path.join(
             os.path.dirname(__file__),
             "last_scan_results.json"
@@ -353,9 +339,7 @@ def send_email():
         findings = scan_data.get("findings", [])
         summary = scan_data.get("summary", [])
 
-        # =====================================================
         # JSON ATTACHMENT
-        # =====================================================
         if include_json:
             json_file = os.path.join(
                 tempfile.gettempdir(),
@@ -371,9 +355,7 @@ def send_email():
 
             temp_files.append(json_file)
 
-        # =====================================================
         # PDF ATTACHMENT
-        # =====================================================
         if include_pdf:
             pdf_file = os.path.join(
                 tempfile.gettempdir(),
@@ -389,9 +371,7 @@ def send_email():
 
             temp_files.append(pdf_file)
 
-        # =====================================================
         # SEND EMAIL
-        # =====================================================
         success = send_report_email(
             recipient_email=recipient_email,
             pdf_file=pdf_file,
@@ -417,7 +397,6 @@ def send_email():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# =========================================================
 @app.route("/health")
 def health():
     return jsonify({

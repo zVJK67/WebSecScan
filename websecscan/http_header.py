@@ -3,18 +3,10 @@ import re
 from typing import Dict, List, Any
 from colorama import Fore, Style
 
-"""
-http_header.py — improved HTTP security header analyzer
-
-Note: This module intentionally does NOT assign per-finding severity.
-Your system is categorical; only vulnerabilities (final findings) have a risk rating.
-The Risk Rating printed here is kept fixed as in the original design.
-"""
 
 def analyze_security_headers(headers: Dict[str, str], is_https: bool = True, verbose=False) -> List[Dict[str, Any]]:
     findings: List[Dict[str, Any]] = []
 
-    # Normalize headers
     lower_headers = {k.lower(): (v or "") for k, v in headers.items()}
 
     def hdr(name: str) -> str:
@@ -30,9 +22,7 @@ def analyze_security_headers(headers: Dict[str, str], is_https: bool = True, ver
             item["CurrentValue"] = current
         findings.append(item)
 
-    # ============================================================
     # Content-Security-Policy
-    # ============================================================
     csp = hdr("Content-Security-Policy")
     if not csp:
         add_finding(
@@ -71,9 +61,7 @@ def analyze_security_headers(headers: Dict[str, str], is_https: bool = True, ver
                 csp
             )
 
-    # ============================================================
     # Strict-Transport-Security (HTTPS ONLY)
-    # ============================================================
     hsts = hdr("Strict-Transport-Security")
     if is_https:
         if not hsts:
@@ -99,18 +87,14 @@ def analyze_security_headers(headers: Dict[str, str], is_https: bool = True, ver
                     hsts
                 )
 
-    # ============================================================
     # X-Frame-Options
-    # ============================================================
     xfo = hdr("X-Frame-Options")
     if not xfo:
         add_finding("X-Frame-Options", "Missing", "X-Frame-Options: DENY or SAMEORIGIN")
     elif xfo.strip().upper() not in {"DENY", "SAMEORIGIN"}:
         add_finding("X-Frame-Options", "Misconfigured", "Use DENY or SAMEORIGIN", xfo)
 
-    # ============================================================
     # X-XSS-Protection (Deprecated → Informational)
-    # ============================================================
     xxp = hdr("X-XSS-Protection")
     if xxp and not xxp.strip().startswith("0"):
         add_finding(
@@ -120,18 +104,14 @@ def analyze_security_headers(headers: Dict[str, str], is_https: bool = True, ver
             xxp
         )
 
-    # ============================================================
     # X-Content-Type-Options
-    # ============================================================
     xcto = hdr("X-Content-Type-Options")
     if not xcto:
         add_finding("X-Content-Type-Options", "Missing", "X-Content-Type-Options: nosniff")
     elif xcto.strip().lower() != "nosniff":
         add_finding("X-Content-Type-Options", "Misconfigured", "Use nosniff", xcto)
 
-    # ============================================================
     # Cache-Control (Context Aware)
-    # ============================================================
     cc = hdr("Cache-Control")
     ct = hdr("Content-Type").lower()
     has_cookie = "set-cookie" in lower_headers
@@ -142,9 +122,7 @@ def analyze_security_headers(headers: Dict[str, str], is_https: bool = True, ver
         elif not any(d in cc.lower() for d in ["no-store", "no-cache"]):
             add_finding("Cache-Control", "Misconfigured", "Disable caching for sensitive content. Set Cache-Control: no-store, no-cache", cc)
 
-    # ============================================================
     # Referrer-Policy
-    # ============================================================
     rp = hdr("Referrer-Policy")
     if not rp:
         add_finding(
@@ -153,9 +131,7 @@ def analyze_security_headers(headers: Dict[str, str], is_https: bool = True, ver
             "Referrer-Policy: strict-origin-when-cross-origin"
         )
 
-    # ============================================================
     # Cross-Origin Policies
-    # ============================================================
     coop = hdr("Cross-Origin-Opener-Policy")
     coep = hdr("Cross-Origin-Embedder-Policy")
 
@@ -176,9 +152,7 @@ def analyze_security_headers(headers: Dict[str, str], is_https: bool = True, ver
             "COEP=require-corp should be paired with COOP=same-origin"
         )
 
-    # ============================================================
     # X-DNS-Prefetch-Control (Privacy)
-    # ============================================================
     dns_prefetch = hdr("X-DNS-Prefetch-Control")
     if not dns_prefetch:
         add_finding(
@@ -187,9 +161,7 @@ def analyze_security_headers(headers: Dict[str, str], is_https: bool = True, ver
             "Consider X-DNS-Prefetch-Control: off for privacy"
         )
 
-    # ============================================================
     # Permissions-Policy
-    # ============================================================
     pp = hdr("Permissions-Policy") or hdr("Feature-Policy")
     if not pp:
         add_finding(
@@ -202,11 +174,6 @@ def analyze_security_headers(headers: Dict[str, str], is_https: bool = True, ver
 
 
 def print_findings(findings: List[Dict[str, Any]], raw_headers: Dict[str, str], verbose: bool = False) -> None:
-    """
-    Print findings with either:
-      - FULL RAW HEADERS (verbose=True)
-      - COMPACT SUMMARY HEADERS (verbose=False)
-    """
 
     # Only Missing or Misconfigured findings
     issues = [f for f in findings if f.get("Status") in ["Missing", "Misconfigured", "Informational"]]
@@ -215,13 +182,10 @@ def print_findings(findings: List[Dict[str, Any]], raw_headers: Dict[str, str], 
     misconfigured_count = len([f for f in issues if f.get("Status") == "Misconfigured"])
     info_count = len([f for f in findings if f.get("Status") == "Informational"])
 
-    # Header lines
     print(Fore.CYAN + "\nHTTP Security Header Analysis Results" + Style.RESET_ALL)
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
-    # ============================================================
-    # VERBOSE MODE — show RAW HEADERS EXACTLY as received
-    # ============================================================
+    # VERBOSE MODE: show RAW HEADERS 
     if verbose:
         print(Fore.WHITE + "GET Response (raw headers):" + Style.RESET_ALL)
         print(Fore.YELLOW + "*" * 60 + Style.RESET_ALL)
@@ -229,18 +193,15 @@ def print_findings(findings: List[Dict[str, Any]], raw_headers: Dict[str, str], 
             print(f"{key}: {value}")
         print(Fore.YELLOW + "*" * 60 + Style.RESET_ALL)
 
-        # Summary line
         print(Fore.WHITE + f"\nTotal Issues Detected: {Fore.YELLOW}{len(issues)}{Style.RESET_ALL}")
         print(Fore.WHITE + f"Missing Headers: {Fore.RED}{missing_count}{Style.RESET_ALL} | "
             f"Misconfigured: {Fore.YELLOW}{misconfigured_count}{Style.RESET_ALL}")
         print(Fore.WHITE + f"Informational Findings: {Fore.CYAN}{info_count}{Style.RESET_ALL}")
 
-    # Fixed risk rating (your system is categorical; do not change)
     print(Fore.WHITE + "\nRisk Rating:" + Style.RESET_ALL)
     print(Fore.WHITE + "Severity: Low" + Style.RESET_ALL)
     print(Fore.WHITE + "CVSS: 3.1 (AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N)" + Style.RESET_ALL)
 
-    # Findings section
     print(Fore.WHITE + "\nFindings:" + Style.RESET_ALL)
     print(Fore.CYAN + "`" * 80 + Style.RESET_ALL)
 
@@ -259,10 +220,7 @@ def print_findings(findings: List[Dict[str, Any]], raw_headers: Dict[str, str], 
     print(Fore.MAGENTA + "═══════════════════════════════════════════════════════════════════════════════════════" + Style.RESET_ALL)
 
 def get_findings_for_export(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Convert header findings into export format.
-    Informational findings are preserved but do NOT increase risk.
-    """
+
     exported = []
 
     for f in findings:
@@ -280,7 +238,7 @@ def get_findings_for_export(findings: List[Dict[str, Any]]) -> List[Dict[str, An
             "Category": "HTTP Security Headers",
             "Header": f.get("Header", ""),
             "Finding": f.get("Status", ""),
-            "_item_short": f.get("Header", ""),  # Used for ItemDetails enrichment
+            "_item_short": f.get("Header", ""),  
             "Status": f.get("Status", ""),
             "CurrentValue": f.get("CurrentValue"),
             "Severity": severity

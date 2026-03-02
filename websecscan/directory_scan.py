@@ -1,12 +1,3 @@
-"""
-Directory & File Exposure Scanner (safe checks)
-
-NOTE:
-This scanner performs non-destructive HTTP HEAD/GET requests only.
-No authentication bypass, brute forcing, crawling, or file downloads
-are attempted. Designed strictly for academic and defensive assessment.
-"""
-
 from typing import List, Dict
 from urllib.parse import urljoin, urlparse
 import requests
@@ -15,9 +6,7 @@ import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ---------------------------------------------------------
-# Common paths (grouped by risk tier for clarity)
-# ---------------------------------------------------------
+# Common paths 
 COMMON_PATHS = [
     # High risk
     "/.env", "/.git/", "/.git/config", "/.htpasswd",
@@ -54,9 +43,7 @@ RISK_EXPLANATIONS = {
 }
 
 
-# ---------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------
 def _normalize_url(base: str) -> str:
     parsed = urlparse(base)
     if not parsed.scheme:
@@ -75,7 +62,7 @@ def _severity_for(path: str, status: int) -> str:
         return "Medium"
 
     if status == 401:
-        return "Medium"  # confirms protected resource exists
+        return "Medium" 
 
     if status == 403:
         if any(x in p for x in [".git", "config", "backup"]):
@@ -115,13 +102,9 @@ def _cvss_for(severity: str) -> str:
     }.get(severity, "0.0")
 
 
-# ---------------------------------------------------------
-# Scanner
-# ---------------------------------------------------------
+# Perform non-destructive scanning of common files/directories.
 def scan_common_paths(base_url: str, timeout: int = 6, max_results: int = 50) -> List[Dict]:
-    """
-    Perform non-destructive scanning of common files/directories.
-    """
+
     base = _normalize_url(base_url)
 
     session = requests.Session()
@@ -139,13 +122,11 @@ def scan_common_paths(base_url: str, timeout: int = 6, max_results: int = 50) ->
         full = urljoin(base if base.endswith("/") else base + "/", rel.lstrip("/"))
 
         try:
-            # HEAD first (lighter)
             resp = session.head(full, timeout=timeout, allow_redirects=True)
 
             if resp.status_code not in INTERESTING_STATUS:
                 continue
 
-            # Fallback to GET for confirmation
             resp = session.get(full, timeout=timeout, allow_redirects=True)
             status = resp.status_code
 
@@ -174,9 +155,7 @@ def scan_common_paths(base_url: str, timeout: int = 6, max_results: int = 50) ->
     return findings
 
 
-# ---------------------------------------------------------
 # Output
-# ---------------------------------------------------------
 def print_dir_scan_results(findings: List[Dict]) -> None:
     print(Fore.CYAN + "\nSensitive File and Directory Exposure" + Style.RESET_ALL)
     print(Fore.MAGENTA + "══════════════════════════════════════════════════════════════" + Style.RESET_ALL)

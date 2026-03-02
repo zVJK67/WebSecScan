@@ -3,7 +3,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# --- Session with retries (kept for options printing if desired) ---
+# --- Session with retries ---
 def get_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(429, 500, 502, 503, 504)):
     session = requests.Session()
     retry = Retry(
@@ -17,7 +17,6 @@ def get_retry_session(retries=3, backoff_factor=0.3, status_forcelist=(429, 500,
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
-    # sensible default UA
     session.headers.update({"User-Agent": "WebSecScan/1.0 (+https://example.com)"})
     return session
 

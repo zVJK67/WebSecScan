@@ -6,15 +6,11 @@ import math
 from typing import List, Dict, Any
 from datetime import datetime
 from colorama import Fore, Style
-
-# dependency for templating
 from jinja2 import Environment, select_autoescape, Undefined
 
-# vulnerability definitions (enrichment + config)
 try:
     from websecscan.vulnerability_definitions import enrich_all_findings, VULNERABILITY_DEFINITIONS
 except ImportError:
-    # Fallback if vulnerability_definitions.py is not available
     def enrich_all_findings(findings):
         return findings
     VULNERABILITY_DEFINITIONS = {}
@@ -24,7 +20,7 @@ LAST_SCAN_RESULTS = {
     "summary": []
 }
 
-# Persist scan results for backend export (CLI → Flask bridge)
+# Persist scan results for backend export 
 CACHE_PATH = os.path.join(os.path.dirname(__file__), "last_scan_results.json")
 
 
@@ -34,17 +30,9 @@ def export_to_json(
     filename: str = "security_scan_report.json",
     target_url: str = None
 ) -> bool:
-    """
-    Export findings to a JSON file.
-    - Severity is derived from CVSS (no hardcoding)
-    - Informational findings have Severity=Info and CVSS=null
-    - Severity totals are computed from normalized findings
-    - Supports summary as dict or list
-    """
+
     try:
-        # =====================================================
-        # Helper: derive severity from CVSS
-        # =====================================================
+        #  derive severity from CVSS
         def severity_from_cvss(cvss: str):
             if not cvss:
                 return None
@@ -60,9 +48,7 @@ def export_to_json(
             else:
                 return "Low"
 
-        # =====================================================
         # Normalize findings (Severity & CVSS)
-        # =====================================================
         for f in findings:
             # Informational findings
             if f.get("Status") == "Informational":
@@ -79,16 +65,12 @@ def export_to_json(
             if derived:
                 f["Severity"] = derived
 
-        # =====================================================
         # Compute severity totals from normalized findings
-        # =====================================================
         total_high = sum(1 for f in findings if f.get("Severity") == "High")
         total_medium = sum(1 for f in findings if f.get("Severity") == "Medium")
         total_low = sum(1 for f in findings if f.get("Severity") == "Low")
 
-        # =====================================================
         # Normalize summary (dict OR list)
-        # =====================================================
         if isinstance(summary, dict):
             summary_out = list(summary.values())
         elif isinstance(summary, list):
@@ -96,9 +78,7 @@ def export_to_json(
         else:
             summary_out = []
 
-        # =====================================================
         # Build report
-        # =====================================================
         report = {
             "scan_metadata": {
                 "target_url": target_url or "Unknown",
@@ -114,9 +94,7 @@ def export_to_json(
             "findings": findings
         }
 
-        # =====================================================
         # Write JSON file
-        # =====================================================
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
 
@@ -128,9 +106,7 @@ def export_to_json(
         return False
 
 
-# ---------------------------
 # Embedded Jinja2 HTML template (unchanged)
-# ---------------------------
 REPORT_TEMPLATE = r"""
 <!doctype html>
 <html lang="en">
@@ -1248,9 +1224,6 @@ REPORT_TEMPLATE = r"""
 </html>
 """
 
-# ---------------------------
-# Helper: transform your findings+summary into 'categories' and 'findings_by_category'
-# ---------------------------
 def _prepare_report_data(findings: List[Dict[str, Any]], summary: Dict[str, Dict[str, int]], debug: bool = False):
     """
     Build categories (list of {name, high, medium, low}) and findings_by_category (dict).
@@ -1314,9 +1287,6 @@ def _match_vuln_def_for_category(cat_name: str, vuln_defs: Dict[str, Any]):
             return val
     return {}
 
-# ---------------------------
-# UNIFIED TABLE BUILDER
-# ---------------------------
 
 def _first_non_empty(f: dict, keys):
     """Return the first non-empty string-like value for keys from finding f."""
@@ -1337,20 +1307,7 @@ def _first_non_empty(f: dict, keys):
 
 
 def _rows_generic(flist, col_map):
-    """
-    UNIFIED table row builder - works for ALL categories.
-    
-    col_map: ordered list of (column_name, candidate_keys)
-      candidate_keys: list/tuple of field names to try (first non-empty wins).
-    
-    Example:
-      col_map = [
-        ("Finding", ["Title","_item_short","Header"]),
-        ("Evidence", ["CurrentValue","Current Value","Evidence"])
-      ]
-    
-    Returns rows as list of [col1, col2, ..., finding_dict]
-    """
+
     rows = []
     for f in flist:
         row = []
@@ -1364,15 +1321,7 @@ def _rows_generic(flist, col_map):
 
 
 def _make_col_map_from_def(cat_def):
-    """
-    Build col_map from category definition.
-    
-    Reads:
-      - cat_def.get('TableColumns') -> ["Finding","Evidence"]
-      - cat_def.get('TableColumnMap') -> { "Finding": ["_item_short","Header"], "Evidence": ["CurrentValue"] }
-    
-    Returns list of (column_name, candidate_keys) tuples.
-    """
+
     cols = cat_def.get("TableColumns") or []
     explicit_map = cat_def.get("TableColumnMap") or {}
     
@@ -1405,20 +1354,13 @@ def _make_col_map_from_def(cat_def):
 
 
 def _build_table_for_category(cat_name: str, flist: List[Dict], cat_def: Dict) -> tuple:
-    """
-    UNIFIED function to build table schema + rows for ANY category.
-    
-    Returns: (schema: List[str], rows: List[List[Any]])
-    """
+
     # If category definition specifies TableColumns, use them
     if cat_def.get("TableColumns"):
         schema = cat_def.get("TableColumns")
         col_map = _make_col_map_from_def(cat_def)
         rows = _rows_generic(flist, col_map)
         return schema, rows
-    
-    # Fallback: Auto-detect reasonable defaults based on available fields
-    # This handles cases where no explicit table config is provided
     
     # Check if this looks like HTTP methods
     has_methods = any(
@@ -1446,9 +1388,6 @@ def _build_table_for_category(cat_name: str, flist: List[Dict], cat_def: Dict) -
     return schema, rows
 
 
-# ---------------------------
-# Risk rule helpers (pluggable)
-# ---------------------------
 def _normalize_item_name(item):
     """Normalize item names for method rules (strip prefix like 'HTTP Method: OPTIONS')."""
     if not item:
@@ -1464,14 +1403,12 @@ def _normalize_item_short_for_defs(cat: str, raw: str) -> str:
 
     s = str(raw).strip()
 
-    # FIX: HTTP Security Headers → keep header name only
     if cat == "HTTP Security Headers":
         if ":" in s:
             return s.split(":", 1)[0].strip()
         return s
 
-    # FIX: Cookie Security → extract known attribute names
-    if "Cookie Security" in cat:  # ← Changed from exact match
+    if "Cookie Security" in cat:  
         for key in (
             "HttpOnly", "Secure", "SameSite", "Path",
             "Domain", "Expires/Max-Age", "Weak Session ID",
@@ -1481,8 +1418,7 @@ def _normalize_item_short_for_defs(cat: str, raw: str) -> str:
                 return key
         return s
 
-    # FIX: Server Info → map by meaning, not value
-    if "Server Info" in cat:  # ← Changed from exact match
+    if "Server Info" in cat:  
         sl = s.lower()
         if "server" in sl and "header" in sl:
             return "Server Header Exposed"
@@ -1566,133 +1502,13 @@ _RISK_RULES = {
 }
 
 
-def _compute_category_risk_generic(cat_name, flist, category_defs):
-    """Dispatcher for category-level dynamic risk rating. Falls back to definitions' defaults."""
-    cat_def = category_defs.get(cat_name, {}) or {}
-    rule_key = cat_def.get("RiskRule")
-    
-    if rule_key and rule_key in _RISK_RULES:
-        result = _RISK_RULES[rule_key](cat_name, flist, cat_def)
-        return {
-            "severity": result.get("severity") or cat_def.get("DefaultSeverity"),
-            "cvss": result.get("cvss") or cat_def.get("DefaultCVSS")
-        }
-    
-    if flist:
-        return {"severity": cat_def.get("DefaultSeverity"), "cvss": cat_def.get("DefaultCVSS")}
-    
-    return {"severity": None, "cvss": None}
-
-
-def severity_from_cvss(cvss: str) -> str | None:
-    """
-    Derive severity from CVSS score.
-    """
-    if not cvss:
-        return None
-    try:
-        score = float(cvss.split()[0])
-    except Exception:
-        return None
-
-    if score >= 7.0:
-        return "High"
-    elif score >= 4.0:
-        return "Medium"
-    else:
-        return "Low"
-
-
-# A4 enforcement helper (returns inline style)
 def _page_style_for_a4(force_a4: bool):
     return ' style="width:210mm;max-width:210mm;margin:0 auto;"' if force_a4 else ""
 
 
-def _generate_pie_chart_svg(categories: List[Dict], width: int = 320, height: int = 320) -> str:
-    """Generate SVG pie chart for PDF export (WeasyPrint compatible)."""
-    data = []
-    for cat in categories:
-        total = cat.get('high', 0) + cat.get('medium', 0) + cat.get('low', 0)
-        if total > 0:
-            data.append({
-                'name': cat.get('display_name') or cat.get('name', 'Unknown'),
-                'value': total
-            })
-    
-    if not data:
-        return f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}"><text x="50%" y="50%" text-anchor="middle" fill="#999">No data</text></svg>'
-    
-    colors = ['#FF6B6B', '#FF9F43', '#FFD43B', '#6BCB77', '#4D96FF', '#845EC2', '#00C9A7', '#FF9671']
-    total = sum(item['value'] for item in data)
-    
-    cx = width // 2
-    cy = height // 2
-    radius = min(width, height) // 2 - 40
-    
-    svg_parts = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
-        '<style>',
-        '.chart-slice { stroke: white; stroke-width: 2; }',
-        '.legend-text { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 11px; fill: #333; }',
-        '</style>'
-    ]
-    
-    # Draw slices
-    start_angle = -90
-    for i, item in enumerate(data):
-        angle = (item['value'] / total) * 360
-        end_angle = start_angle + angle
-        
-        start_rad = math.radians(start_angle)
-        end_rad = math.radians(end_angle)
-        
-        x1 = cx + radius * math.cos(start_rad)
-        y1 = cy + radius * math.sin(start_rad)
-        x2 = cx + radius * math.cos(end_rad)
-        y2 = cy + radius * math.sin(end_rad)
-        
-        large_arc = 1 if angle > 180 else 0
-        color = colors[i % len(colors)]
-        
-        path = f'<path class="chart-slice" d="M {cx},{cy} L {x1},{y1} A {radius},{radius} 0 {large_arc},1 {x2},{y2} Z" fill="{color}"/>'
-        svg_parts.append(path)
-        
-        start_angle = end_angle
-    
-    # Center circle (donut)
-    inner_radius = radius * 0.6
-    svg_parts.append(f'<circle cx="{cx}" cy="{cy}" r="{inner_radius}" fill="white"/>')
-    
-    # Legend
-    legend_x = width - 130
-    legend_y = 30
-    
-    for i, item in enumerate(data):
-        color = colors[i % len(colors)]
-        y = legend_y + (i * 22)
-        
-        svg_parts.append(f'<rect x="{legend_x}" y="{y-9}" width="10" height="10" fill="{color}"/>')
-        
-        text = item['name'][:18]
-        if len(item['name']) > 18:
-            text += '...'
-        svg_parts.append(f'<text class="legend-text" x="{legend_x + 15}" y="{y}">{text}</text>')
-    
-    svg_parts.append('</svg>')
-    return '\n'.join(svg_parts)
+def generate_interactive_html_report(findings: List[Dict[str, Any]],summary: Dict[str, Dict[str, int]],
+    filename: str = "security_scan_report.html",target_url: str = None,force_a4: bool = False) -> bool:
 
-
-def generate_interactive_html_report(
-    findings: List[Dict[str, Any]],
-    summary: Dict[str, Dict[str, int]],
-    filename: str = "security_scan_report.html",
-    target_url: str = None,
-    force_a4: bool = False
-) -> bool:
-    """
-    Generate an interactive HTML report using the embedded Jinja2 template.
-    Uses UNIFIED table builder for all categories.
-    """
     try:
         enriched_findings = enrich_all_findings(findings)
         categories, findings_by_category = _prepare_report_data(enriched_findings, summary)
@@ -1710,7 +1526,6 @@ def generate_interactive_html_report(
           "Path Traversal"
         }
 
-
         # Match vulnerability definitions
         category_defs: Dict[str, Dict[str, Any]] = {}
 
@@ -1724,18 +1539,13 @@ def generate_interactive_html_report(
             item_key = "ItemDetails" if "ItemDetails" in vuln_def else None
 
             for finding in flist:
-                # Apply category display name
                 if vuln_def.get("DisplayName") and not finding.get("DisplayName"):
                     finding["DisplayName"] = vuln_def["DisplayName"]
 
-                # FIX: ensure Finding field exists for tables & CLI
                 if finding.get("Title") and not finding.get("Finding"):
                     finding["Finding"] = finding["Title"]
 
 
-                # ----------------------------
-                # FIX 1: ONLY set _item_short for PER-ITEM categories
-                # ----------------------------
                 if cat in PER_ITEM_CATEGORIES:
                   raw_item = (
                       finding.get("_item_short")
@@ -1747,10 +1557,7 @@ def generate_interactive_html_report(
 
                   finding["_item_short"] = _normalize_item_short_for_defs(cat, raw_item)
 
-                # ----------------------------
                 # Attach per-item Impact / Recommendation
-                # ONLY for per-item categories
-                # ----------------------------
                 if (
                     cat in PER_ITEM_CATEGORIES
                     and item_key
@@ -1766,9 +1573,7 @@ def generate_interactive_html_report(
                     if item_def.get("Recommendation") and not finding.get("Recommendation"):
                         finding["Recommendation"] = item_def["Recommendation"]
 
-        # ----------------------------
         # Risk rules
-        # ----------------------------
         for cat_name, cat_def in list(category_defs.items()):
             if "method" in cat_name.lower():
                 cat_def.setdefault("RiskRule", "methods_options_only")
@@ -1801,7 +1606,6 @@ def generate_interactive_html_report(
             c_def = category_defs.get(catname, {})
             c["display_name"] = c_def.get("DisplayName") or catname
 
-        # FIX: Build totals based on CATEGORY severity, not per-finding counts
         total_high = 0
         total_medium = 0
         total_low = 0
@@ -1832,10 +1636,9 @@ def generate_interactive_html_report(
                 category_stats[cat_name] = {
                     "severity": summary[cat_name]["severity"],
                     "cvss": summary[cat_name]["cvss"],
-                    "cvss_vector": summary[cat_name].get("cvss_vector", "")  # ← ADD THIS
+                    "cvss_vector": summary[cat_name].get("cvss_vector", "")  
                 }
             else:
-                # Fallback logic...
                 from websecscan.findings_summary import CATEGORY_CVSS_MAP, normalize_category_for_cvss
                 normalized_cat = normalize_category_for_cvss(cat_name)
                 cat_defaults = CATEGORY_CVSS_MAP.get(normalized_cat, {})
@@ -1846,7 +1649,7 @@ def generate_interactive_html_report(
                     category_stats[cat_name] = {
                         "severity": cat_defaults.get("severity", "Low"),
                         "cvss": cvss_num,
-                        "cvss_vector": cvss_vec  # ← ADD THIS
+                        "cvss_vector": cvss_vec  
                     }
 
         # Build tables
@@ -1883,9 +1686,7 @@ def generate_interactive_html_report(
             page_style=_page_style_for_a4(force_a4)
         )
 
-        # ===============================
         # Store last scan results (Option A)
-        # ===============================
         global LAST_SCAN_RESULTS
         LAST_SCAN_RESULTS = {
             "findings": enriched_findings,

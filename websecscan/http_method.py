@@ -3,19 +3,7 @@ from typing import List, Union, Dict, Any, Optional
 from colorama import Fore, Style
 import requests
 
-"""
-HTTP Method Security Checker
 
-Design Notes:
-- Passive detection only (OPTIONS-based)
-- No active method execution to avoid side effects
-- WebDAV methods are detected but not exploited
-- Severity and CVSS are context-aware
-- Risk rating is shown ONLY when findings exist
-- Aligned with OWASP ZAP HTTP Method Scan
-"""
-
-# Known risky HTTP methods and explanations
 _METHOD_RISKS = {
     "OPTIONS": "Reveals supported HTTP methods and may aid reconnaissance.",
     "PUT": "Allows file upload or overwrite if improperly restricted.",
@@ -79,7 +67,7 @@ def _calculate_severity(methods: List[str]) -> str:
 
 
 def _severity_to_cvss(severity: str) -> str:
-    """Map severity to OWASP-style CVSS."""
+    """Map severity to CVSS."""
     mapping = {
         "Low": "3.7 (AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N)",
         "Medium": "5.3 (AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N)",
@@ -154,7 +142,7 @@ def check_and_print_http_methods(url: str, timeout: int = 6, verbose: bool = Fal
     try:
         resp = requests.options(url, timeout=timeout, allow_redirects=True, verify=False)
     except requests.exceptions.RequestException as e:
-        print(Fore.YELLOW + f"⚠️ OPTIONS request failed: {e}" + Style.RESET_ALL)
+        print(Fore.YELLOW + f"[!] OPTIONS request failed: {e}" + Style.RESET_ALL)
 
     if verbose:
         _print_raw_options_response(resp)
@@ -162,7 +150,7 @@ def check_and_print_http_methods(url: str, timeout: int = 6, verbose: bool = Fal
     methods_hdr = resp.headers.get("Allow") if resp else None
     methods_list = _normalize_methods_input(methods_hdr)
 
-    # No Allow header → unknown exposure
+    # No Allow header = unknown exposure
     if not methods_list:
         print(Fore.YELLOW + "[!] Server did not disclose supported HTTP methods." + Style.RESET_ALL)
         print("Note: Absence of Allow header does not guarantee security.")
@@ -176,7 +164,6 @@ def check_and_print_http_methods(url: str, timeout: int = 6, verbose: bool = Fal
         print(Fore.RED + "[!] 'Allow' header disclosed supported HTTP methods." + Style.RESET_ALL)
         print(f"Detected Potentially Unsafe Methods: {len(unsafe_methods)}")
 
-    # ✅ Risk rating ONLY if findings exist
     if findings:
         severity = findings[0]["Severity"]
         cvss = _severity_to_cvss(severity)
